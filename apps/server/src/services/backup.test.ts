@@ -10,12 +10,15 @@ import { buildLogger } from '../logger.js'
 import { createFakeServices } from './fake/index.js'
 import {
   classifyEntry,
+  copySaveTree,
   createBackupService,
   isSafeEntryPath,
   validateArchiveEntries,
+  walkFiles,
   type BackupService,
 } from './backup.js'
 import type { OpSink } from './types.js'
+import { vi } from 'vitest'
 
 // Adversarial coverage for the restore path — the highest data-loss
 // surface. Each test crafts a malicious/malformed archive and asserts
@@ -121,6 +124,83 @@ function goodManifest(worldId = WORLD): string {
     files: [],
   })
 }
+
+describe('live-churn copy (the real-deploy backup fix)', () => {
+  it('copySaveTree excludes the game-internal backup/ dir', () => {
+    const src = fs.mkdtempSync(path.join(os.tmpdir(), 'pal-churn-src-'))
+    const dst = fs.mkdtempSync(path.join(os.tmpdir(), 'pal-churn-dst-'))
+    fs.writeFileSync(path.join(src, 'Level.sav'), 'level')
+    fs.mkdirSync(path.join(src, 'Players'))
+    fs.writeFileSync(path.join(src, 'Players', 'p1.sav'), 'player')
+    fs.mkdirSync(path.join(src, 'backup', 'world'), { recursive: true })
+    fs.writeFileSync(path.join(src, 'backup', 'world', 'old.zip'), 'churny-zip')
+
+    const res = copySaveTree(src, dst)
+    expect(res.skipped).toEqual([])
+    expect(fs.existsSync(path.join(dst, 'Level.sav'))).toBe(true)
+    expect(fs.existsSync(path.join(dst, 'Players', 'p1.sav'))).toBe(true)
+    expect(fs.existsSync(path.join(dst, 'backup'))).toBe(false)
+    fs.rmSync(src, { recursive: true, force: true })
+    fs.rmSync(dst, { recursive: true, force: true })
+  })
+
+  it('copySaveTree skips files that vanish mid-copy (ENOENT) instead of aborting', () => {
+    const src = fs.mkdtempSync(path.join(os.tmpdir(), 'pal-churn2-src-'))
+    const dst = fs.mkdtempSync(path.join(os.tmpdir(), 'pal-churn2-dst-'))
+    fs.writeFileSync(path.join(src, 'Level.sav'), 'level')
+    fs.writeFileSync(path.join(src, 'vanishing.sav'), 'gone-soon')
+
+    const realCopy = fs.copyFileSync.bind(fs)
+    const spy = vi.spyOn(fs, 'copyFileSync').mockImplementation((from, to, mode?) => {
+      if (String(from).endsWith('vanishing.sav')) {
+        const err = new Error('ENOENT: vanished') as NodeJS.ErrnoException
+        err.code = 'ENOENT'
+        throw err
+      }
+      return realCopy(from, to, mode)
+    })
+    try {
+      const res = copySaveTree(src, dst)
+      expect(res.skipped).toEqual(['vanishing.sav'])
+      expect(fs.existsSync(path.join(dst, 'Level.sav'))).toBe(true)
+      expect(fs.existsSync(path.join(dst, 'vanishing.sav'))).toBe(false)
+    } finally {
+      spy.mockRestore()
+      fs.rmSync(src, { recursive: true, force: true })
+      fs.rmSync(dst, { recursive: true, force: true })
+    }
+  })
+
+  it('walkFiles tolerates a directory vanishing entirely', () => {
+    expect(walkFiles('/definitely/not/a/real/dir')).toEqual([])
+  })
+
+  it('create() succeeds with a churning backup/ dir present and excludes it from the archive', async () => {
+    // Simulate the live server: game-internal rotating backups inside the save dir.
+    const saveDir = path.join(env.PAL_DIR, 'Pal/Saved/SaveGames/0', WORLD)
+    fs.mkdirSync(path.join(saveDir, 'backup', 'world'), { recursive: true })
+    fs.writeFileSync(path.join(saveDir, 'backup', 'world', 'rotating.zip'), 'x'.repeat(5000))
+
+    const backup = await service.create('manual', noopSink)
+    const listed: string[] = []
+    await tar.list({
+      file: path.join(env.BACKUP_DIR, backup.filename),
+      onReadEntry: (e) => void listed.push(e.path),
+    })
+    expect(listed.some((p) => p.includes('/backup/'))).toBe(false)
+    expect(listed.some((p) => p.endsWith('Level.sav'))).toBe(true)
+  })
+
+  it('create() reports monotonic progress up to 100', async () => {
+    const pcts: number[] = []
+    const sink: OpSink = { line: () => {}, progress: (n) => pcts.push(n) }
+    await service.create('manual', sink)
+    expect(pcts.length).toBeGreaterThan(2)
+    expect(Math.max(...pcts)).toBe(100)
+    const sorted = [...pcts].sort((a, b) => a - b)
+    expect(pcts).toEqual(sorted) // never goes backwards
+  })
+})
 
 describe('backup create + download', () => {
   it('creates a backup and records a row with a real file', async () => {

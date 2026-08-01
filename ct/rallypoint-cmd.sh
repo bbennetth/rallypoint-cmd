@@ -62,6 +62,12 @@ if [[ -f /etc/rallypoint-cmd/panel.env ]]; then
   git fetch --depth 1 origin "$PANEL_REPO_REF"
   git reset --hard "origin/$PANEL_REPO_REF"
   npm ci && npm run build
+  # Refresh the self-update helper + sudoers (new installs of both may
+  # arrive via git updates; existing CTs pick them up here).
+  command -v rsync >/dev/null || apt-get -qq -y install rsync >/dev/null 2>&1 || true
+  install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-apply-update /usr/local/bin/rallypoint-cmd-apply-update
+  install -m 0440 -o root -g root deploy/sudoers/rallypoint-cmd /etc/sudoers.d/rallypoint-cmd
+  visudo -cf /etc/sudoers.d/rallypoint-cmd >/dev/null
   chown -R root:palworld /opt/rallypoint-cmd && chmod -R g-w /opt/rallypoint-cmd
   systemctl restart rallypoint-cmd.service
   msg_ok "Panel updated"
@@ -176,7 +182,7 @@ QT="$STD"; qt() { "\$@" >/dev/null 2>&1; }   # quiet unless VERBOSE (baked from 
 echo ">>> base packages + i386 multiarch (SteamCMD is 32-bit)"
 dpkg --add-architecture i386
 \$QT apt-get -qq update
-\$QT apt-get -qq -y install curl ca-certificates tar xz-utils sudo git \
+\$QT apt-get -qq -y install curl ca-certificates tar xz-utils sudo git rsync \
   lib32gcc-s1 lib32stdc++6 python3 make g++ procps
 
 echo ">>> Node.js 22"
@@ -228,6 +234,7 @@ fi
 echo ">>> systemd units + least-privilege sudoers"
 install -m 0644 deploy/systemd/palworld.service /etc/systemd/system/palworld.service
 install -m 0644 deploy/systemd/rallypoint-cmd.service /etc/systemd/system/rallypoint-cmd.service
+install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-apply-update /usr/local/bin/rallypoint-cmd-apply-update
 install -m 0440 -o root -g root deploy/sudoers/rallypoint-cmd /etc/sudoers.d/rallypoint-cmd
 visudo -cf /etc/sudoers.d/rallypoint-cmd >/dev/null
 

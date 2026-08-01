@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Backup, RestorePreview } from '@rallypoint-cmd/shared'
+import type { Backup, LongOp, RestorePreview } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
+import { useLongOp } from '../lib/useEventSource.js'
 import { formatBytes, formatDateTime } from '../lib/format.js'
 import { Badge, Button, Card, inputClass, Spinner } from '../ui/primitives.js'
 
@@ -9,6 +10,10 @@ export function BackupsPage() {
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [preview, setPreview] = useState<RestorePreview | null>(null)
+  // The op we launched (backup or restore); while set, we stream its
+  // progress + final status over SSE instead of blind-polling.
+  const [activeOp, setActiveOp] = useState<LongOp | null>(null)
+  const { progress, lastLine, doneOp, reset } = useLongOp(activeOp !== null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function load() {
@@ -18,22 +23,27 @@ export function BackupsPage() {
     void load()
   }, [])
 
+  // Op finished: surface the result (esp. the error) and refresh the list.
+  useEffect(() => {
+    if (!doneOp || !activeOp || doneOp.id !== activeOp.id) return
+    if (doneOp.status === 'failed') {
+      setErr(`${doneOp.kind} failed: ${doneOp.error ?? 'unknown error'}`)
+    } else {
+      setErr(null)
+    }
+    setActiveOp(null)
+    setBusy(null)
+    reset()
+    void load()
+  }, [doneOp, activeOp, reset])
+
   async function create() {
     setBusy('create')
     setErr(null)
     try {
-      await api.createBackup()
-      // Create runs as a background op; poll until a new archive lands.
-      const before = backups?.length ?? 0
-      for (let i = 0; i < 20; i++) {
-        await sleep(1500)
-        const list = (await api.backups()).backups
-        setBackups(list)
-        if (list.length > before) break
-      }
+      setActiveOp(await api.createBackup())
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : 'Backup failed')
-    } finally {
       setBusy(null)
     }
   }
@@ -88,6 +98,23 @@ export function BackupsPage() {
         }
       >
         {err && <p className="mb-3 text-sm text-panel-bad">{err}</p>}
+        {activeOp && (
+          <div className="mb-4 rounded-lg border border-panel-border bg-panel-surface-2 px-4 py-3">
+            <div className="mb-1 flex justify-between text-xs text-panel-muted">
+              <span className="capitalize">
+                {activeOp.kind === 'backup' ? 'Creating backup…' : 'Restoring world…'}
+              </span>
+              <span>{progress != null ? `${progress.toFixed(0)}%` : '…'}</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-panel-bg">
+              <div
+                className={`h-full bg-panel-accent transition-all ${progress == null ? 'w-1/3 animate-pulse' : ''}`}
+                style={progress != null ? { width: `${progress}%` } : undefined}
+              />
+            </div>
+            {lastLine && <p className="mono mt-2 truncate text-xs text-panel-muted">{lastLine}</p>}
+          </div>
+        )}
         {!backups ? (
           <p className="text-panel-muted">Loading…</p>
         ) : backups.length === 0 ? (
@@ -137,9 +164,12 @@ export function BackupsPage() {
         <RestoreDialog
           preview={preview}
           onClose={() => setPreview(null)}
-          onDone={async () => {
+          onStarted={(op) => {
+            // Restore launched: close the dialog and stream its progress
+            // inline; completion/errors surface via the op card above.
             setPreview(null)
-            await load()
+            setBusy('restore')
+            setActiveOp(op)
           }}
         />
       )}
@@ -150,11 +180,11 @@ export function BackupsPage() {
 function RestoreDialog({
   preview,
   onClose,
-  onDone,
+  onStarted,
 }: {
   preview: RestorePreview
   onClose: () => void
-  onDone: () => void
+  onStarted: (op: LongOp) => void
 }) {
   const [confirmText, setConfirmText] = useState('')
   const [busy, setBusy] = useState(false)
@@ -165,8 +195,7 @@ function RestoreDialog({
     setBusy(true)
     setErr(null)
     try {
-      await api.restoreBackup(preview.stagingId, confirmText)
-      onDone()
+      onStarted(await api.restoreBackup(preview.stagingId, confirmText))
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : 'Restore failed')
       setBusy(false)
@@ -224,6 +253,3 @@ function Row({ k, v }: { k: string; v: string }) {
   )
 }
 
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms))
-}

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import type { LongOp } from '@rallypoint-cmd/shared'
+import type { LongOp, PanelUpdateInfo } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
 import { useSseUpdates } from '../lib/useEventSource.js'
+import { formatDateTime } from '../lib/format.js'
 import { Badge, Button, Card, Spinner } from '../ui/primitives.js'
 
 export function UpdatesPage() {
@@ -72,6 +73,15 @@ export function UpdatesPage() {
         </p>
       </Card>
 
+      <PanelUpdateCard
+        opRunning={running}
+        onStarted={(newOp) => {
+          setErr(null)
+          reset()
+          setOp(newOp)
+        }}
+      />
+
       {(running || log.length > 0) && (
         <Card title="Progress">
           {progress != null && (
@@ -96,5 +106,127 @@ export function UpdatesPage() {
         </Card>
       )}
     </div>
+  )
+}
+
+// Rallypoint's own updater: shows current vs latest GitHub release, runs
+// the update as a long-op, then — because applying restarts the panel —
+// polls /api/health until the NEW version answers and reloads the SPA.
+function PanelUpdateCard({
+  opRunning,
+  onStarted,
+}: {
+  opRunning: boolean
+  onStarted: (op: LongOp) => void
+}) {
+  const [info, setInfo] = useState<PanelUpdateInfo | null>(null)
+  const [checking, setChecking] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [phase, setPhase] = useState<'idle' | 'updating' | 'restarting'>('idle')
+
+  async function check(force: boolean) {
+    setChecking(true)
+    setErr(null)
+    try {
+      setInfo(await api.panelUpdate(force))
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Update check failed')
+    } finally {
+      setChecking(false)
+    }
+  }
+  useEffect(() => {
+    void check(false)
+  }, [])
+
+  async function runUpdate() {
+    setErr(null)
+    setPhase('updating')
+    try {
+      const op = await api.runPanelUpdate()
+      onStarted(op)
+      // Wait for the service restart: the SSE will drop; poll health until
+      // a DIFFERENT version responds, then hard-reload to load the new SPA.
+      const before = info?.current
+      setPhase('restarting')
+      for (let i = 0; i < 120; i++) {
+        await new Promise((r) => setTimeout(r, 2000))
+        try {
+          const h = await api.health()
+          if (h.version !== before) {
+            window.location.reload()
+            return
+          }
+        } catch {
+          // panel is mid-restart — keep polling
+        }
+      }
+      setErr('Panel did not come back with a new version — check the service manually.')
+      setPhase('idle')
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Update failed to start')
+      setPhase('idle')
+    }
+  }
+
+  return (
+    <Card
+      title="Rallypoint"
+      actions={
+        <span className="text-xs text-panel-muted">
+          {info ? `v${info.current.replace(/^v/, '')}` : ''}
+        </span>
+      }
+    >
+      {err && <p className="mb-3 text-sm text-panel-bad">{err}</p>}
+      {phase === 'restarting' ? (
+        <div className="flex items-center gap-3 text-sm text-panel-muted">
+          <Spinner /> Applying update — the panel is restarting…
+        </div>
+      ) : !info ? (
+        <p className="text-sm text-panel-muted">Checking for updates…</p>
+      ) : info.updateAvailable && info.latest ? (
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <Badge tone="warn">update available</Badge>
+            <span className="text-sm">
+              {info.latest}
+              {info.publishedAt && (
+                <span className="ml-2 text-xs text-panel-muted">
+                  {formatDateTime(Date.parse(info.publishedAt))}
+                </span>
+              )}
+            </span>
+          </div>
+          {info.notes && (
+            <pre className="thin-scroll max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-panel-surface-2 p-3 text-xs text-panel-muted">
+              {info.notes}
+            </pre>
+          )}
+          <div className="flex gap-2">
+            <Button variant="primary" disabled={opRunning || phase !== 'idle'} onClick={runUpdate}>
+              Update to {info.latest}
+            </Button>
+            <Button variant="ghost" disabled={checking} onClick={() => check(true)}>
+              {checking ? <Spinner /> : 'Re-check'}
+            </Button>
+          </div>
+          <p className="text-xs text-panel-muted">
+            Downloads the release artifact, verifies it, swaps it in via the root helper, and
+            restarts the panel. The game server keeps running.
+          </p>
+        </div>
+      ) : (
+        <div className="flex items-center gap-3">
+          <Badge tone="good">up to date</Badge>
+          <span className="text-xs text-panel-muted">
+            last checked {info.checkedAtMs ? formatDateTime(info.checkedAtMs) : 'never'}
+          </span>
+          <Button variant="ghost" disabled={checking} onClick={() => check(true)}>
+            {checking ? <Spinner /> : 'Check now'}
+          </Button>
+        </div>
+      )}
+    </Card>
   )
 }

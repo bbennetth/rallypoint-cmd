@@ -2,6 +2,7 @@ import {
   backupsResponseSchema,
   errorEnvelopeSchema,
   longOpSchema,
+  panelUpdateInfoSchema,
   playersResponseSchema,
   restorePreviewSchema,
   scheduleSchema,
@@ -14,6 +15,7 @@ import {
   type Backup,
   type CreateScheduleRequest,
   type LongOp,
+  type PanelUpdateInfo,
   type PlayersResponse,
   type RestorePreview,
   type Schedule,
@@ -131,6 +133,18 @@ export const api = {
   updateState: (): Promise<UpdateState> => request('GET', '/api/updates', updateStateSchema),
   runUpdate: (kind: 'install' | 'update' | 'validate'): Promise<LongOp> =>
     request('POST', '/api/updates/run', longOpSchema, { kind }),
+
+  // panel self-update
+  panelUpdate: (force = false): Promise<PanelUpdateInfo> =>
+    request('GET', `/api/panel/update${force ? '?force=1' : ''}`, panelUpdateInfoSchema),
+  runPanelUpdate: (): Promise<LongOp> =>
+    request('POST', '/api/panel/update/run', longOpSchema),
+  health: (): Promise<{ ok: true; version: string; mode: string }> =>
+    request(
+      'GET',
+      '/api/health',
+      z.object({ ok: z.literal(true), version: z.string(), mode: z.string() }).passthrough(),
+    ),
 
   // backups
   backups: (): Promise<{ backups: Backup[] }> =>

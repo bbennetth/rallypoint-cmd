@@ -12,6 +12,7 @@ import { createRealSteamCmd } from './steamcmd.real.js'
 import { createSettingsService } from './settings-ini.js'
 import { createBackupService } from './backup.js'
 import { createScheduler } from './scheduler.js'
+import { createFakePanelUpdate, createRealPanelUpdate } from './panel-update.js'
 
 // Composition root: picks real vs fake game integrations by PANEL_MODE.
 // LongOpRunner and WorldLock are always real — they're pure in-process
@@ -55,6 +56,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
       settings,
       backup,
       scheduler,
+      panelUpdate: createFakePanelUpdate(env),
       dispose: () => {
         scheduler.stop()
         fakes.dispose()
@@ -80,6 +82,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
     settings,
     backup,
     scheduler,
+    panelUpdate: createRealPanelUpdate({ env, db, logger }),
     dispose: () => {
       scheduler.stop()
       journal.stop()

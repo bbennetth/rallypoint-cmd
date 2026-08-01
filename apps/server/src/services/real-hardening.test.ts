@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parseSystemdTimestamp } from './game-control.real.js'
 import { decideSteamcmdOutcome } from './steamcmd.real.js'
+import { isNewerVersion } from './panel-update.js'
 
 describe('parseSystemdTimestamp', () => {
   it('parses the --timestamp=unix form (@epoch seconds → ms)', () => {
@@ -52,5 +53,25 @@ describe('decideSteamcmdOutcome', () => {
     expect(
       decideSteamcmdOutcome({ code: 1, sawSuccess: false, sawError: false, lastErrorLine: null }),
     ).toMatchObject({ ok: false })
+  })
+})
+
+describe('isNewerVersion (panel self-update)', () => {
+  it('compares semver tags with or without the v prefix', () => {
+    expect(isNewerVersion('v0.1.0', 'v0.2.0')).toBe(true)
+    expect(isNewerVersion('0.1.0', 'v0.1.1')).toBe(true)
+    expect(isNewerVersion('v0.2.0', 'v0.1.9')).toBe(false)
+    expect(isNewerVersion('v1.0.0', 'v1.0.0')).toBe(false)
+    expect(isNewerVersion('v0.9.9', 'v1.0.0')).toBe(true)
+  })
+
+  it('treats a -dev build as its base version (same release is not an update)', () => {
+    expect(isNewerVersion('0.1.0-dev', 'v0.1.0')).toBe(false)
+    expect(isNewerVersion('0.1.0-dev', 'v0.1.1')).toBe(true)
+  })
+
+  it('falls back to string inequality for unparseable versions', () => {
+    expect(isNewerVersion('main', 'v1.0.0')).toBe(true)
+    expect(isNewerVersion('abc', 'abc')).toBe(false)
   })
 })

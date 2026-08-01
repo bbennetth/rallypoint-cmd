@@ -4,6 +4,7 @@ import type { LongOpRunner } from './long-op.js'
 import type { SettingsService } from './settings-ini.js'
 import type { BackupService } from './backup.js'
 import type { SchedulerService } from './scheduler.js'
+import type { PanelUpdateService } from './panel-update.js'
 
 // Every game-facing integration is an interface with a real (LXC) and a
 // fake (laptop/e2e) implementation, chosen by PANEL_MODE in compose.ts.
@@ -69,4 +70,5 @@ export interface Services {
   settings: SettingsService
   backup: BackupService
   scheduler: SchedulerService
+  panelUpdate: PanelUpdateService
 }

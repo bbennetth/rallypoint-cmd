@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { api } from './lib/api.js'
 import { useAuth } from './lib/auth.js'
 import { Spinner } from './ui/primitives.js'
 import { LoginPage } from './routes/Login.js'
@@ -24,6 +26,15 @@ const NAV = [
 function Shell({ children }: { children: React.ReactNode }) {
   const { session, logout } = useAuth()
   const navigate = useNavigate()
+  // Daily update check (server-side cached): show a subtle badge on the
+  // Updates nav item when a newer release exists. Best-effort only.
+  const [updateAvailable, setUpdateAvailable] = useState(false)
+  useEffect(() => {
+    api
+      .panelUpdate(false)
+      .then((info) => setUpdateAvailable(info.updateAvailable))
+      .catch(() => {})
+  }, [])
   return (
     <div className="min-h-full">
       <header className="border-b border-panel-border bg-panel-surface/60 backdrop-blur">
@@ -46,6 +57,12 @@ function Shell({ children }: { children: React.ReactNode }) {
                 }
               >
                 {n.label}
+                {n.to === '/updates' && updateAvailable && (
+                  <span
+                    className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-panel-warn align-middle"
+                    title="Panel update available"
+                  />
+                )}
               </NavLink>
             ))}
           </nav>

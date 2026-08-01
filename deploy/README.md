@@ -37,9 +37,21 @@ deploy/update-panel.sh            # optional: workstation -> CT push for local d
 
 ## Updating
 
-**Re-run the same one-liner _inside_ the CT.** It detects `/etc/rallypoint-cmd/panel.env` and
-switches to update mode: `git reset --hard`, `npm ci`, `npm run build`, restart the panel. **The
-Palworld game process keeps running.**
+**From the panel (preferred):** Updates → the **Rallypoint** card. The panel checks GitHub
+Releases daily (badge on the Updates tab when one is available); clicking Update downloads the
+prebuilt release artifact, verifies it, and applies it via the pinned root helper
+(`/usr/local/bin/rallypoint-cmd-apply-update`, whitelisted in sudoers — the helper validates its
+argument and `/opt/rallypoint-cmd` stays root-owned read-only). The panel restarts itself; the
+game keeps running. Releases are cut by tagging (`git tag v0.2.0 && git push --tags` →
+`.github/workflows/release.yml` builds + attaches the artifact).
+
+> Existing CTs installed before the self-update feature need ONE git-based update (below) to
+> receive the helper + sudoers line; after that, updates are clickable.
+
+**Git-based:** re-run the same one-liner _inside_ the CT. It detects
+`/etc/rallypoint-cmd/panel.env` and switches to update mode: `git reset --hard`, `npm ci`,
+`npm run build`, refresh helper+sudoers, restart the panel. **The Palworld game process keeps
+running.**
 
 ```bash
 pct enter <ctid>

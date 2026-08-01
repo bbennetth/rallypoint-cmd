@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# rallypoint-cmd-apply-update — pinned root helper for panel self-update.
+#
+# Installed at /usr/local/bin/rallypoint-cmd-apply-update (root:root 0755)
+# and whitelisted in /etc/sudoers.d/rallypoint-cmd. The panel (running as
+# the unprivileged `palworld` user) downloads + verifies a release
+# artifact into its staging dir, then invokes this to do the privileged
+# part: swap /opt/rallypoint-cmd, install prod deps, restore read-only
+# ownership, restart the service.
+#
+# Usage: rallypoint-cmd-apply-update <extracted-artifact-dir>
+
+set -euo pipefail
+
+STAGED="${1:?usage: rallypoint-cmd-apply-update <extracted-artifact-dir>}"
+APP_DIR=/opt/rallypoint-cmd
+DATA_DIR=/var/lib/rallypoint-cmd
+
+# --- validate the argument: must be a real dir inside the panel's data
+# dir (the only place the panel can write), containing a release.json.
+STAGED="$(realpath "$STAGED")"
+case "$STAGED" in
+  "$DATA_DIR"/*) ;;
+  *) echo "refusing: staged dir must be inside $DATA_DIR" >&2; exit 1 ;;
+esac
+[[ -f "$STAGED/release.json" ]] || { echo "refusing: no release.json in $STAGED" >&2; exit 1; }
+[[ -f "$STAGED/apps/server/dist/server.js" ]] || { echo "refusing: artifact has no server dist" >&2; exit 1; }
+[[ -f "$STAGED/apps/web/dist/index.html" ]] || { echo "refusing: artifact has no web dist" >&2; exit 1; }
+
+VERSION="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$STAGED/release.json" | head -n1)"
+echo "[apply-update] applying ${VERSION:-unknown} from $STAGED"
+
+# --- swap: rsync the artifact over the app dir (deleting removed files
+# but preserving .git so git-based updates keep working), then prod deps.
+rsync -a --delete --exclude=.git --exclude=node_modules "$STAGED"/ "$APP_DIR"/
+cd "$APP_DIR"
+npm ci --omit=dev --no-audit --no-fund
+
+# --- restore the security posture: root-owned, group-readable, not writable.
+chown -R root:palworld "$APP_DIR"
+chmod -R g-w "$APP_DIR"
+
+# --- restart the panel (this kills the invoking process's parent — fine).
+systemctl restart rallypoint-cmd.service
+echo "[apply-update] done — rallypoint-cmd restarted on ${VERSION:-unknown}"

@@ -1,5 +1,22 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import { z } from 'zod'
+
+// Release artifacts ship a release.json at the repo root ({version,
+// commit, builtAt}); when present it is the authoritative panel version.
+// Dev/git checkouts have none and fall back to the npm package version
+// with a -dev suffix (compared as its base version by the update check).
+function readReleaseVersion(): string | null {
+  for (const p of [path.resolve('release.json'), path.resolve('../../release.json')]) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(p, 'utf8')) as { version?: string }
+      if (typeof parsed.version === 'string' && parsed.version) return parsed.version
+    } catch {
+      // missing/unreadable — keep looking
+    }
+  }
+  return null
+}
 
 // Typed environment. Parsed once at boot (server.ts) and injected via
 // context — handlers never read process.env directly.
@@ -120,6 +137,6 @@ export function parseEnv(raw: NodeJS.ProcessEnv): Env {
     SESSION_COOKIE_NAME: cookieSecure ? '__Host-rp_session' : 'rp_session',
     CSRF_COOKIE_NAME: cookieSecure ? '__Host-rp_csrf' : 'rp_csrf',
     TRUSTED_PROXY: parsed.TRUSTED_PROXY,
-    PANEL_VERSION: raw.npm_package_version ?? '0.1.0',
+    PANEL_VERSION: readReleaseVersion() ?? `${raw.npm_package_version ?? '0.1.0'}-dev`,
   }
 }

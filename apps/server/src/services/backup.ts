@@ -30,6 +30,10 @@ import { resolveWorldId, saveDirFor } from './world.js'
 
 const HEX32 = /^[0-9A-Fa-f]{32}$/
 const MAX_ENTRIES = 20_000
+// Palworld's own rotating in-save backups (bIsUseBackupSaveData=True).
+// Not world state: excluded from our archives, and the main reason a
+// naive recursive copy of a LIVE save dir crashes (files vanish mid-copy).
+export const PAL_INTERNAL_BACKUP_DIRS = ['backup'] as const
 
 // Pure, directly-unit-tested path guard: reject absolute paths and any
 // `..` component (zip-slip). Used by both the validation pass and the
@@ -136,6 +140,70 @@ interface BackupDeps {
   steamcmd: SteamCmd
 }
 
+// Walk a directory tree, tolerating live-server churn (vanished dirs and
+// files are skipped, not fatal). `excludeTopDirs` prunes top-level dirs —
+// used to keep Palworld's rotating `backup/` out of our archives.
+// Module-scope + exported for direct unit testing.
+export function walkFiles(
+  root: string,
+  prefix = '',
+  excludeTopDirs: readonly string[] = [],
+): { rel: string; abs: string; size: number }[] {
+  const out: { rel: string; abs: string; size: number }[] = []
+  let entries: fs.Dirent[]
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true })
+  } catch {
+    return out // dir vanished mid-walk (live server churn)
+  }
+  for (const entry of entries) {
+    if (prefix === '' && entry.isDirectory() && excludeTopDirs.includes(entry.name)) continue
+    const abs = path.join(root, entry.name)
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name
+    if (entry.isDirectory()) out.push(...walkFiles(abs, rel))
+    else if (entry.isFile()) {
+      try {
+        out.push({ rel, abs, size: fs.statSync(abs).size })
+      } catch {
+        // file vanished between readdir and stat — skip
+      }
+    }
+  }
+  return out
+}
+
+// Copy a live save tree file-by-file, tolerating churn: a running
+// Palworld server rotates files (esp. its own `backup/` zips, which we
+// exclude entirely — they're the game's internal backups, not world
+// state). fs.cpSync(recursive) aborts on the first ENOENT; this walks
+// and skips vanished files instead. Exported for direct unit testing.
+export function copySaveTree(
+  srcRoot: string,
+  destRoot: string,
+  onProgress?: (copiedBytes: number, totalBytes: number) => void,
+): { copiedBytes: number; skipped: string[] } {
+  const files = walkFiles(srcRoot, '', PAL_INTERNAL_BACKUP_DIRS)
+  const totalBytes = files.reduce((a, f) => a + f.size, 0)
+  let copiedBytes = 0
+  const skipped: string[] = []
+  for (const f of files) {
+    const dest = path.join(destRoot, f.rel)
+    fs.mkdirSync(path.dirname(dest), { recursive: true })
+    try {
+      fs.copyFileSync(f.abs, dest)
+      copiedBytes += f.size
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        skipped.push(f.rel) // vanished mid-copy; world state files don't do this, churn files do
+      } else {
+        throw err
+      }
+    }
+    onProgress?.(copiedBytes, totalBytes)
+  }
+  return { copiedBytes, skipped }
+}
+
 export function createBackupService(deps: BackupDeps): BackupService {
   const { env, db, logger } = deps
   const stagingRoot = path.join(env.DATA_DIR, 'staging')
@@ -165,29 +233,21 @@ export function createBackupService(deps: BackupDeps): BackupService {
     return hash.digest('hex')
   }
 
-  function walkFiles(root: string, prefix = ''): { rel: string; abs: string; size: number }[] {
-    const out: { rel: string; abs: string; size: number }[] = []
-    for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-      const abs = path.join(root, entry.name)
-      const rel = prefix ? `${prefix}/${entry.name}` : entry.name
-      if (entry.isDirectory()) out.push(...walkFiles(abs, rel))
-      else if (entry.isFile()) out.push({ rel, abs, size: fs.statSync(abs).size })
-    }
-    return out
-  }
-
   return {
     async create(kind, sink): Promise<Backup> {
       const say = (line: string): void => sink?.line(line)
+      const pct = (n: number): void => sink?.progress(n)
       const worldId = resolveWorldId(env.PAL_DIR)
       if (!worldId) throw new BackupError('No world found to back up.', 'no_world')
       const saveDir = saveDirFor(env.PAL_DIR, worldId)
 
       // Disk floor: project roughly the save dir size (compressed will be
-      // smaller; copy + archive both live on disk briefly).
-      const saveFiles = walkFiles(saveDir)
+      // smaller; copy + archive both live on disk briefly). Excludes the
+      // game's internal backup/ dir — we don't archive it.
+      const saveFiles = walkFiles(saveDir, '', PAL_INTERNAL_BACKUP_DIRS)
       const saveBytes = saveFiles.reduce((a, f) => a + f.size, 0)
       await assertDiskFloor(env.BACKUP_DIR, saveBytes * 2, env.DISK_FLOOR_BYTES)
+      pct(2)
 
       // Best-effort flush; a cold backup (game down) is fine too.
       say('[backup] Requesting world save via REST...')
@@ -204,16 +264,24 @@ export function createBackupService(deps: BackupDeps): BackupService {
       const archiveRoot = path.join(stageDir, 'root')
       try {
         // 1. Copy-then-archive so a live server can't tear files mid-tar.
+        // Churn-tolerant: skips the game's own backup/ dir and files that
+        // vanish mid-copy instead of aborting (progress: 2 → 40).
         say('[backup] Copying save data...')
         const stagedSave = path.join(archiveRoot, 'SaveGames', '0', worldId)
         fs.mkdirSync(path.dirname(stagedSave), { recursive: true })
-        fs.cpSync(saveDir, stagedSave, { recursive: true })
+        const { skipped } = copySaveTree(saveDir, stagedSave, (done, total) => {
+          if (total > 0) pct(2 + (done / total) * 38)
+        })
+        if (skipped.length > 0) {
+          say(`[backup] Skipped ${skipped.length} file(s) that changed mid-copy (server is live).`)
+        }
         for (const ini of [PAL_SETTINGS_INI, PAL_GAME_USER_SETTINGS_INI]) {
           const src = path.join(env.PAL_DIR, ini)
           if (fs.existsSync(src)) fs.copyFileSync(src, path.join(archiveRoot, path.basename(ini)))
         }
+        pct(40)
 
-        // 2. Manifest with per-file hashes.
+        // 2. Manifest with per-file hashes (progress: 40 → 75).
         say('[backup] Hashing files + writing manifest...')
         const files = walkFiles(archiveRoot)
         const manifest: BackupManifest = {
@@ -222,17 +290,23 @@ export function createBackupService(deps: BackupDeps): BackupService {
           worldId,
           buildId: await deps.steamcmd.installedBuildId(),
           panelVersion: env.PANEL_VERSION,
-          files: await Promise.all(
-            files.map(async (f) => ({
-              path: f.rel,
-              sizeBytes: f.size,
-              sha256: await sha256File(f.abs),
-            })),
-          ),
+          files: await (async () => {
+            const out: BackupManifest['files'] = []
+            const totalHashBytes = files.reduce((a, f) => a + f.size, 0) || 1
+            let hashed = 0
+            for (const f of files) {
+              out.push({ path: f.rel, sizeBytes: f.size, sha256: await sha256File(f.abs) })
+              hashed += f.size
+              pct(40 + (hashed / totalHashBytes) * 35)
+            }
+            return out
+          })(),
         }
         fs.writeFileSync(path.join(archiveRoot, 'manifest.json'), JSON.stringify(manifest, null, 2))
+        pct(75)
 
-        // 3. Tar to a temp file IN BACKUP_DIR (same fs) then atomic rename.
+        // 3. Tar to a temp file IN BACKUP_DIR (same fs) then atomic rename
+        // (progress: 75 → 95 on completion; tar has no per-byte callback).
         const stamp = new Date().toISOString().replace(/[:]/g, '-').replace(/\.\d+Z$/, 'Z')
         const filename = `palworld-${worldId.slice(0, 8)}-${stamp}.tar.gz`
         fs.mkdirSync(env.BACKUP_DIR, { recursive: true })
@@ -242,11 +316,13 @@ export function createBackupService(deps: BackupDeps): BackupService {
           { gzip: true, cwd: archiveRoot, file: tmpFile, portable: true },
           fs.readdirSync(archiveRoot),
         )
+        pct(95)
         const finalPath = path.join(env.BACKUP_DIR, filename)
         fs.renameSync(tmpFile, finalPath)
 
         const stat = fs.statSync(finalPath)
         const digest = await sha256File(finalPath)
+        pct(100)
         const id = ulid()
         db.insert(backups)
           .values({
@@ -396,6 +472,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
 
     async restore(stagingId, confirm, sink): Promise<void> {
       const say = (line: string): void => sink.line(line)
+      const pct = (n: number): void => sink.progress(n)
       if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(stagingId)) {
         throw new BackupError('Invalid staging id.', 'staging_missing')
       }
@@ -427,12 +504,14 @@ export function createBackupService(deps: BackupDeps): BackupService {
         statusBefore.activeState === 'active' || statusBefore.activeState === 'activating'
 
       // 1. Stop the game — never swap saves under a running server.
+      pct(5)
       if (wasActive) {
         say('[restore] Stopping palworld.service...')
         await deps.gameControl.stop()
         const stopped = await deps.gameControl.waitFor('inactive', 120_000)
         if (!stopped) throw new BackupError('Game did not stop within 120s.', 'restore_failed')
       }
+      pct(20)
 
       // 2. Snapshot current saves aside for rollback (atomic rename).
       const rollbackDir = path.join(rollbackRoot, ulid())
@@ -445,6 +524,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
           say(`[restore] Moving current world aside → ${path.basename(rollbackDir)}/`)
           fs.renameSync(liveWorldDir, rollbackWorldDir)
         }
+        pct(35)
 
         // 3. Swap staged world in (rename — same fs? staging lives in
         // DATA_DIR which may be another fs; fall back to copy).
@@ -454,6 +534,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
         } catch {
           fs.cpSync(stagedWorldDir, liveWorldDir, { recursive: true })
         }
+        pct(55)
 
         // 4. Point DedicatedServerName at the restored world if it moved.
         const gusPath = path.join(env.PAL_DIR, PAL_GAME_USER_SETTINGS_INI)
@@ -470,12 +551,14 @@ export function createBackupService(deps: BackupDeps): BackupService {
         }
 
         // 5. Restart + verify.
+        pct(70)
         if (wasActive) {
           say('[restore] Starting palworld.service...')
           await deps.gameControl.start()
           const up = await deps.gameControl.waitFor('active', 180_000)
           if (!up) throw new BackupError('Game failed to come back up after restore.', 'restore_failed')
         }
+        pct(100)
         say('[restore] Restore complete.')
         logger.info('restore complete', { stagingId, worldId: targetWorldId })
         // Keep the rollback snapshot for manual recovery; prune later.

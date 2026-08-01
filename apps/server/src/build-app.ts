@@ -19,6 +19,7 @@ import { updateRoutes } from './routes/updates.js'
 import { settingsRoutes } from './routes/settings.js'
 import { backupRoutes } from './routes/backups.js'
 import { scheduleRoutes } from './routes/schedules.js'
+import { panelUpdateRoutes } from './routes/panel-update.js'
 import { createSpaRoutes } from './routes/spa.js'
 import fs from 'node:fs'
 
@@ -85,6 +86,7 @@ export function buildApp(deps: BuildAppDeps): Hono<HonoApp> {
   app.route('/', settingsRoutes)
   app.route('/', backupRoutes)
   app.route('/', scheduleRoutes)
+  app.route('/', panelUpdateRoutes)
 
   // Serve the built SPA in production (mounted last so it never shadows
   // /api or SSE). In dev this is unset and Vite serves the frontend.

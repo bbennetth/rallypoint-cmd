@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { longOpSchema, type LongOp } from '@rallypoint-cmd/shared'
 
 // Subscribe to an SSE endpoint. Buffers the last `max` lines of a given
 // event name. Auto-reconnects (EventSource does this natively). `enabled`
@@ -68,4 +69,47 @@ export function useSseUpdates(url: string, enabled: boolean) {
     setProgress(null)
     setDone(null)
   } }
+}
+
+// Follow a running long-op over the shared /api/updates/stream SSE:
+// progress pct, latest log line, and — crucially — the op's final status
+// and error (the `done` event carries the full LongOp as JSON). This is
+// what surfaces server-side backup/restore failures in the UI instead of
+// letting them die silently.
+export function useLongOp(enabled: boolean): {
+  progress: number | null
+  lastLine: string | null
+  doneOp: LongOp | null
+  reset: () => void
+} {
+  const [progress, setProgress] = useState<number | null>(null)
+  const [lastLine, setLastLine] = useState<string | null>(null)
+  const [doneOp, setDoneOp] = useState<LongOp | null>(null)
+
+  useEffect(() => {
+    if (!enabled) return
+    setDoneOp(null)
+    const es = new EventSource('/api/updates/stream', { withCredentials: true })
+    es.addEventListener('log', (ev) => setLastLine((ev as MessageEvent).data as string))
+    es.addEventListener('progress', (ev) => setProgress(Number((ev as MessageEvent).data)))
+    es.addEventListener('done', (ev) => {
+      try {
+        setDoneOp(longOpSchema.parse(JSON.parse((ev as MessageEvent).data as string)))
+      } catch {
+        setDoneOp(null)
+      }
+    })
+    return () => es.close()
+  }, [enabled])
+
+  return {
+    progress,
+    lastLine,
+    doneOp,
+    reset: () => {
+      setProgress(null)
+      setLastLine(null)
+      setDoneOp(null)
+    },
+  }
 }

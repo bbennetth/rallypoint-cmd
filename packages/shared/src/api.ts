@@ -94,7 +94,7 @@ export type UnbanRequest = z.infer<typeof unbanRequestSchema>
 // ---------------------------------------------------------------------------
 // Long-running operations (steamcmd install/update, restore)
 
-export const longOpKindSchema = z.enum(['install', 'update', 'validate', 'restore', 'backup'])
+export const longOpKindSchema = z.enum(['install', 'update', 'validate', 'restore', 'backup', 'panel_update'])
 export type LongOpKind = z.infer<typeof longOpKindSchema>
 
 export const longOpStatusSchema = z.enum(['running', 'succeeded', 'failed'])
@@ -133,3 +133,16 @@ export const SSE_EVENTS = {
   done: 'done',
   ping: 'ping',
 } as const
+
+// --- panel self-update (GitHub Releases) -----------------------------------
+
+export const panelUpdateInfoSchema = z.object({
+  current: z.string(),
+  latest: z.string().nullable(),
+  updateAvailable: z.boolean(),
+  publishedAt: z.string().nullable(),
+  notes: z.string().nullable(),
+  // Epoch ms of the last successful GitHub check; null if never checked.
+  checkedAtMs: z.number().int().nonnegative().nullable(),
+})
+export type PanelUpdateInfo = z.infer<typeof panelUpdateInfoSchema>

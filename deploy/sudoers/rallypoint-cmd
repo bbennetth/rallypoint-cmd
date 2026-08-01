@@ -12,5 +12,8 @@ palworld ALL=(root) NOPASSWD: /usr/bin/systemctl start palworld.service
 palworld ALL=(root) NOPASSWD: /usr/bin/systemctl stop palworld.service
 palworld ALL=(root) NOPASSWD: /usr/bin/systemctl restart palworld.service
 palworld ALL=(root) NOPASSWD: /usr/bin/journalctl -u palworld.service -n 500 -o cat -f
+# Panel self-update: pinned root helper (validates its argument is inside
+# /var/lib/rallypoint-cmd before touching anything).
+palworld ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-apply-update *
 
 Defaults:palworld !requiretty
