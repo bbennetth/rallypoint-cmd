@@ -32,19 +32,17 @@ unit_name() {
   echo "playit.service"
 }
 
-secret_file() {
-  # `playit secret-path` prints the secret location; tolerate failure.
-  runuser -u playit -- playit secret-path 2>/dev/null \
-    || playit secret-path 2>/dev/null \
-    || echo /etc/playit/playit.toml
-}
+# The packaged systemd unit runs playitd with a fixed secret path
+# (`ExecStart=... --secret-path /etc/playit/playit.toml`). `playit
+# secret-path` can't be used to discover it: since the daemon split it
+# answers over the playitd socket, which requires the service to already
+# be running.
+SECRET_FILE=/etc/playit/playit.toml
 
 is_installed() { command -v playit >/dev/null 2>&1; }
 
 is_claimed() {
-  local f
-  f="$(secret_file)"
-  [[ -f "$f" ]] && grep -q 'secret_key' "$f" 2>/dev/null
+  [[ -f "$SECRET_FILE" ]] && grep -q 'secret_key' "$SECRET_FILE" 2>/dev/null
 }
 
 case "$VERB" in
@@ -63,9 +61,22 @@ case "$VERB" in
     CODE="${2:-}"
     [[ "$CODE" =~ ^[a-z0-9]{4,64}$ ]] || { echo "invalid claim code" >&2; exit 1; }
     is_installed || { echo "playit is not installed" >&2; exit 1; }
-    # Blocks until the user approves the claim in their browser (or times out).
-    playit claim exchange "$CODE" --wait 300
-    systemctl enable --now "$(unit_name)"
+    # Blocks until the user approves the claim in their browser (or times
+    # out). `claim exchange` only PRINTS the secret (progress lines first,
+    # secret on the last line) — persisting it where playitd reads it is
+    # on us; only the interactive `playit setup` flow does it itself.
+    OUT="$(playit claim exchange "$CODE" --wait 300)"
+    SECRET="$(tail -n1 <<<"$OUT" | tr -d '[:space:]')"
+    [[ "$SECRET" =~ ^[A-Za-z0-9]{32,128}$ ]] \
+      || { echo "claim exchange did not return a secret" >&2; exit 1; }
+    install -d -m 0750 -o playit -g playit "$(dirname "$SECRET_FILE")"
+    (umask 077; printf 'secret_key = "%s"\n' "$SECRET" > "$SECRET_FILE")
+    chown playit:playit "$SECRET_FILE"
+    chmod 0600 "$SECRET_FILE"
+    systemctl enable "$(unit_name)" >/dev/null 2>&1
+    # restart, not `enable --now`: a daemon left running without a secret
+    # (WaitingForSecret) won't re-read the file on its own.
+    systemctl restart "$(unit_name)"
     echo "claimed and started"
     ;;
 
@@ -80,12 +91,14 @@ case "$VERB" in
   secret)
     is_claimed || { echo "not claimed" >&2; exit 1; }
     # Print ONLY the secret value (strip toml key syntax + quotes).
-    grep 'secret_key' "$(secret_file)" | head -n1 | sed -E 's/.*=\s*"?([A-Za-z0-9]+)"?\s*$/\1/'
+    grep 'secret_key' "$SECRET_FILE" | head -n1 | sed -E 's/.*=\s*"?([A-Za-z0-9]+)"?\s*$/\1/'
     ;;
 
   reset)
+    # `playit reset` needs the daemon socket, which we're about to stop —
+    # removing the secret file directly is equivalent for the packaged unit.
     systemctl disable --now "$(unit_name)" >/dev/null 2>&1 || true
-    playit reset >/dev/null 2>&1 || rm -f "$(secret_file)"
+    rm -f "$SECRET_FILE"
     echo "reset"
     ;;
 

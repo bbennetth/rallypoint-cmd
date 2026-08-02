@@ -248,8 +248,9 @@ export function createRealPublicAccess(deps: Deps): PublicAccessService {
         sink.line('[public-access] Waiting for approval (up to 5 minutes)...')
         sink.progress(30)
         try {
-          // Blocks until approved (helper runs `claim exchange --wait 300`
-          // as root so the secret lands in the system path), then starts.
+          // Blocks until approved (helper runs `claim exchange --wait 300`,
+          // writes the returned secret to /etc/playit/playit.toml — the CLI
+          // only prints it — and restarts the agent).
           const claim = await helper('claim', code)
           if (!claim.ok) throw new Error('Claim was not approved in time — try again.')
         } finally {
