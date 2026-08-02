@@ -38,6 +38,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
       gameControl: fakes.gameControl,
       palRest: fakes.palRest,
       steamcmd: fakes.steamcmd,
+      settings,
     })
     backup.pruneStaging()
     const scheduler = createScheduler({
@@ -69,7 +70,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
   const gameControl = createRealGameControl(env, logger)
   const palRest = createRealPalRest(env, logger)
   const steamcmd = createRealSteamCmd(env, logger)
-  const backup = createBackupService({ env, db, logger, gameControl, palRest, steamcmd })
+  const backup = createBackupService({ env, db, logger, gameControl, palRest, steamcmd, settings })
   backup.pruneStaging()
   const scheduler = createScheduler({ env, db, logger, gameControl, palRest, backup, worldLock })
   return {

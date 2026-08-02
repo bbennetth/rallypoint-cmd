@@ -8,6 +8,7 @@ import { runMigrations } from '../db/migrate.js'
 import type { Env } from '../env.js'
 import { buildLogger } from '../logger.js'
 import { createFakeServices } from './fake/index.js'
+import { createSettingsService } from './settings-ini.js'
 import {
   classifyEntry,
   copySaveTree,
@@ -88,6 +89,7 @@ beforeEach(async () => {
     gameControl: fakes.gameControl,
     palRest: fakes.palRest,
     steamcmd: fakes.steamcmd,
+    settings: createSettingsService(env, db),
   })
 })
 
@@ -337,6 +339,23 @@ describe('restore happy path + rollback', () => {
     const rollbackRoot = path.join(env.DATA_DIR, 'rollback')
     expect(fs.existsSync(rollbackRoot)).toBe(true)
     expect(fs.readdirSync(rollbackRoot).length).toBeGreaterThan(0)
+  })
+
+  it('restore imports the archived server settings (backup ini wins over later edits)', async () => {
+    const backup = await service.create('manual', noopSink)
+    // Mutate the live settings AFTER the backup, as a user would.
+    const iniPath = path.join(env.PAL_DIR, 'Pal/Saved/Config/LinuxServer/PalWorldSettings.ini')
+    fs.writeFileSync(
+      iniPath,
+      fs.readFileSync(iniPath, 'utf8').replace('"Fake Palworld Server"', '"Mutated After Backup"'),
+    )
+    const preview = await service.stageUpload(bodyOf(path.join(env.BACKUP_DIR, backup.filename)))
+    await service.restore(preview.stagingId, WORLD, noopSink)
+    const after = fs.readFileSync(iniPath, 'utf8')
+    expect(after).toContain('"Fake Palworld Server"') // archived value restored
+    expect(after).not.toContain('"Mutated After Backup"')
+    expect(after).toContain('RESTAPIEnabled=True') // invariants still enforced
+    expect(after).toContain('RCONEnabled=False')
   })
 
   it('refuses restore when the confirmation text is wrong', async () => {

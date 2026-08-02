@@ -208,7 +208,9 @@ function RestoreDialog({
         <div className="space-y-3 text-sm">
           <p className="text-panel-muted">
             This will <span className="text-panel-bad">stop the server</span> and replace the current
-            world with the uploaded backup. The current world is snapshotted first for rollback.
+            world with the uploaded backup. The current world is snapshotted first for rollback. If
+            the backup includes server settings (PalWorldSettings.ini) they are imported too —
+            panel-managed keys (REST API, RCON, admin password) stay under panel control.
           </p>
           <dl className="space-y-1 rounded-lg bg-panel-surface-2 p-3 text-xs">
             <Row k="Backup world" v={preview.manifest.worldId} />

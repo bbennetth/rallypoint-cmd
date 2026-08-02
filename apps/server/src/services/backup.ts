@@ -13,6 +13,7 @@ import type { Env } from '../env.js'
 import type { Logger } from '../logger.js'
 import { backups } from '../db/schema/index.js'
 import type { GameControl, OpSink, PalRest, SteamCmd } from './types.js'
+import type { SettingsService } from './settings-ini.js'
 import { PAL_GAME_USER_SETTINGS_INI, PAL_SAVE_ROOT, PAL_SETTINGS_INI } from './constants.js'
 import { assertDiskFloor } from './disk.js'
 import { resolveWorldId, saveDirFor } from './world.js'
@@ -138,6 +139,7 @@ interface BackupDeps {
   gameControl: GameControl
   palRest: PalRest
   steamcmd: SteamCmd
+  settings: SettingsService
 }
 
 // Walk a directory tree, tolerating live-server churn (vanished dirs and
@@ -565,13 +567,34 @@ export function createBackupService(deps: BackupDeps): BackupService {
           }
         }
 
-        // 5. Restart + verify.
+        // 4b. Import the archived server settings, if the backup carried
+        // them. writeRaw round-trips through the tuple parser and
+        // re-enforces the panel invariants (REST on + panel-managed
+        // AdminPassword, RCON off) — an imported ini can never lock the
+        // panel out of the game. Best-effort: a malformed ini shouldn't
+        // sink an otherwise-good world restore.
+        const archivedIni = path.join(extractDir, 'PalWorldSettings.ini')
+        if (fs.existsSync(archivedIni)) {
+          try {
+            deps.settings.writeRaw(fs.readFileSync(archivedIni, 'utf8'))
+            say('[restore] Imported server settings from the backup (panel-managed keys re-enforced).')
+          } catch (err) {
+            say(
+              `[restore] Backup contained PalWorldSettings.ini but it failed to parse — keeping current settings (${err instanceof Error ? err.message : String(err)}).`,
+            )
+          }
+        }
+        pct(65)
+
+        // 5. Restart + verify. The (re)start applies any imported ini, so
+        // the pending-restart banner would be stale — clear it.
         pct(70)
         if (wasActive) {
           say('[restore] Starting palworld.service...')
           await deps.gameControl.start()
           const up = await deps.gameControl.waitFor('active', 180_000)
           if (!up) throw new BackupError('Game failed to come back up after restore.', 'restore_failed')
+          deps.settings.clearPendingRestart()
         }
         pct(100)
         say('[restore] Restore complete.')

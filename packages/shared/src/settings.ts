@@ -55,6 +55,11 @@ export const PAL_KEY_SPECS: Record<string, PalKeySpec> = {
 
   // Difficulty / rates
   Difficulty: { kind: 'enum', enumValues: ['None', 'Normal', 'Difficult'], label: 'Difficulty' },
+  RandomizerType: { kind: 'enum', enumValues: ['None', 'Region', 'All'], label: 'Randomizer' },
+  RandomizerSeed: { kind: 'string', label: 'Randomizer seed' },
+  bIsRandomizerPalLevelRandom: { kind: 'bool', label: 'Randomize Pal levels' },
+  ItemWeightRate: { kind: 'float', label: 'Item weight' },
+  AutoSaveSpan: { kind: 'float', label: 'Auto-save interval (s)' },
   DayTimeSpeedRate: { kind: 'float', label: 'Day speed' },
   NightTimeSpeedRate: { kind: 'float', label: 'Night speed' },
   ExpRate: { kind: 'float', label: 'XP rate' },
@@ -76,6 +81,7 @@ export const PAL_KEY_SPECS: Record<string, PalKeySpec> = {
   SupplyDropSpan: { kind: 'int', label: 'Supply drop interval (min)' },
 
   // Building / world
+  BuildObjectHpRate: { kind: 'float', label: 'Structure HP' },
   BuildObjectDamageRate: { kind: 'float', label: 'Structure damage' },
   BuildObjectDeteriorationDamageRate: { kind: 'float', label: 'Structure decay' },
   CollectionDropRate: { kind: 'float', label: 'Gather drop rate' },
@@ -110,9 +116,16 @@ export const PAL_KEY_SPECS: Record<string, PalKeySpec> = {
   bExistPlayerAfterLogout: { kind: 'bool', label: 'Body persists on logout' },
   bEnableDefenseOtherGuildPlayer: { kind: 'bool', label: 'Defend vs other guilds' },
   bIsUseBackupSaveData: { kind: 'bool', label: 'Game-native save backup' },
+  bHardcore: { kind: 'bool', label: 'Hardcore mode' },
+  bPalLost: { kind: 'bool', label: 'Pals lost on death' },
+  bCharacterRecreateInHardcore: { kind: 'bool', label: 'Hardcore char recreate' },
+  bInvisibleOtherGuildBaseCampAreaFX: { kind: 'bool', label: 'Hide other-guild base FX' },
+  bBuildAreaLimit: { kind: 'bool', label: 'Limit build area' },
+  ChatPostLimitPerMinute: { kind: 'int', label: 'Chat msgs/min limit' },
 
   // Guilds
   GuildPlayerMaxNum: { kind: 'int', label: 'Max guild members' },
+  BaseCampMaxNumInGuild: { kind: 'int', label: 'Max bases per guild' },
   bAutoResetGuildNoOnlinePlayers: { kind: 'bool', label: 'Auto-reset idle guilds' },
   AutoResetGuildTimeNoOnlinePlayers: { kind: 'float', label: 'Idle guild reset (h)' },
 }
