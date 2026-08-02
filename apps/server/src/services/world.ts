@@ -49,6 +49,11 @@ export function resolveWorldId(palDir: string): string | null {
 function findDirCaseInsensitive(saveRoot: string, worldId: string): string | null {
   try {
     const entries = fs.readdirSync(saveRoot, { withFileTypes: true })
+    // Prefer the exact-case dir: when a stray sibling differs only by
+    // case (a fresh world auto-created off a wrongly-cased ini), the
+    // first readdir hit is arbitrary — the exact match is the real one.
+    const exact = entries.find((e) => e.isDirectory() && e.name === worldId)
+    if (exact) return exact.name
     const hit = entries.find((e) => e.isDirectory() && e.name.toLowerCase() === worldId.toLowerCase())
     return hit?.name ?? null
   } catch {

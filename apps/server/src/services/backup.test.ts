@@ -369,6 +369,37 @@ describe('restore happy path + rollback', () => {
     })
   })
 
+  it('writes DedicatedServerName with the EXACT case of the restored world dir', async () => {
+    // The production trap: a lowercased DedicatedServerName on a
+    // case-sensitive fs makes Palworld create a fresh world instead of
+    // loading the restored (uppercase) dir.
+    const backup = await service.create('manual', noopSink)
+    const gusPath = path.join(env.PAL_DIR, 'Pal/Saved/Config/LinuxServer/GameUserSettings.ini')
+    // Point the live ini at a DIFFERENT world id, lowercased, so restore
+    // must rewrite it.
+    fs.writeFileSync(gusPath, 'DedicatedServerName=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n')
+    const preview = await service.stageUpload(bodyOf(path.join(env.BACKUP_DIR, backup.filename)))
+    await service.restore(preview.stagingId, WORLD, noopSink)
+    const gus = fs.readFileSync(gusPath, 'utf8')
+    expect(gus).toContain(`DedicatedServerName=${WORLD}`) // exact UPPERCASE dir name
+    expect(gus).not.toContain(WORLD.toLowerCase())
+  })
+
+  it('restore warns about a case-mismatched sibling save dir', async () => {
+    const backup = await service.create('manual', noopSink)
+    // Simulate the stray world the game auto-created off a lowercased ini.
+    fs.mkdirSync(path.join(env.PAL_DIR, 'Pal/Saved/SaveGames/0', WORLD.toLowerCase()), {
+      recursive: true,
+    })
+    const preview = await service.stageUpload(bodyOf(path.join(env.BACKUP_DIR, backup.filename)))
+    const lines: string[] = []
+    await service.restore(preview.stagingId, WORLD, {
+      line: (l) => lines.push(l),
+      progress: () => {},
+    })
+    expect(lines.some((l) => l.includes('case-mismatched sibling'))).toBe(true)
+  })
+
   it('refuses restore when the game state is indeterminate (systemctl query failed)', async () => {
     const backup = await service.create('manual', noopSink)
     const preview = await service.stageUpload(bodyOf(path.join(env.BACKUP_DIR, backup.filename)))

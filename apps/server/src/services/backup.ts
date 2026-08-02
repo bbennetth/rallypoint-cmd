@@ -574,16 +574,32 @@ export function createBackupService(deps: BackupDeps): BackupService {
         await flush()
 
         // 4. Point DedicatedServerName at the restored world if it moved.
+        // CASE MATTERS: the game joins this string onto the save path
+        // directly, and Linux filesystems are case-sensitive — a
+        // lowercased id pointing at an UPPERCASE dir makes Palworld
+        // silently create a FRESH world under the lowercase name (fresh
+        // world, fresh characters) while the panel keeps showing and
+        // backing up the restored dir. Write the dir's exact name.
         const gusPath = path.join(env.PAL_DIR, PAL_GAME_USER_SETTINGS_INI)
         if (fs.existsSync(gusPath)) {
           const gus = fs.readFileSync(gusPath, 'utf8')
           const updated = gus.replace(
             /DedicatedServerName\s*=\s*[0-9A-Fa-f]{32}/,
-            `DedicatedServerName=${targetWorldId.toLowerCase()}`,
+            `DedicatedServerName=${targetWorldId}`,
           )
           if (updated !== gus) {
             say('[restore] Updating DedicatedServerName to match restored world.')
             fs.writeFileSync(gusPath, updated)
+          }
+        }
+        // A sibling dir differing only by case (e.g. a fresh world the
+        // game created off a wrongly-cased DedicatedServerName) is a trap
+        // — call it out so a puzzled operator can see it.
+        for (const sibling of fs.readdirSync(saveRoot)) {
+          if (sibling !== targetWorldId && sibling.toLowerCase() === targetWorldId.toLowerCase()) {
+            say(
+              `[restore] WARNING: a case-mismatched sibling save dir exists (${sibling}) — the server now uses ${targetWorldId}; the sibling is likely a stray auto-created world and can be deleted.`,
+            )
           }
         }
 
