@@ -38,18 +38,34 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-full">
       <header className="border-b border-panel-border bg-panel-surface/60 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-3">
-          <div className="flex items-center gap-2 font-semibold">
+        {/* Mobile: brand + account on row 1, nav as a full-width scrollable
+            row 2. Desktop (sm+): single row via flex order. */}
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-0 px-3 py-2.5 sm:px-4 sm:py-3">
+          <div className="order-1 flex items-center gap-2 font-semibold">
             <span className="text-panel-accent">◆</span> Rallypoint
           </div>
-          <nav className="flex flex-1 flex-wrap gap-1">
+          <div className="order-2 ml-auto flex items-center gap-3 text-sm text-panel-muted sm:order-3">
+            <NavLink to="/account" className="hover:text-panel-text">
+              {session?.username}
+            </NavLink>
+            <button
+              className="shrink-0 rounded-lg border border-panel-border px-2.5 py-1 text-xs hover:bg-panel-surface-2"
+              onClick={async () => {
+                await logout()
+                navigate('/login')
+              }}
+            >
+              Sign out
+            </button>
+          </div>
+          <nav className="thin-scroll order-3 mt-1.5 flex w-full flex-nowrap gap-1 overflow-x-auto pb-1 sm:order-2 sm:mt-0 sm:w-auto sm:flex-1 sm:pb-0">
             {NAV.map((n) => (
               <NavLink
                 key={n.to}
                 to={n.to}
                 end={n.end ?? false}
                 className={({ isActive }) =>
-                  `rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                  `shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm transition-colors ${
                     isActive
                       ? 'bg-panel-surface-2 text-panel-text'
                       : 'text-panel-muted hover:text-panel-text'
@@ -66,23 +82,9 @@ function Shell({ children }: { children: React.ReactNode }) {
               </NavLink>
             ))}
           </nav>
-          <div className="flex items-center gap-3 text-sm text-panel-muted">
-            <NavLink to="/account" className="hover:text-panel-text">
-              {session?.username}
-            </NavLink>
-            <button
-              className="rounded-lg border border-panel-border px-2.5 py-1 text-xs hover:bg-panel-surface-2"
-              onClick={async () => {
-                await logout()
-                navigate('/login')
-              }}
-            >
-              Sign out
-            </button>
-          </div>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
+      <main className="mx-auto max-w-6xl px-3 py-4 sm:px-4 sm:py-6">{children}</main>
     </div>
   )
 }
