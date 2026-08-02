@@ -64,6 +64,19 @@ export function isNewerVersion(current: string, latest: string): boolean {
   return false
 }
 
+// The apply helper's stderr is the only place the real failure reason
+// lives (sudoers denial, rsync/npm errors, visudo refusal). Fold its
+// tail into the op error so the UI can show why. Exported for unit tests.
+export function formatHelperFailure(code: number | string | undefined, stderr: string): string {
+  const tail = stderr
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .slice(-5)
+  const head = `Apply helper failed${code != null ? ` (exit ${code})` : ''}`
+  return tail.length > 0 ? `${head}: ${tail.join(' | ')}` : `${head} with no output.`
+}
+
 interface Deps {
   env: Env
   db: Db
@@ -227,7 +240,24 @@ export function createRealPanelUpdate(deps: Deps): PanelUpdateService {
       // which kills this process. Everything after this line may not run.
       sink.line(`[update] Applying ${check.latest} — the panel will restart momentarily...`)
       sink.progress(80)
-      await execFileAsync('sudo', ['-n', APPLY_HELPER, extractDir], { timeout: 600_000 })
+      const emitHelperOutput = (stdout: string, stderr: string): void => {
+        for (const chunk of [stdout, stderr]) {
+          for (const line of chunk.split('\n')) {
+            if (line.trim()) sink.line(`[helper] ${line.trimEnd()}`)
+          }
+        }
+      }
+      try {
+        const { stdout, stderr } = await execFileAsync('sudo', ['-n', APPLY_HELPER, extractDir], {
+          timeout: 600_000,
+        })
+        emitHelperOutput(stdout, stderr)
+      } catch (err) {
+        const e = err as Error & { stdout?: string; stderr?: string; code?: number | string }
+        emitHelperOutput(e.stdout ?? '', e.stderr ?? '')
+        logger.error('panel update apply failed', { code: e.code ?? null, stderr: e.stderr ?? '' })
+        throw new Error(formatHelperFailure(e.code, e.stderr ?? ''))
+      }
       // Only reached if the restart is slow to land:
       sink.line('[update] Helper finished; waiting for service restart.')
       sink.progress(95)

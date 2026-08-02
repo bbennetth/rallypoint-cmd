@@ -67,6 +67,9 @@ export function UpdatesPage() {
             </Badge>
           )}
         </div>
+        {op?.status === 'failed' && op.error && (
+          <p className="mono mt-3 text-sm text-panel-bad">{op.error}</p>
+        )}
         <p className="mt-3 text-xs text-panel-muted">
           Updates stop the server first, run <span className="mono">app_update 2394010 validate</span>,
           then restart it.
@@ -155,6 +158,14 @@ function PanelUpdateCard({
           const h = await api.health()
           if (h.version !== before) {
             window.location.reload()
+            return
+          }
+          // Same version still answering: the op may have failed before the
+          // restart. Ask for its state instead of spinning out the clock.
+          const s = await api.updateState()
+          if (s.op?.kind === 'panel_update' && s.op.status === 'failed') {
+            setErr(s.op.error ?? 'Update failed — see the console below.')
+            setPhase('idle')
             return
           }
         } catch {
