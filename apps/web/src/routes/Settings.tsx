@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { PAL_KEY_SPECS, SETTINGS_CATEGORIES } from '@rallypoint-cmd/shared'
 import type { SettingsEntry, SettingValue } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
 import { Badge, Button, Card, inputClass } from '../ui/primitives.js'
@@ -54,6 +55,18 @@ function StructuredEditor() {
   const known = useMemo(() => (entries ?? []).filter((e) => e.kind !== null), [entries])
   const unknown = useMemo(() => (entries ?? []).filter((e) => e.kind === null), [entries])
 
+  // Bucket known entries into spec categories (file order preserved within
+  // each section). A known entry always has a spec; the last category is a
+  // safety net in case one ever lacks it.
+  const sections = useMemo(() => {
+    const buckets = new Map<string, SettingsEntry[]>(SETTINGS_CATEGORIES.map((c) => [c, []]))
+    for (const e of known) {
+      const category = PAL_KEY_SPECS[e.key]?.category ?? SETTINGS_CATEGORIES[SETTINGS_CATEGORIES.length - 1]!
+      buckets.get(category)!.push(e)
+    }
+    return [...buckets].filter(([, list]) => list.length > 0)
+  }, [known])
+
   function setVal(key: string, v: SettingValue) {
     setDirty((d) => ({ ...d, [key]: v }))
   }
@@ -95,14 +108,23 @@ function StructuredEditor() {
             {msg.text}
           </p>
         )}
-        <div className="grid gap-x-6 gap-y-3 md:grid-cols-2">
-          {known.map((e) => (
-            <EntryField
-              key={e.key}
-              entry={e}
-              value={e.key in dirty ? dirty[e.key]! : (e.value ?? '')}
-              onChange={(v) => setVal(e.key, v)}
-            />
+        <div className="space-y-6">
+          {sections.map(([category, list]) => (
+            <section key={category}>
+              <h3 className="mb-3 border-b border-panel-border pb-1.5 text-xs font-semibold uppercase tracking-wider text-panel-muted">
+                {category}
+              </h3>
+              <div className="grid gap-x-6 gap-y-3 md:grid-cols-2">
+                {list.map((e) => (
+                  <EntryField
+                    key={e.key}
+                    entry={e}
+                    value={e.key in dirty ? dirty[e.key]! : (e.value ?? '')}
+                    onChange={(v) => setVal(e.key, v)}
+                  />
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       </Card>
