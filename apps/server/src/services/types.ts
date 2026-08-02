@@ -3,6 +3,7 @@ import type { WorldLock } from './world-lock.js'
 import type { LongOpRunner } from './long-op.js'
 import type { SettingsService } from './settings-ini.js'
 import type { BackupService } from './backup.js'
+import type { ModsService } from './mods.js'
 import type { SchedulerService } from './scheduler.js'
 import type { PanelUpdateService } from './panel-update.js'
 import type { PublicAccessService } from './public-access.js'
@@ -70,6 +71,7 @@ export interface Services {
   worldLock: WorldLock
   settings: SettingsService
   backup: BackupService
+  mods: ModsService
   scheduler: SchedulerService
   panelUpdate: PanelUpdateService
   publicAccess: PublicAccessService

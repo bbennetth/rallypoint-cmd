@@ -11,6 +11,7 @@ import { createRealPalRest } from './pal-rest.real.js'
 import { createRealSteamCmd } from './steamcmd.real.js'
 import { createSettingsService } from './settings-ini.js'
 import { createBackupService } from './backup.js'
+import { createModsService } from './mods.js'
 import { createScheduler } from './scheduler.js'
 import { createFakePanelUpdate, createRealPanelUpdate } from './panel-update.js'
 import { createFakePublicAccess, createRealPublicAccess } from './public-access.js'
@@ -29,6 +30,8 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
   // The settings service is always the real implementation — in mock
   // mode it just operates on the sandbox ini files.
   const settings = createSettingsService(env, db)
+  // Same for mods: pure fs work under PAL_DIR, which mock mode sandboxes.
+  const mods = createModsService(env, logger)
 
   if (env.PANEL_MODE === 'mock') {
     const fakes = createFakeServices(env, logger)
@@ -57,6 +60,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
       worldLock,
       settings,
       backup,
+      mods,
       scheduler,
       panelUpdate: createFakePanelUpdate(env),
       publicAccess: createFakePublicAccess(),
@@ -84,6 +88,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
     worldLock,
     settings,
     backup,
+    mods,
     scheduler,
     panelUpdate: createRealPanelUpdate({ env, db, logger }),
     publicAccess: createRealPublicAccess({ env, db, logger }),

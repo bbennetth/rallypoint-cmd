@@ -2,6 +2,8 @@ import {
   backupsResponseSchema,
   errorEnvelopeSchema,
   longOpSchema,
+  modsResponseSchema,
+  modUploadResultSchema,
   panelUpdateInfoSchema,
   playersResponseSchema,
   publicAccessConsoleSchema,
@@ -17,6 +19,8 @@ import {
   type Backup,
   type CreateScheduleRequest,
   type LongOp,
+  type ModsResponse,
+  type ModUploadResult,
   type PanelUpdateInfo,
   type PlayersResponse,
   type PublicAccessConsole,
@@ -187,6 +191,31 @@ export const api = {
   restoreBackup: (stagingId: string, confirm: string): Promise<LongOp> =>
     request('POST', '/api/backups/restore', longOpSchema, { stagingId, confirm }),
   downloadBackupUrl: (id: string): string => `/api/backups/${id}/download`,
+
+  // mods
+  mods: (): Promise<ModsResponse> => request('GET', '/api/mods', modsResponseSchema),
+  uploadMod: async (file: File): Promise<ModUploadResult> => {
+    const csrf = await ensureCsrf()
+    const res = await fetch(`/api/mods/upload?filename=${encodeURIComponent(file.name)}`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/octet-stream', 'x-csrf-token': csrf },
+      body: file,
+    })
+    if (!res.ok) {
+      const parsed = errorEnvelopeSchema.safeParse(await res.json().catch(() => null))
+      throw new ApiError(
+        parsed.success ? parsed.data.error.code : 'error',
+        parsed.success ? parsed.data.error.message : res.statusText,
+        res.status,
+      )
+    }
+    return modUploadResultSchema.parse(await res.json())
+  },
+  toggleMod: (id: string, enabled: boolean): Promise<ModsResponse> =>
+    request('POST', `/api/mods/${encodeURIComponent(id)}/toggle`, modsResponseSchema, { enabled }),
+  deleteMod: (id: string): Promise<unknown> =>
+    request('DELETE', `/api/mods/${encodeURIComponent(id)}`, okSchema),
 
   // schedules
   schedules: (): Promise<{ schedules: Schedule[] }> =>
