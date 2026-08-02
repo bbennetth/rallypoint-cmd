@@ -13,6 +13,7 @@ import { createSettingsService } from './settings-ini.js'
 import { createBackupService } from './backup.js'
 import { createScheduler } from './scheduler.js'
 import { createFakePanelUpdate, createRealPanelUpdate } from './panel-update.js'
+import { createFakePublicAccess, createRealPublicAccess } from './public-access.js'
 
 // Composition root: picks real vs fake game integrations by PANEL_MODE.
 // LongOpRunner and WorldLock are always real — they're pure in-process
@@ -58,6 +59,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
       backup,
       scheduler,
       panelUpdate: createFakePanelUpdate(env),
+      publicAccess: createFakePublicAccess(),
       dispose: () => {
         scheduler.stop()
         fakes.dispose()
@@ -84,6 +86,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
     backup,
     scheduler,
     panelUpdate: createRealPanelUpdate({ env, db, logger }),
+    publicAccess: createRealPublicAccess({ env, db, logger }),
     dispose: () => {
       scheduler.stop()
       journal.stop()

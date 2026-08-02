@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# rallypoint-cmd-playit — pinned root helper for the playit.gg agent.
+#
+# Installed at /usr/local/bin/rallypoint-cmd-playit (root:root 0755) and
+# whitelisted in /etc/sudoers.d/rallypoint-cmd. The panel (unprivileged
+# `palworld` user) drives the playit.gg agent exclusively through these
+# fixed verbs — it never touches playit config or apt itself.
+#
+# Verbs:
+#   install        add the playit apt repo + install the package (idempotent)
+#   claim <code>   exchange a claim code for the agent secret, enable + start
+#   start | stop   control the playit service
+#   secret         print the agent secret to stdout (panel uses it for api.playit.gg)
+#   reset          stop the service and remove the secret (un-claim)
+#   status         print "installed=<0|1> claimed=<0|1> active=<state>"
+
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+VERB="${1:-}"
+
+# The apt package ships a service; the exact unit name is detected because
+# packaging has varied (playit.service vs playitd.service).
+unit_name() {
+  for u in playit playitd; do
+    if systemctl list-unit-files "${u}.service" --no-legend 2>/dev/null | grep -q .; then
+      echo "${u}.service"
+      return
+    fi
+  done
+  echo "playit.service"
+}
+
+secret_file() {
+  # `playit secret-path` prints the secret location; tolerate failure.
+  runuser -u playit -- playit secret-path 2>/dev/null \
+    || playit secret-path 2>/dev/null \
+    || echo /etc/playit/playit.toml
+}
+
+is_installed() { command -v playit >/dev/null 2>&1; }
+
+is_claimed() {
+  local f
+  f="$(secret_file)"
+  [[ -f "$f" ]] && grep -q 'secret_key' "$f" 2>/dev/null
+}
+
+case "$VERB" in
+  install)
+    if is_installed; then echo "playit already installed"; exit 0; fi
+    curl -fsSL https://playit-cloud.github.io/ppa/key.gpg | gpg --dearmor -o /etc/apt/trusted.gpg.d/playit.gpg
+    echo "deb [signed-by=/etc/apt/trusted.gpg.d/playit.gpg] https://playit-cloud.github.io/ppa/data ./" \
+      > /etc/apt/sources.list.d/playit-cloud.list
+    apt-get -qq update
+    apt-get -qq -y install playit
+    systemctl disable --now "$(unit_name)" >/dev/null 2>&1 || true
+    echo "playit installed"
+    ;;
+
+  claim)
+    CODE="${2:-}"
+    [[ "$CODE" =~ ^[a-z0-9]{4,64}$ ]] || { echo "invalid claim code" >&2; exit 1; }
+    is_installed || { echo "playit is not installed" >&2; exit 1; }
+    # Blocks until the user approves the claim in their browser (or times out).
+    playit claim exchange "$CODE" --wait 300
+    systemctl enable --now "$(unit_name)"
+    echo "claimed and started"
+    ;;
+
+  start)
+    systemctl enable --now "$(unit_name)"
+    ;;
+
+  stop)
+    systemctl disable --now "$(unit_name)"
+    ;;
+
+  secret)
+    is_claimed || { echo "not claimed" >&2; exit 1; }
+    # Print ONLY the secret value (strip toml key syntax + quotes).
+    grep 'secret_key' "$(secret_file)" | head -n1 | sed -E 's/.*=\s*"?([A-Za-z0-9]+)"?\s*$/\1/'
+    ;;
+
+  reset)
+    systemctl disable --now "$(unit_name)" >/dev/null 2>&1 || true
+    playit reset >/dev/null 2>&1 || rm -f "$(secret_file)"
+    echo "reset"
+    ;;
+
+  status)
+    inst=0; claimed=0; active=inactive
+    is_installed && inst=1
+    is_claimed && claimed=1
+    active="$(systemctl is-active "$(unit_name)" 2>/dev/null || echo inactive)"
+    echo "installed=$inst claimed=$claimed active=$active"
+    ;;
+
+  *)
+    echo "usage: rallypoint-cmd-playit {install|claim <code>|start|stop|secret|reset|status}" >&2
+    exit 1
+    ;;
+esac

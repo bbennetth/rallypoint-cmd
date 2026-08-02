@@ -15,5 +15,8 @@ palworld ALL=(root) NOPASSWD: /usr/bin/journalctl -u palworld.service -n 500 -o 
 # Panel self-update: pinned root helper (validates its argument is inside
 # /var/lib/rallypoint-cmd before touching anything).
 palworld ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-apply-update *
+# playit.gg public access: pinned helper with fixed verbs (install/claim/
+# start/stop/secret/reset/status), claim code validated in-script.
+palworld ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-playit *
 
 Defaults:palworld !requiretty

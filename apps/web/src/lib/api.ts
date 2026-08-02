@@ -4,6 +4,7 @@ import {
   longOpSchema,
   panelUpdateInfoSchema,
   playersResponseSchema,
+  publicAccessStatusSchema,
   restorePreviewSchema,
   scheduleSchema,
   schedulesResponseSchema,
@@ -17,6 +18,7 @@ import {
   type LongOp,
   type PanelUpdateInfo,
   type PlayersResponse,
+  type PublicAccessStatus,
   type RestorePreview,
   type Schedule,
   type ScheduleRun,
@@ -133,6 +135,14 @@ export const api = {
   updateState: (): Promise<UpdateState> => request('GET', '/api/updates', updateStateSchema),
   runUpdate: (kind: 'install' | 'update' | 'validate'): Promise<LongOp> =>
     request('POST', '/api/updates/run', longOpSchema, { kind }),
+
+  // public access (playit.gg)
+  publicAccess: (): Promise<PublicAccessStatus> =>
+    request('GET', '/api/public-access', publicAccessStatusSchema),
+  enablePublicAccess: (): Promise<LongOp> =>
+    request('POST', '/api/public-access/enable', longOpSchema),
+  disablePublicAccess: (): Promise<unknown> =>
+    request('POST', '/api/public-access/disable', okSchema),
 
   // panel self-update
   panelUpdate: (force = false): Promise<PanelUpdateInfo> =>

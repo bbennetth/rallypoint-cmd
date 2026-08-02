@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { parseSystemdTimestamp } from './game-control.real.js'
 import { decideSteamcmdOutcome } from './steamcmd.real.js'
 import { isNewerVersion } from './panel-update.js'
+import { extractTunnelAddress } from './public-access.js'
 
 describe('parseSystemdTimestamp', () => {
   it('parses the --timestamp=unix form (@epoch seconds → ms)', () => {
@@ -73,5 +74,50 @@ describe('isNewerVersion (panel self-update)', () => {
   it('falls back to string inequality for unparseable versions', () => {
     expect(isNewerVersion('main', 'v1.0.0')).toBe(true)
     expect(isNewerVersion('abc', 'abc')).toBe(false)
+  })
+})
+
+describe('extractTunnelAddress (playit tunnels-list parsing)', () => {
+  it('finds a udp tunnel by local port (documented shape)', () => {
+    const payload = {
+      tunnels: [
+        { proto: 'tcp', local_port: 25565, domain: 'mc.ply.gg', port_start: 25565 },
+        { proto: 'udp', local_port: 8211, domain: 'craft.ply.gg', port_start: 52801 },
+      ],
+    }
+    expect(extractTunnelAddress(payload, 8211)).toBe('craft.ply.gg:52801')
+  })
+
+  it('handles the data-wrapped + alloc shape', () => {
+    const payload = {
+      data: {
+        tunnels: [
+          {
+            tunnel_type: 'udp',
+            origin: { local_port: 8211 },
+            alloc: { data: { assigned_domain: 'x.ply.gg', port_start: 41000 } },
+          },
+        ],
+      },
+    }
+    expect(extractTunnelAddress(payload, 8211)).toBe('x.ply.gg:41000')
+  })
+
+  it('falls back to assigned_srv strings', () => {
+    const payload = {
+      tunnels: [{ port_type: 'both', alloc: { assigned_srv: 'y.ply.gg:9999' } }],
+    }
+    expect(extractTunnelAddress(payload, 8211)).toBe('y.ply.gg:9999')
+  })
+
+  it('returns null for tcp-only, wrong-port, or malformed payloads', () => {
+    expect(
+      extractTunnelAddress({ tunnels: [{ proto: 'tcp', local_port: 8211, domain: 'a', port_start: 1 }] }, 8211),
+    ).toBeNull()
+    expect(
+      extractTunnelAddress({ tunnels: [{ proto: 'udp', local_port: 9999, domain: 'a', port_start: 1 }] }, 8211),
+    ).toBeNull()
+    expect(extractTunnelAddress(null, 8211)).toBeNull()
+    expect(extractTunnelAddress({ nope: true }, 8211)).toBeNull()
   })
 })

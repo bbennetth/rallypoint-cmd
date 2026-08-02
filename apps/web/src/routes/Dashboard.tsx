@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import type { ServerLifecycle } from '@rallypoint-cmd/shared'
+import type { PublicAccessStatus, ServerLifecycle } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
 import { usePoll } from '../lib/usePoll.js'
+import { useLongOp } from '../lib/useEventSource.js'
 import { formatBytes, formatUptime } from '../lib/format.js'
 import { Badge, Button, Card, Spinner, Stat } from '../ui/primitives.js'
 
@@ -136,6 +137,8 @@ export function DashboardPage() {
           </dl>
         </Card>
 
+        <PublicAccessCard />
+
         <Card title="Storage">
           <div className="space-y-3">
             {status.disks.length === 0 && <p className="text-sm text-panel-muted">No disk data.</p>}
@@ -172,5 +175,169 @@ function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
       <dt className="text-panel-muted">{k}</dt>
       <dd className={`truncate text-right ${mono ? 'mono text-xs' : ''}`}>{v}</dd>
     </div>
+  )
+}
+
+// Public Access (playit.gg): expose the game's UDP port to the internet
+// without port-forwarding. Enable runs install→claim→start as a long-op;
+// the claim URL must be approved by the user in their playit account.
+function PublicAccessCard() {
+  const [status, setStatus] = useState<PublicAccessStatus | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const { lastLine, progress, doneOp, reset } = useLongOp(busy)
+
+  async function load() {
+    try {
+      setStatus(await api.publicAccess())
+    } catch {
+      /* status is best-effort */
+    }
+  }
+  useEffect(() => {
+    void load()
+  }, [])
+  // While enabling, poll status so pendingClaim (the approve URL) shows up.
+  useEffect(() => {
+    if (!busy) return
+    const t = setInterval(() => void load(), 2000)
+    return () => clearInterval(t)
+  }, [busy])
+  useEffect(() => {
+    if (!doneOp || doneOp.kind !== 'public_access') return
+    if (doneOp.status === 'failed') setErr(doneOp.error ?? 'Enable failed')
+    setBusy(false)
+    reset()
+    void load()
+  }, [doneOp, reset])
+
+  async function enable() {
+    setErr(null)
+    setBusy(true)
+    try {
+      await api.enablePublicAccess()
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Failed to start')
+      setBusy(false)
+    }
+  }
+
+  async function disable() {
+    setErr(null)
+    try {
+      await api.disablePublicAccess()
+      await load()
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Failed to stop')
+    }
+  }
+
+  const online = status?.running && status.address
+
+  return (
+    <Card
+      title={
+        <span className="flex items-center gap-3">
+          Public access
+          {status && (
+            <Badge tone={online ? 'good' : status.running ? 'warn' : 'muted'}>
+              {online ? 'online' : status.running ? 'no tunnel' : 'off'}
+            </Badge>
+          )}
+        </span>
+      }
+      actions={
+        status?.running ? (
+          <Button variant="ghost" onClick={disable}>
+            Disable
+          </Button>
+        ) : undefined
+      }
+    >
+      {err && <p className="mb-3 text-sm text-panel-bad">{err}</p>}
+      {!status ? (
+        <p className="text-sm text-panel-muted">Loading…</p>
+      ) : busy ? (
+        <div className="space-y-3">
+          {status.pendingClaim ? (
+            <div className="rounded-lg border border-panel-accent/40 bg-panel-accent/10 px-3 py-2 text-sm">
+              Approve this server in your playit.gg account:{' '}
+              <a
+                className="font-medium text-panel-accent underline"
+                href={status.pendingClaim.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {status.pendingClaim.url}
+              </a>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-sm text-panel-muted">
+              <Spinner /> Setting up playit.gg…
+            </div>
+          )}
+          <div className="h-2 overflow-hidden rounded-full bg-panel-surface-2">
+            <div
+              className={`h-full bg-panel-accent transition-all ${progress == null ? 'w-1/3 animate-pulse' : ''}`}
+              style={progress != null ? { width: `${progress}%` } : undefined}
+            />
+          </div>
+          {lastLine && <p className="mono truncate text-xs text-panel-muted">{lastLine}</p>}
+        </div>
+      ) : online ? (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <code className="mono rounded-lg bg-panel-surface-2 px-3 py-1.5 text-sm">
+              {status.address}
+            </code>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                void navigator.clipboard.writeText(status.address ?? '')
+                setCopied(true)
+                setTimeout(() => setCopied(false), 1500)
+              }}
+            >
+              {copied ? 'Copied!' : 'Copy'}
+            </Button>
+          </div>
+          <p className="text-xs text-panel-muted">
+            Players join with this address — no port-forwarding needed (relayed via playit.gg).
+          </p>
+        </div>
+      ) : status.running ? (
+        <p className="text-sm text-panel-muted">
+          Agent is running but no UDP tunnel targets port {status.gamePort ?? 8211}. Create one at{' '}
+          <a
+            className="text-panel-accent underline"
+            href="https://playit.gg/account/tunnels"
+            target="_blank"
+            rel="noreferrer"
+          >
+            playit.gg/account/tunnels
+          </a>{' '}
+          (UDP → 127.0.0.1:{status.gamePort ?? 8211}) — the address appears here automatically.
+        </p>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-panel-muted">
+            Let players join over the internet without port-forwarding, via a free{' '}
+            <a
+              className="text-panel-accent underline"
+              href="https://playit.gg"
+              target="_blank"
+              rel="noreferrer"
+            >
+              playit.gg
+            </a>{' '}
+            UDP tunnel.
+          </p>
+          <Button variant="primary" onClick={enable}>
+            Enable public access
+          </Button>
+        </div>
+      )}
+    </Card>
   )
 }

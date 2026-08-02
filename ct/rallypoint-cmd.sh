@@ -66,6 +66,7 @@ if [[ -f /etc/rallypoint-cmd/panel.env ]]; then
   # arrive via git updates; existing CTs pick them up here).
   command -v rsync >/dev/null || apt-get -qq -y install rsync >/dev/null 2>&1 || true
   install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-apply-update /usr/local/bin/rallypoint-cmd-apply-update
+install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-playit /usr/local/bin/rallypoint-cmd-playit
   install -m 0440 -o root -g root deploy/sudoers/rallypoint-cmd /etc/sudoers.d/rallypoint-cmd
   visudo -cf /etc/sudoers.d/rallypoint-cmd >/dev/null
   chown -R root:palworld /opt/rallypoint-cmd && chmod -R g-w /opt/rallypoint-cmd
@@ -235,6 +236,7 @@ echo ">>> systemd units + least-privilege sudoers"
 install -m 0644 deploy/systemd/palworld.service /etc/systemd/system/palworld.service
 install -m 0644 deploy/systemd/rallypoint-cmd.service /etc/systemd/system/rallypoint-cmd.service
 install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-apply-update /usr/local/bin/rallypoint-cmd-apply-update
+install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-playit /usr/local/bin/rallypoint-cmd-playit
 install -m 0440 -o root -g root deploy/sudoers/rallypoint-cmd /etc/sudoers.d/rallypoint-cmd
 visudo -cf /etc/sudoers.d/rallypoint-cmd >/dev/null
 

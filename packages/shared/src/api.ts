@@ -94,7 +94,7 @@ export type UnbanRequest = z.infer<typeof unbanRequestSchema>
 // ---------------------------------------------------------------------------
 // Long-running operations (steamcmd install/update, restore)
 
-export const longOpKindSchema = z.enum(['install', 'update', 'validate', 'restore', 'backup', 'panel_update'])
+export const longOpKindSchema = z.enum(['install', 'update', 'validate', 'restore', 'backup', 'panel_update', 'public_access'])
 export type LongOpKind = z.infer<typeof longOpKindSchema>
 
 export const longOpStatusSchema = z.enum(['running', 'succeeded', 'failed'])
@@ -146,3 +146,21 @@ export const panelUpdateInfoSchema = z.object({
   checkedAtMs: z.number().int().nonnegative().nullable(),
 })
 export type PanelUpdateInfo = z.infer<typeof panelUpdateInfoSchema>
+
+// --- public access (playit.gg) ---------------------------------------------
+
+export const publicAccessStatusSchema = z.object({
+  // playit agent installed in the CT
+  installed: z.boolean(),
+  // agent has a secret (claim completed)
+  claimed: z.boolean(),
+  // playit service currently active
+  running: z.boolean(),
+  // public address players connect to (host:port), when known
+  address: z.string().nullable(),
+  // set while an enable flow is waiting for the user to approve the claim
+  pendingClaim: z.object({ code: z.string(), url: z.string() }).nullable(),
+  // game port being exposed (from PalWorldSettings PublicPort)
+  gamePort: z.number().int().nullable(),
+})
+export type PublicAccessStatus = z.infer<typeof publicAccessStatusSchema>
