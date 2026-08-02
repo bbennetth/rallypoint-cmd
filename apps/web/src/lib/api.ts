@@ -4,6 +4,7 @@ import {
   longOpSchema,
   panelUpdateInfoSchema,
   playersResponseSchema,
+  publicAccessConsoleSchema,
   publicAccessStatusSchema,
   restorePreviewSchema,
   scheduleSchema,
@@ -18,6 +19,7 @@ import {
   type LongOp,
   type PanelUpdateInfo,
   type PlayersResponse,
+  type PublicAccessConsole,
   type PublicAccessStatus,
   type RestorePreview,
   type Schedule,
@@ -143,6 +145,8 @@ export const api = {
     request('POST', '/api/public-access/enable', longOpSchema),
   disablePublicAccess: (): Promise<unknown> =>
     request('POST', '/api/public-access/disable', okSchema),
+  publicAccessConsole: (): Promise<PublicAccessConsole> =>
+    request('GET', '/api/public-access/console', publicAccessConsoleSchema),
 
   // panel self-update
   panelUpdate: (force = false): Promise<PanelUpdateInfo> =>

@@ -45,8 +45,10 @@ argument and `/opt/rallypoint-cmd` stays root-owned read-only). The panel restar
 game keeps running. Releases are cut by tagging (`git tag v0.2.0 && git push --tags` →
 `.github/workflows/release.yml` builds + attaches the artifact).
 
-> Existing CTs installed before the self-update feature need ONE git-based update (below) to
-> receive the helper + sudoers line; after that, updates are clickable.
+> Self-update also installs system assets shipped in the release (pinned `rallypoint-cmd-*`
+> helpers, the panel systemd unit, and sudoers — sudoers is visudo-validated before landing).
+> Only CTs installed before v0.1.5 need ONE git-based update (below) to bootstrap; after that,
+> everything arrives via the panel.
 
 **Git-based:** re-run the same one-liner _inside_ the CT. It detects
 `/etc/rallypoint-cmd/panel.env` and switches to update mode: `git reset --hard`, `npm ci`,

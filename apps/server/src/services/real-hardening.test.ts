@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { parseSystemdTimestamp } from './game-control.real.js'
 import { decideSteamcmdOutcome } from './steamcmd.real.js'
 import { isNewerVersion } from './panel-update.js'
-import { extractTunnelAddress } from './public-access.js'
+import { extractTunnelAddress, PlayitTrace } from './public-access.js'
 
 describe('parseSystemdTimestamp', () => {
   it('parses the --timestamp=unix form (@epoch seconds → ms)', () => {
@@ -119,5 +119,25 @@ describe('extractTunnelAddress (playit tunnels-list parsing)', () => {
     ).toBeNull()
     expect(extractTunnelAddress(null, 8211)).toBeNull()
     expect(extractTunnelAddress({ nope: true }, 8211)).toBeNull()
+  })
+})
+
+describe('PlayitTrace (public-access console buffer)', () => {
+  it('redacts registered secrets from every line', () => {
+    const trace = new PlayitTrace()
+    trace.redact('supersecretkey123')
+    trace.add('api', 'POST /tunnels/list with agent-key supersecretkey123 failed')
+    const lines = trace.list().map((e) => e.line).join('\n')
+    expect(lines).not.toContain('supersecretkey123')
+    expect(lines).toContain('[secret]')
+  })
+
+  it('caps the buffer at 100 entries', () => {
+    const trace = new PlayitTrace()
+    for (let i = 0; i < 150; i++) trace.add('helper', `line ${i}`)
+    const list = trace.list()
+    expect(list).toHaveLength(100)
+    expect(list[0]!.line).toBe('line 50')
+    expect(list[99]!.line).toBe('line 149')
   })
 })

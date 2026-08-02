@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import type { PublicAccessStatus, ServerLifecycle } from '@rallypoint-cmd/shared'
+import type { PublicAccessConsole, PublicAccessStatus, ServerLifecycle } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
 import { usePoll } from '../lib/usePoll.js'
 import { useLongOp } from '../lib/useEventSource.js'
@@ -186,7 +186,24 @@ function PublicAccessCard() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [consoleOpen, setConsoleOpen] = useState(false)
+  const [consoleData, setConsoleData] = useState<PublicAccessConsole | null>(null)
   const { lastLine, progress, doneOp, reset } = useLongOp(busy)
+
+  async function loadConsole() {
+    try {
+      setConsoleData(await api.publicAccessConsole())
+    } catch {
+      /* best-effort */
+    }
+  }
+  // Refresh the console while open; faster while an op is running.
+  useEffect(() => {
+    if (!consoleOpen) return
+    void loadConsole()
+    const t = setInterval(() => void loadConsole(), busy ? 2000 : 5000)
+    return () => clearInterval(t)
+  }, [consoleOpen, busy])
 
   async function load() {
     try {
@@ -248,11 +265,18 @@ function PublicAccessCard() {
         </span>
       }
       actions={
-        status?.running ? (
-          <Button variant="ghost" onClick={disable}>
-            Disable
-          </Button>
-        ) : undefined
+        <div className="flex gap-2">
+          {status?.installed && (
+            <Button variant="ghost" onClick={() => setConsoleOpen((v) => !v)}>
+              {consoleOpen ? 'Hide console' : 'Console'}
+            </Button>
+          )}
+          {status?.running && (
+            <Button variant="ghost" onClick={disable}>
+              Disable
+            </Button>
+          )}
+        </div>
       }
     >
       {err && <p className="mb-3 text-sm text-panel-bad">{err}</p>}
@@ -338,6 +362,49 @@ function PublicAccessCard() {
           </Button>
         </div>
       )}
+
+      {consoleOpen && (
+        <div className="mt-4 space-y-3 border-t border-panel-border pt-3">
+          <ConsoleSection
+            title="Panel ⇄ playit"
+            lines={(consoleData?.trace ?? []).map(
+              (t) => `${new Date(t.ts).toLocaleTimeString()} [${t.kind}] ${t.line}`,
+            )}
+            empty="No panel↔playit activity yet."
+          />
+          <ConsoleSection
+            title="Agent log"
+            lines={consoleData?.agentLog ?? []}
+            empty="No agent journal (agent not installed or no output)."
+          />
+        </div>
+      )}
     </Card>
+  )
+}
+
+function ConsoleSection({ title, lines, empty }: { title: string; lines: string[]; empty: string }) {
+  return (
+    <div>
+      <div className="mb-1 text-xs font-medium uppercase tracking-wide text-panel-muted">
+        {title}
+      </div>
+      <div className="thin-scroll max-h-48 overflow-auto rounded-lg bg-black/40 p-2">
+        {lines.length === 0 ? (
+          <p className="text-xs text-panel-muted">{empty}</p>
+        ) : (
+          <pre className="mono whitespace-pre-wrap break-words text-xs leading-relaxed">
+            {lines.map((l, i) => (
+              <div
+                key={i}
+                className={/error|failed|FAILED/i.test(l) ? 'text-panel-bad' : 'text-panel-text/90'}
+              >
+                {l}
+              </div>
+            ))}
+          </pre>
+        )}
+      </div>
+    </div>
   )
 }

@@ -40,6 +40,37 @@ npm ci --omit=dev --no-audit --no-fund
 chown -R root:palworld "$APP_DIR"
 chmod -R g-w "$APP_DIR"
 
+# --- system assets: releases may add/upgrade pinned helpers, the panel's
+# systemd unit, and sudoers. The artifact was already verified panel-side
+# (tar guards + release.json match) — same trust root as a git update.
+if [[ -d "$APP_DIR/deploy/bin" ]]; then
+  for f in "$APP_DIR"/deploy/bin/*; do
+    base="$(basename "$f")"
+    # Only our own namespaced helpers — never install arbitrary names.
+    [[ "$base" == rallypoint-cmd-* && -f "$f" ]] || continue
+    install -m 0755 -o root -g root "$f" "/usr/local/bin/$base"
+    echo "[apply-update] installed helper $base"
+  done
+fi
+if [[ -f "$APP_DIR/deploy/systemd/rallypoint-cmd.service" ]]; then
+  install -m 0644 -o root -g root "$APP_DIR/deploy/systemd/rallypoint-cmd.service" \
+    /etc/systemd/system/rallypoint-cmd.service
+  systemctl daemon-reload
+fi
+# Sudoers LAST, with a safety valve: validate before it can ever land —
+# a broken sudoers file would lock the panel (and admin) out of root.
+if [[ -f "$APP_DIR/deploy/sudoers/rallypoint-cmd" ]]; then
+  tmp_sudoers="$(mktemp)"
+  install -m 0440 -o root -g root "$APP_DIR/deploy/sudoers/rallypoint-cmd" "$tmp_sudoers"
+  if visudo -cf "$tmp_sudoers" >/dev/null 2>&1; then
+    mv "$tmp_sudoers" /etc/sudoers.d/rallypoint-cmd
+    echo "[apply-update] sudoers updated"
+  else
+    rm -f "$tmp_sudoers"
+    echo "[apply-update] WARNING: shipped sudoers failed visudo validation — keeping existing" >&2
+  fi
+fi
+
 # --- restart the panel (this kills the invoking process's parent — fine).
 systemctl restart rallypoint-cmd.service
 echo "[apply-update] done — rallypoint-cmd restarted on ${VERSION:-unknown}"

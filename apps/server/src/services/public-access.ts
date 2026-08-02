@@ -3,7 +3,7 @@ import { promisify } from 'node:util'
 import fs from 'node:fs'
 import path from 'node:path'
 import { eq } from 'drizzle-orm'
-import type { PublicAccessStatus } from '@rallypoint-cmd/shared'
+import type { PublicAccessConsole, PublicAccessStatus } from '@rallypoint-cmd/shared'
 import type { Db } from '../db/client.js'
 import type { Env } from '../env.js'
 import type { Logger } from '../logger.js'
@@ -29,6 +29,33 @@ export interface PublicAccessService {
   // for approval, start the agent.
   enable(sink: OpSink): Promise<void>
   disable(): Promise<void>
+  // Diagnostics: panel↔playit trace (helper calls + API exchanges) and
+  // the agent's recent journal.
+  console(): Promise<PublicAccessConsole>
+}
+
+// Diagnostic trace ring buffer. Deliberately module-level so trace history
+// survives service re-composition; capped; NEVER receives the secret (the
+// tracer redacts anything matching a captured secret value).
+const TRACE_MAX = 100
+export class PlayitTrace {
+  private entries: { ts: number; kind: 'api' | 'helper' | 'agent'; line: string }[] = []
+  private redactions: string[] = []
+
+  redact(value: string): void {
+    if (value && !this.redactions.includes(value)) this.redactions.push(value)
+  }
+
+  add(kind: 'api' | 'helper' | 'agent', line: string): void {
+    let clean = line
+    for (const secret of this.redactions) clean = clean.split(secret).join('[secret]')
+    this.entries.push({ ts: Date.now(), kind, line: clean })
+    if (this.entries.length > TRACE_MAX) this.entries.shift()
+  }
+
+  list(): { ts: number; kind: 'api' | 'helper' | 'agent'; line: string }[] {
+    return [...this.entries]
+  }
 }
 
 // Pull a udp tunnel's public address out of a playit tunnels-list
@@ -86,16 +113,23 @@ interface Deps {
 export function createRealPublicAccess(deps: Deps): PublicAccessService {
   const { env, db, logger } = deps
   let pendingClaim: { code: string; url: string } | null = null
+  const trace = new PlayitTrace()
 
   async function helper(...args: string[]): Promise<{ ok: boolean; stdout: string }> {
+    const verb = args[0] ?? '?'
     try {
       const { stdout } = await execFileAsync('sudo', ['-n', PLAYIT_HELPER, ...args], {
         timeout: args[0] === 'claim' ? 330_000 : args[0] === 'install' ? 300_000 : 30_000,
       })
+      // `secret` output is the secret itself — never trace its value.
+      if (verb !== 'secret' && verb !== 'logs') {
+        trace.add('helper', `$ playit-helper ${verb} → ok${stdout ? `: ${stdout.split('\n')[0]}` : ''}`)
+      }
       return { ok: true, stdout: stdout.trim() }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      logger.warn('playit helper failed', { args: args[0], err: msg })
+      logger.warn('playit helper failed', { args: verb, err: msg })
+      trace.add('helper', `$ playit-helper ${verb} → FAILED: ${msg.slice(0, 200)}`)
       return { ok: false, stdout: '' }
     }
   }
@@ -114,7 +148,11 @@ export function createRealPublicAccess(deps: Deps): PublicAccessService {
 
   async function fetchAddress(gamePort: number): Promise<string | null> {
     const secret = await helper('secret')
-    if (!secret.ok || !secret.stdout) return null
+    if (!secret.ok || !secret.stdout) {
+      trace.add('api', 'skipped tunnels/list — no agent secret available')
+      return null
+    }
+    trace.redact(secret.stdout)
     try {
       const res = await fetch(`${API_BASE}/tunnels/list`, {
         method: 'POST',
@@ -126,8 +164,22 @@ export function createRealPublicAccess(deps: Deps): PublicAccessService {
         body: '{}',
         signal: AbortSignal.timeout(10_000),
       })
-      if (!res.ok) return null
-      const address = extractTunnelAddress(await res.json(), gamePort)
+      if (!res.ok) {
+        trace.add('api', `POST /tunnels/list → HTTP ${res.status} ${(await res.text()).slice(0, 300)}`)
+        return null
+      }
+      const body: unknown = await res.json()
+      const address = extractTunnelAddress(body, gamePort)
+      if (address === null) {
+        // The exact live-debugging breadcrumb we need: what did the API
+        // actually return when our parser found nothing?
+        trace.add(
+          'api',
+          `POST /tunnels/list → 200, but no udp tunnel matched port ${gamePort}. Body: ${JSON.stringify(body).slice(0, 500)}`,
+        )
+      } else {
+        trace.add('api', `POST /tunnels/list → 200, address ${address}`)
+      }
       if (address) {
         db.insert(panelState)
           .values({ key: ADDRESS_CACHE_KEY, value: address, updatedAt: new Date() })
@@ -139,9 +191,9 @@ export function createRealPublicAccess(deps: Deps): PublicAccessService {
       }
       return address
     } catch (err) {
-      logger.warn('playit tunnels list failed', {
-        err: err instanceof Error ? err.message : String(err),
-      })
+      const msg = err instanceof Error ? err.message : String(err)
+      logger.warn('playit tunnels list failed', { err: msg })
+      trace.add('api', `POST /tunnels/list → ERROR: ${msg.slice(0, 300)}`)
       return null
     }
   }
@@ -225,6 +277,15 @@ export function createRealPublicAccess(deps: Deps): PublicAccessService {
       const res = await helper('stop')
       if (!res.ok) throw new Error('Failed to stop the playit agent.')
     },
+
+    async console(): Promise<PublicAccessConsole> {
+      let agentLog: string[] = []
+      if (fs.existsSync(PLAYIT_HELPER)) {
+        const logs = await helper('logs')
+        agentLog = logs.ok && logs.stdout ? logs.stdout.split('\n').slice(-200) : []
+      }
+      return { trace: trace.list(), agentLog }
+    },
   }
 }
 
@@ -238,6 +299,7 @@ export function createFakePublicAccess(): PublicAccessService {
     address: null as string | null,
     pendingClaim: null as { code: string; url: string } | null,
   }
+  const fakeTrace = new PlayitTrace()
   const delay = process.env.NODE_ENV === 'test' ? 0 : 700
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -248,6 +310,7 @@ export function createFakePublicAccess(): PublicAccessService {
     async enable(sink) {
       if (!state.installed) {
         sink.line('[public-access] Installing the playit agent (apt)...')
+        fakeTrace.add('helper', '$ playit-helper install → ok: playit installed')
         await sleep(delay)
         state.installed = true
       }
@@ -263,15 +326,29 @@ export function createFakePublicAccess(): PublicAccessService {
         sink.line('[public-access] Claimed — agent starting.')
       }
       state.running = true
+      fakeTrace.add('helper', '$ playit-helper claim → ok: claimed and started')
       sink.progress(80)
       await sleep(delay)
       state.address = 'craft-fake.ply.gg:52801'
+      fakeTrace.add('api', `POST /tunnels/list → 200, address ${state.address}`)
       sink.line(`[public-access] Public address: ${state.address}`)
       sink.progress(100)
     },
     disable() {
       state.running = false
+      fakeTrace.add('helper', '$ playit-helper stop → ok')
       return Promise.resolve()
+    },
+    console() {
+      return Promise.resolve({
+        trace: fakeTrace.list(),
+        agentLog: state.installed
+          ? [
+              '2026-08-02T18:00:01+0000 playit[321]: agent connected to relay us-west',
+              '2026-08-02T18:00:02+0000 playit[321]: tunnel udp 8211 ready (craft-fake.ply.gg:52801)',
+            ]
+          : [],
+      })
     },
   }
 }

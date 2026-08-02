@@ -164,3 +164,11 @@ export const publicAccessStatusSchema = z.object({
   gamePort: z.number().int().nullable(),
 })
 export type PublicAccessStatus = z.infer<typeof publicAccessStatusSchema>
+
+export const publicAccessConsoleSchema = z.object({
+  // Panel-side record of helper invocations + api.playit.gg exchanges.
+  trace: z.array(z.object({ ts: z.number().int(), kind: z.enum(['api', 'helper', 'agent']), line: z.string() })),
+  // Recent playit agent journal lines (empty when not installed).
+  agentLog: z.array(z.string()),
+})
+export type PublicAccessConsole = z.infer<typeof publicAccessConsoleSchema>

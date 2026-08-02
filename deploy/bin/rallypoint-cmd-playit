@@ -13,6 +13,7 @@
 #   secret         print the agent secret to stdout (panel uses it for api.playit.gg)
 #   reset          stop the service and remove the secret (un-claim)
 #   status         print "installed=<0|1> claimed=<0|1> active=<state>"
+#   logs           print the last 200 lines of the agent's journal
 
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
@@ -94,6 +95,10 @@ case "$VERB" in
     is_claimed && claimed=1
     active="$(systemctl is-active "$(unit_name)" 2>/dev/null || echo inactive)"
     echo "installed=$inst claimed=$claimed active=$active"
+    ;;
+
+  logs)
+    journalctl -u "$(unit_name)" -n 200 --no-pager -o short-iso 2>/dev/null || echo "(no agent journal)"
     ;;
 
   *)

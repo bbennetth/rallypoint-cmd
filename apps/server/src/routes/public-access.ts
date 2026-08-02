@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { publicAccessStatusSchema } from '@rallypoint-cmd/shared'
+import { publicAccessConsoleSchema, publicAccessStatusSchema } from '@rallypoint-cmd/shared'
 import type { HonoApp } from '../context.js'
 import { errors } from '../errors.js'
 import { requireSession } from '../middleware/session.js'
@@ -33,4 +33,11 @@ publicAccessRoutes.post('/api/public-access/disable', requireSession, async (c) 
   const { publicAccess } = c.get('services')
   await publicAccess.disable()
   return c.json({ ok: true as const })
+})
+
+// Diagnostics: the panel↔playit trace (helper calls + api.playit.gg
+// exchanges, secret-redacted) and the agent's recent journal lines.
+publicAccessRoutes.get('/api/public-access/console', requireSession, async (c) => {
+  const { publicAccess } = c.get('services')
+  return c.json(publicAccessConsoleSchema.parse(await publicAccess.console()))
 })
