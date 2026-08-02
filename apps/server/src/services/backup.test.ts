@@ -70,6 +70,8 @@ let root: string
 let env: Env
 let service: BackupService
 let closeDb: () => void
+let fakes: ReturnType<typeof createFakeServices>
+let deps: Parameters<typeof createBackupService>[0]
 
 beforeEach(async () => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'pal-backup-test-'))
@@ -78,11 +80,11 @@ beforeEach(async () => {
   const { db, sqlite } = createDb(env.DB_PATH)
   runMigrations(db)
   closeDb = () => sqlite.close()
-  const fakes = createFakeServices(env, logger)
+  fakes = createFakeServices(env, logger)
   // Install + boot the fake world so there's something to back up.
   await fakes.steamcmd.run('install', noopSink)
   await fakes.gameControl.start()
-  service = createBackupService({
+  deps = {
     env,
     db,
     logger,
@@ -90,7 +92,8 @@ beforeEach(async () => {
     palRest: fakes.palRest,
     steamcmd: fakes.steamcmd,
     settings: createSettingsService(env, db),
-  })
+  }
+  service = createBackupService(deps)
 })
 
 afterEach(() => {
@@ -364,5 +367,65 @@ describe('restore happy path + rollback', () => {
     await expect(service.restore(preview.stagingId, 'nope', noopSink)).rejects.toMatchObject({
       code: 'confirm_mismatch',
     })
+  })
+
+  it('refuses restore when the game state is indeterminate (systemctl query failed)', async () => {
+    const backup = await service.create('manual', noopSink)
+    const preview = await service.stageUpload(bodyOf(path.join(env.BACKUP_DIR, backup.filename)))
+    const blindService = createBackupService({
+      ...deps,
+      gameControl: {
+        ...fakes.gameControl,
+        // Real status() maps a failed `systemctl show` to inactive/unknown.
+        status: async () => ({
+          installed: true,
+          activeState: 'inactive',
+          subState: 'unknown',
+          memoryCurrentBytes: null,
+          activeEnterAtMs: null,
+        }),
+      },
+    })
+    await expect(blindService.restore(preview.stagingId, WORLD, noopSink)).rejects.toMatchObject({
+      code: 'restore_failed',
+      message: expect.stringContaining('Cannot determine'),
+    })
+    // Nothing was swapped: live world untouched.
+    const liveLevel = path.join(env.PAL_DIR, 'Pal/Saved/SaveGames/0', WORLD, 'Level.sav')
+    expect(fs.existsSync(liveLevel)).toBe(true)
+  })
+
+  it('rolls back when the game exits right after the restore restart', async () => {
+    const backup = await service.create('manual', noopSink)
+    const liveLevel = path.join(env.PAL_DIR, 'Pal/Saved/SaveGames/0', WORLD, 'Level.sav')
+    fs.writeFileSync(liveLevel, 'MUTATED-AFTER-BACKUP')
+
+    const preview = await service.stageUpload(bodyOf(path.join(env.BACKUP_DIR, backup.filename)))
+    // Game reports active until start() is called post-swap, then plays
+    // dead on the stability re-check — like Palworld crashing on load.
+    let restarted = false
+    const crashyService = createBackupService({
+      ...deps,
+      gameControl: {
+        ...fakes.gameControl,
+        start: async () => {
+          restarted = true
+        },
+        waitFor: async () => true,
+        status: async () => ({
+          installed: true,
+          activeState: restarted ? 'failed' : 'active',
+          subState: restarted ? 'dead' : 'running',
+          memoryCurrentBytes: null,
+          activeEnterAtMs: null,
+        }),
+      },
+    })
+    await expect(crashyService.restore(preview.stagingId, WORLD, noopSink)).rejects.toMatchObject({
+      code: 'restore_failed',
+      message: expect.stringContaining('exited right after'),
+    })
+    // Rolled back: the mutated (pre-restore) world is back in place.
+    expect(fs.readFileSync(liveLevel, 'utf8')).toBe('MUTATED-AFTER-BACKUP')
   })
 })

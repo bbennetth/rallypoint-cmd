@@ -9,6 +9,7 @@ export function BackupsPage() {
   const [backups, setBackups] = useState<Backup[] | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [ok, setOk] = useState<string | null>(null)
   const [preview, setPreview] = useState<RestorePreview | null>(null)
   // The op we launched (backup or restore); while set, we stream its
   // progress + final status over SSE instead of blind-polling.
@@ -28,8 +29,16 @@ export function BackupsPage() {
     if (!doneOp || !activeOp || doneOp.id !== activeOp.id) return
     if (doneOp.status === 'failed') {
       setErr(`${doneOp.kind} failed: ${doneOp.error ?? 'unknown error'}`)
+      setOk(null)
     } else {
       setErr(null)
+      // Persistent confirmation — without it a finished op just vanishes
+      // and success is indistinguishable from a silent failure.
+      setOk(
+        doneOp.kind === 'restore'
+          ? 'Restore complete — the uploaded world is now the active save.'
+          : 'Backup created.',
+      )
     }
     setActiveOp(null)
     setBusy(null)
@@ -40,6 +49,7 @@ export function BackupsPage() {
   async function create() {
     setBusy('create')
     setErr(null)
+    setOk(null)
     try {
       setActiveOp(await api.createBackup())
     } catch (e) {
@@ -62,6 +72,7 @@ export function BackupsPage() {
   async function onUpload(file: File) {
     setBusy('upload')
     setErr(null)
+    setOk(null)
     try {
       setPreview(await api.uploadBackup(file))
     } catch (e) {
@@ -98,6 +109,7 @@ export function BackupsPage() {
         }
       >
         {err && <p className="mb-3 text-sm text-panel-bad">{err}</p>}
+        {ok && <p className="mb-3 text-sm text-panel-good">{ok}</p>}
         {activeOp && (
           <div className="mb-4 rounded-lg border border-panel-border bg-panel-surface-2 px-4 py-3">
             <div className="mb-1 flex justify-between text-xs text-panel-muted">

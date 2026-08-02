@@ -475,6 +475,10 @@ export function createBackupService(deps: BackupDeps): BackupService {
     async restore(stagingId, confirm, sink): Promise<void> {
       const say = (line: string): void => sink.line(line)
       const pct = (n: number): void => sink.progress(n)
+      // The swap below is synchronous fs work; without explicit yields the
+      // SSE stream can't flush and the UI sees zero progress until the op
+      // ends (everything arrives in one burst).
+      const flush = (): Promise<void> => new Promise((r) => setImmediate(r))
       if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(stagingId)) {
         throw new BackupError('Invalid staging id.', 'staging_missing')
       }
@@ -517,6 +521,17 @@ export function createBackupService(deps: BackupDeps): BackupService {
       const liveWorldDir = path.join(saveRoot, targetWorldId)
 
       const statusBefore = await deps.gameControl.status()
+      // The real status() maps a failed `systemctl show` to
+      // inactive/unknown rather than throwing (fine for dashboards). Here
+      // "unknown" must NOT read as "safe to swap" — replacing saves under
+      // a server we merely FAILED TO SEE running silently loses the
+      // restored world to the game's next autosave.
+      if (statusBefore.subState === 'unknown') {
+        throw new BackupError(
+          'Cannot determine whether the game is running (systemctl query failed) — refusing to swap saves. Check the Server page and try again.',
+          'restore_failed',
+        )
+      }
       const wasActive =
         statusBefore.activeState === 'active' || statusBefore.activeState === 'activating'
 
@@ -527,8 +542,11 @@ export function createBackupService(deps: BackupDeps): BackupService {
         await deps.gameControl.stop()
         const stopped = await deps.gameControl.waitFor('inactive', 120_000)
         if (!stopped) throw new BackupError('Game did not stop within 120s.', 'restore_failed')
+      } else {
+        say('[restore] Game is not running — the world will be swapped without a restart. Start it from the Server page afterwards.')
       }
       pct(20)
+      await flush()
 
       // 2. Snapshot current saves aside for rollback (atomic rename).
       const rollbackDir = path.join(rollbackRoot, ulid())
@@ -542,6 +560,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
           fs.renameSync(liveWorldDir, rollbackWorldDir)
         }
         pct(35)
+        await flush()
 
         // 3. Swap staged world in (rename — same fs? staging lives in
         // DATA_DIR which may be another fs; fall back to copy).
@@ -552,6 +571,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
           fs.cpSync(stagedWorldDir, liveWorldDir, { recursive: true })
         }
         pct(55)
+        await flush()
 
         // 4. Point DedicatedServerName at the restored world if it moved.
         const gusPath = path.join(env.PAL_DIR, PAL_GAME_USER_SETTINGS_INI)
@@ -585,15 +605,42 @@ export function createBackupService(deps: BackupDeps): BackupService {
           }
         }
         pct(65)
+        await flush()
+
+        // 4c. Sanity: the panel must now resolve the restored world as
+        // the active one, or the game would boot something else entirely.
+        const resolved = resolveWorldId(env.PAL_DIR)
+        if (resolved?.toLowerCase() !== targetWorldId.toLowerCase()) {
+          throw new BackupError(
+            `World swap did not take: the active world resolves to ${resolved ?? 'none'} instead of ${targetWorldId}.`,
+            'restore_failed',
+          )
+        }
 
         // 5. Restart + verify. The (re)start applies any imported ini, so
-        // the pending-restart banner would be stale — clear it.
+        // the pending-restart banner would be stale — clear it. "Verify"
+        // means the unit STAYS active: systemd reports `active` the moment
+        // the process execs, but Palworld can still crash seconds later
+        // while loading the world — that must fail (and roll back) the
+        // restore, not report success.
         pct(70)
         if (wasActive) {
           say('[restore] Starting palworld.service...')
           await deps.gameControl.start()
           const up = await deps.gameControl.waitFor('active', 180_000)
           if (!up) throw new BackupError('Game failed to come back up after restore.', 'restore_failed')
+          const graceMs = env.NODE_ENV === 'test' ? 0 : 10_000
+          if (graceMs > 0) {
+            say('[restore] Game started — verifying it stays up...')
+            await new Promise((r) => setTimeout(r, graceMs))
+          }
+          const statusAfter = await deps.gameControl.status()
+          if (statusAfter.activeState !== 'active' && statusAfter.activeState !== 'activating') {
+            throw new BackupError(
+              'Game exited right after the restore restart (check its journal on the Server page) — rolling back.',
+              'restore_failed',
+            )
+          }
           deps.settings.clearPendingRestart()
         }
         pct(100)
