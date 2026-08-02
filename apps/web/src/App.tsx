@@ -9,6 +9,7 @@ import { ConsolePage } from './routes/Console.js'
 import { PlayersPage } from './routes/Players.js'
 import { SettingsPage } from './routes/Settings.js'
 import { BackupsPage } from './routes/Backups.js'
+import { ModsPage } from './routes/Mods.js'
 import { SchedulesPage } from './routes/Schedules.js'
 import { UpdatesPage } from './routes/Updates.js'
 import { AccountPage } from './routes/Account.js'
@@ -19,6 +20,7 @@ const NAV = [
   { to: '/players', label: 'Players' },
   { to: '/settings', label: 'Settings' },
   { to: '/updates', label: 'Updates' },
+  { to: '/mods', label: 'Mods' },
   { to: '/backups', label: 'Backups' },
   { to: '/schedules', label: 'Schedules' },
 ]
@@ -110,6 +112,7 @@ export function App() {
       <Route path="/players" element={<RequireAuth><PlayersPage /></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
       <Route path="/updates" element={<RequireAuth><UpdatesPage /></RequireAuth>} />
+      <Route path="/mods" element={<RequireAuth><ModsPage /></RequireAuth>} />
       <Route path="/backups" element={<RequireAuth><BackupsPage /></RequireAuth>} />
       <Route path="/schedules" element={<RequireAuth><SchedulesPage /></RequireAuth>} />
       <Route path="/account" element={<RequireAuth><AccountPage /></RequireAuth>} />

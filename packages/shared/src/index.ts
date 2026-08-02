@@ -1,5 +1,6 @@
 export * from './api.js'
 export * from './backups.js'
+export * from './mods.js'
 export * from './schedules.js'
 export * from './server-status.js'
 export * from './settings.js'

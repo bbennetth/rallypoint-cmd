@@ -18,6 +18,7 @@ import { playerRoutes } from './routes/players.js'
 import { updateRoutes } from './routes/updates.js'
 import { settingsRoutes } from './routes/settings.js'
 import { backupRoutes } from './routes/backups.js'
+import { modRoutes } from './routes/mods.js'
 import { scheduleRoutes } from './routes/schedules.js'
 import { panelUpdateRoutes } from './routes/panel-update.js'
 import { publicAccessRoutes } from './routes/public-access.js'
@@ -86,6 +87,7 @@ export function buildApp(deps: BuildAppDeps): Hono<HonoApp> {
   app.route('/', updateRoutes)
   app.route('/', settingsRoutes)
   app.route('/', backupRoutes)
+  app.route('/', modRoutes)
   app.route('/', scheduleRoutes)
   app.route('/', panelUpdateRoutes)
   app.route('/', publicAccessRoutes)
