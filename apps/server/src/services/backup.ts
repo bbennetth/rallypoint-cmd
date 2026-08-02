@@ -491,7 +491,22 @@ export function createBackupService(deps: BackupDeps): BackupService {
       }
 
       const saveRoot = path.join(env.PAL_DIR, PAL_SAVE_ROOT)
-      fs.mkdirSync(saveRoot, { recursive: true })
+      // Preflight: root-owned save dirs (e.g. from a manual `pct push`
+      // import) make every fs op below fail with EACCES. Fail up front
+      // with an actionable message instead of a bare errno.
+      try {
+        fs.mkdirSync(saveRoot, { recursive: true })
+        fs.accessSync(saveRoot, fs.constants.W_OK)
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code
+        if (code === 'EACCES' || code === 'EPERM') {
+          throw new BackupError(
+            `The panel user cannot write ${saveRoot} (some files are probably root-owned from a manual copy). Fix inside the container with: chown -R palworld:palworld ${env.PAL_DIR}/Pal/Saved`,
+            'restore_failed',
+          )
+        }
+        throw err
+      }
       const stagedWorldDir = ((): string => {
         const dirs = fs.readdirSync(path.join(extractDir, 'SaveGames', '0'))
         return path.join(extractDir, 'SaveGames', '0', dirs[0]!)

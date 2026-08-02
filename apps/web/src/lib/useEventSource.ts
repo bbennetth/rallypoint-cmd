@@ -90,15 +90,22 @@ export function useLongOp(enabled: boolean): {
     if (!enabled) return
     setDoneOp(null)
     const es = new EventSource('/api/updates/stream', { withCredentials: true })
+    const finish = (ev: Event): void => {
+      try {
+        const op = longOpSchema.parse(JSON.parse((ev as MessageEvent).data as string))
+        // `op` is the on-connect replay of the current op. A fast op can
+        // finish BEFORE the EventSource connects — its `done` event is
+        // gone, and the replay is the only signal. Treat any non-running
+        // replayed op as terminal, otherwise the UI spins forever.
+        if (op.status !== 'running') setDoneOp(op)
+      } catch {
+        // ignore unparseable frames
+      }
+    }
     es.addEventListener('log', (ev) => setLastLine((ev as MessageEvent).data as string))
     es.addEventListener('progress', (ev) => setProgress(Number((ev as MessageEvent).data)))
-    es.addEventListener('done', (ev) => {
-      try {
-        setDoneOp(longOpSchema.parse(JSON.parse((ev as MessageEvent).data as string)))
-      } catch {
-        setDoneOp(null)
-      }
-    })
+    es.addEventListener('done', finish)
+    es.addEventListener('op', finish)
     return () => es.close()
   }, [enabled])
 
