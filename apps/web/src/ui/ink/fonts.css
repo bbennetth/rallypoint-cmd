@@ -3,7 +3,7 @@
  * VENDORED from @rallypoint/ui — see ./VENDORED.md. Upstream's trailing
  * Inter face is dropped: it exists there as back-compat for sibling apps
  * that still hardcode `font-family: 'Inter'`, rallypoint-cmd has no such
- * call-site, and it is 344 KB — bigger than all five Ink faces combined.
+ * call-site, and it is 344 KB — bigger than all six Ink faces combined.
  *
  * The Ink type stack:
  *   --font-display : Archivo Black  (heavy geometric display / headings)

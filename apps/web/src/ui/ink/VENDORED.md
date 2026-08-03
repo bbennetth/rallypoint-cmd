@@ -45,7 +45,7 @@ reason.
 | `tokens/typography.css` | families, size scale, tracking, leading |
 | `tokens/spacing.css` | spacing, control heights, radii, shadows, glass, motion |
 | `focus-trap.ts` | upstream `lib/focus-trap.ts` — pure, no DOM deps |
-| `fonts/*.woff2` (5) | Archivo Black 400, Space Grotesk 400/500/700, Space Mono 400/700 — 93 KB total |
+| `fonts/*.woff2` (6) | Archivo Black 400, Space Grotesk 400/500/700, Space Mono 400/700 — 89 KB total |
 
 ### Trimmed
 
@@ -64,7 +64,7 @@ Each file's own header comment explains its cuts in detail.
 
 | Skipped | Reason |
 |---|---|
-| `fonts/inter-latin.woff2` | 344 KB back-compat face for siblings that hardcode `font-family: Inter`. No such call-site here — and bigger than all five Ink faces combined. |
+| `fonts/inter-latin.woff2` | 344 KB back-compat face for siblings that hardcode `font-family: Inter`. No such call-site here — and bigger than all six Ink faces combined. |
 | `store/theme.ts`, `ThemeToggle.tsx` | dark-only; zustand consumers |
 | `store/toast.ts`, `Toaster.tsx`, `toast-queue.ts` | would add **zustand** as a runtime dep for something `AppChrome` already ships inline (`showToast` + `.pl-toast`) |
 | `store/connection.ts`, `connection-status.ts` | `useSseLines` already reports `connected` |

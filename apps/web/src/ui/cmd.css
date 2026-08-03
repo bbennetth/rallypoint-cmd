@@ -171,8 +171,8 @@
 }
 
 /* ─── SMALL TEXT ROLES ─────────────────────────────────────── */
-/* Secondary body copy and the "nothing here" line — the shape the routes
-   spelled out ~40 times as `text-sm text-panel-muted`. */
+/* Secondary body copy and the "nothing here" line — a shape the routes
+   spelled out inline about forty times before the sweep. */
 .cmd-note {
   color: var(--ink-mute);
   font-size: var(--text-xs);

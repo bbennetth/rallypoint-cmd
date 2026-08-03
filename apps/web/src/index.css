@@ -43,35 +43,13 @@
 @import './ui/ink/shell.css' layer(components);
 @import './ui/cmd.css' layer(components);
 
-/* ─── panel-* COMPAT SHIM — TEMPORARY ───────────────────────────────
+/* No `@theme` block and no page-level height rules here. The pre-Ink
+ * palette was carried through the sweep by a compatibility `@theme` that
+ * re-pointed its old colour names at Ink tokens; every call site is now
+ * on an Ink recipe or a `.cmd-*` class, so it is gone.
  *
- * The routes carry ~190 references to the old `--color-panel-*` palette
- * (`text-panel-muted`, `border-panel-border`, `bg-panel-warn/10`, …).
- * Re-pointing those names at the Ink tokens repaints the entire app in
- * one commit with zero component churn, which keeps every intermediate
- * commit runnable and lets the e2e suite gate each page sweep.
+ * If you reintroduce one, remember that deleting an `@theme` entry makes
+ * its utilities vanish SILENTLY — no build error, just unstyled elements.
  *
- * This block is deleted once the last route is swept. Note that removing
- * an @theme entry makes its utilities vanish SILENTLY — no build error —
- * so the deletion commit must verify with:
- *
- *     grep -rn "panel-" apps/web/src      # must return nothing
- *
- * Opacity modifiers keep working through the indirection: v4 emits
- * `color-mix(in oklab, var(--color-panel-warn) 10%, transparent)`, and
- * the var() chain resolves before color-mix evaluates. */
-@theme {
-  --color-panel-bg: var(--bg);               /* #0b0f17 → #0b1b2b */
-  --color-panel-surface: var(--surface);     /* #131a26 → #152638 */
-  --color-panel-surface-2: var(--surface-2); /* #1b2432 → #1d2f45 */
-  --color-panel-border: var(--line);         /* #263243 → #24364e */
-  --color-panel-text: var(--ink);            /* #e6edf6 → #ffffff */
-  --color-panel-muted: var(--ink-mute);      /* #8b9bb1 → #7a8fa6 */
-  --color-panel-accent: var(--acid);         /* #4ea1ff → #0ea5e9 */
-  --color-panel-good: var(--ok);
-  --color-panel-warn: var(--warn);
-  --color-panel-bad: var(--hot-text);        /* the readable red, not --hot */
-}
-
-/* No page-level height rules here: ui/ink/shell.css owns `html`, `body`
-   and `#root` for the `.plapp` shell, which is its own scroll container. */
+ * ui/ink/shell.css owns `html`, `body` and `#root` for the `.plapp`
+ * shell, which is its own scroll container. */

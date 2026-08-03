@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 
 // Inline status banner — the panel's pendingRestart / restart-needed /
 // error / success notices, which were four copies of the same
-// `rounded-lg border border-panel-{tone}/40 bg-panel-{tone}/10` markup.
+// tinted-fill-plus-hard-border markup.
 //
 // Not ported from @rallypoint/ui's Banner: that one draws a hard 1.5px
 // border (contrary to Soft Ink) and has no actions slot, which two of
