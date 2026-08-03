@@ -76,6 +76,79 @@
   padding: 24px 16px;
 }
 
+/* ─── PRIMITIVES ───────────────────────────────────────────── */
+
+/* Card head + body. Ink's `.pl-card` is only the surface (bg, radius,
+   shadow) — upstream apps compose their own padding per surface. The
+   panel has one card shape, so it lives here. */
+.cmd-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px 0;
+}
+.cmd-card-head .ln {
+  flex: 1;
+  height: 1px;
+  background: var(--hairline-soft);
+}
+.cmd-card-head .eyebrow {
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  margin: 0;
+}
+.cmd-card-title {
+  font-size: 20px;
+  color: var(--ink);
+  margin: 0;
+  flex: 1;
+}
+.cmd-card-body {
+  padding: 14px 18px 16px;
+}
+
+/* Warn button. Ink has no amber variant — the panel needs one for
+   "Restart now", where the action is neither the happy path (accent) nor
+   destructive (hot). `--bg` text, not `--accent-ink`: amber is light. */
+.pl-btn.warn {
+  background: var(--warn);
+  color: var(--bg);
+  box-shadow: none;
+}
+
+/* Status chips off the cmd token triad, mirroring Ink's own
+   `.pl-chip.hot` shape. */
+.pl-chip.ok {
+  background: var(--ok-soft);
+  color: var(--ok-text);
+}
+.pl-chip.warn {
+  background: var(--warn-soft);
+  color: var(--warn-text);
+}
+.pl-chip.bad {
+  background: var(--bad-soft);
+  color: var(--bad-text);
+}
+
+/* KPI tile. Ink ships no stat primitive. Sits a step above the card it
+   is in (`--surface-2` on `--surface`), which is the Soft Ink way to
+   separate without a border. */
+.cmd-stat {
+  background: var(--surface-2);
+  border-radius: var(--radius-lg);
+  padding: 12px 16px;
+}
+.cmd-stat-value {
+  font-size: 24px;
+  color: var(--ink);
+  margin-top: 6px;
+}
+.cmd-stat-sub {
+  margin-top: 4px;
+  color: var(--ink-mute);
+}
+
 /* ─── SCROLLBARS ───────────────────────────────────────────── */
 /* Thin scrollbars for log panes and overflow regions. Retinted onto the
    Ink hairline; Firefox gets the standard property, WebKit the pseudo. */
