@@ -88,6 +88,7 @@
 .cmd-card-head {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 14px 18px 0;
 }
@@ -118,6 +119,22 @@
   background: var(--warn);
   color: var(--bg);
   box-shadow: none;
+}
+
+/* Compact destructive buttons sit SOFT at rest and go solid on hover.
+   A table of five rows renders five Delete buttons; at Ink's full-solid
+   `.pl-btn.hot` they turn the page into a wall of red and make deleting
+   look like the primary action. Full-size danger buttons keep the solid
+   treatment — there they ARE the committed action (Stop the server, the
+   confirm dialog's final button). */
+.pl-btn.hot.sm {
+  background: var(--bad-soft);
+  color: var(--bad-text);
+}
+.pl-btn.hot.sm:hover {
+  background: var(--bad);
+  color: var(--bg);
+  filter: none;
 }
 
 /* Status chips off the cmd token triad, mirroring Ink's own
@@ -172,6 +189,23 @@
   border-radius: var(--radius-md);
   padding: 6px 12px;
 }
+.cmd-danger {
+  color: var(--bad-text);
+}
+/* Running long-op card (backup / restore progress). A surface step above
+   the card it sits in — the Soft Ink way to nest without a border. */
+.cmd-op {
+  background: var(--surface-2);
+  border-radius: var(--radius-lg);
+  padding: 12px 16px;
+}
+/* Key/value summary block inside a dialog. */
+.cmd-kv {
+  background: var(--surface-2);
+  border-radius: var(--radius-lg);
+  padding: 12px;
+  margin: 0;
+}
 /* Status dot beside a lifecycle chip. Inherits the chip's colour, so it
    never needs a per-tone rule. */
 .cmd-dot {
@@ -188,8 +222,18 @@
 }
 .cmd-table {
   width: 100%;
+  /* Overflow and scroll on narrow screens rather than squeezing. With a
+     plain `width: 100%` a phone crushes "8/1/2026, 9:30:00 PM" onto three
+     lines AND still clips the actions column off the right edge — worst
+     of both. `min-width: max-content` is a no-op wherever the table
+     already fits, so desktop is unaffected. */
+  min-width: max-content;
   border-collapse: collapse;
   font-size: var(--text-sm);
+}
+.cmd-table th,
+.cmd-table td {
+  white-space: nowrap;
 }
 /* Header recipe lifted from @rallypoint/ui's Table so the panel's tables
    and the sibling apps' read as the same component. */

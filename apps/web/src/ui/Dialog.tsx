@@ -37,13 +37,15 @@ export function Dialog({
 
   useEffect(() => {
     openerRef.current = document.activeElement
-    const raf = requestAnimationFrame(() => {
-      const panel = panelRef.current
-      if (!panel) return
-      ;(nextFocusAfterTrap(panel, null, 'forward') ?? panel).focus()
-    })
+    // Focus synchronously rather than inside a requestAnimationFrame.
+    // createPortal has already committed the panel to the DOM by the time
+    // effects run, so there is nothing to wait for — and rAF callbacks do
+    // not fire at all in a tab the browser is not compositing (a
+    // background tab, or a hidden embedded view), which would strand
+    // keyboard users outside the modal exactly where it matters most.
+    const panel = panelRef.current
+    if (panel) (nextFocusAfterTrap(panel, null, 'forward') ?? panel).focus()
     return () => {
-      cancelAnimationFrame(raf)
       // Restore focus to whatever opened us, so keyboard users are not
       // dumped back at the top of the document.
       if (openerRef.current instanceof HTMLElement) openerRef.current.focus()

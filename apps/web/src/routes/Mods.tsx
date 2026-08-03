@@ -1,8 +1,21 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Mod } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
 import { formatBytes, formatDateTime } from '../lib/format.js'
 import { Badge, Button, Card, Spinner } from '../ui/primitives.js'
+import { Banner } from '../ui/Banner.js'
+import { ConfirmDialog } from '../ui/ConfirmDialog.js'
+import { DataTable } from '../ui/DataTable.js'
+import { Icon } from '../ui/ink/icons.js'
+import { useFilePicker } from '../lib/useFilePicker.js'
+
+const MOD_COLUMNS = [
+  { key: 'name', header: 'Name' },
+  { key: 'size', header: 'Size' },
+  { key: 'modified', header: 'Modified' },
+  { key: 'status', header: 'Status' },
+  { key: 'actions', header: 'Actions', align: 'right' as const },
+]
 
 export function ModsPage() {
   const [mods, setMods] = useState<Mod[] | null>(null)
@@ -12,7 +25,7 @@ export function ModsPage() {
   // Mods only load on server boot — any successful change arms this
   // banner until the user restarts (or dismisses it).
   const [restartNeeded, setRestartNeeded] = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
+  const [pendingDelete, setPendingDelete] = useState<Mod | null>(null)
 
   async function load() {
     setMods((await api.mods()).mods)
@@ -38,9 +51,9 @@ export function ModsPage() {
       setErr(e instanceof ApiError ? e.message : 'Upload rejected')
     } finally {
       setBusy(null)
-      if (fileRef.current) fileRef.current.value = ''
     }
   }
+  const picker = useFilePicker(onUpload, { accept: '.pak,.zip' })
 
   async function toggle(mod: Mod) {
     setBusy(mod.id)
@@ -57,7 +70,6 @@ export function ModsPage() {
   }
 
   async function del(mod: Mod) {
-    if (!confirm(`Delete ${mod.pakFilename} permanently?`)) return
     setBusy(mod.id)
     setErr(null)
     setOk(null)
@@ -69,6 +81,7 @@ export function ModsPage() {
       setErr(e instanceof ApiError ? e.message : 'Delete failed')
     } finally {
       setBusy(null)
+      setPendingDelete(null)
     }
   }
 
@@ -87,100 +100,113 @@ export function ModsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="cmd-wide space-y-6">
+      <div className="pg-head">
+        <h1>Mods</h1>
+      </div>
+
       <Card
         title="Mods"
         actions={
-          <div className="flex gap-2">
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".pak,.zip"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0]
-                if (f) void onUpload(f)
-              }}
-            />
-            <Button variant="primary" disabled={busy !== null} onClick={() => fileRef.current?.click()}>
-              {busy === 'upload' ? <Spinner /> : '↑'} Upload mod
+          <>
+            {picker.input}
+            <Button variant="primary" disabled={busy !== null} onClick={picker.open}>
+              {busy === 'upload' ? <Spinner /> : <Icon name="upload" size={13} />} Upload mod
             </Button>
-          </div>
+          </>
         }
       >
-        {err && <p className="mb-3 text-sm text-panel-bad">{err}</p>}
-        {ok && <p className="mb-3 text-sm text-panel-good">{ok}</p>}
+        {err && (
+          <div className="mb-3">
+            <Banner tone="bad">{err}</Banner>
+          </div>
+        )}
+        {ok && (
+          <div className="mb-3">
+            <Banner tone="ok">{ok}</Banner>
+          </div>
+        )}
         {restartNeeded && (
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-panel-warn/40 bg-panel-warn/10 px-4 py-3 text-sm text-panel-warn">
-            <span>Mod changes take effect after a server restart.</span>
-            <div className="flex gap-2">
-              <Button variant="ghost" disabled={busy !== null} onClick={() => setRestartNeeded(false)}>
-                Dismiss
-              </Button>
-              <Button variant="primary" disabled={busy !== null} onClick={restart}>
-                {busy === 'restart' ? <Spinner /> : null} Restart server
-              </Button>
-            </div>
+          <div className="mb-4">
+            <Banner
+              tone="warn"
+              actions={
+                <div className="flex gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy !== null}
+                    onClick={() => setRestartNeeded(false)}
+                  >
+                    Dismiss
+                  </Button>
+                  <Button variant="warn" size="sm" disabled={busy !== null} onClick={restart}>
+                    {busy === 'restart' ? <Spinner /> : null} Restart server
+                  </Button>
+                </div>
+              }
+            >
+              Mod changes take effect after a server restart.
+            </Banner>
           </div>
         )}
         {!mods ? (
-          <p className="text-panel-muted">Loading…</p>
-        ) : mods.length === 0 ? (
-          <p className="text-sm text-panel-muted">
-            No mods installed. Upload a .pak file (or a .zip containing one) to get started.
-          </p>
+          <p className="cmd-empty">Loading…</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-panel-border text-left text-xs uppercase text-panel-muted">
-                  <th className="pb-2 pr-3">Name</th>
-                  <th className="pb-2 pr-3">Size</th>
-                  <th className="pb-2 pr-3">Modified</th>
-                  <th className="pb-2 pr-3">Status</th>
-                  <th className="pb-2 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {mods.map((m) => (
-                  <tr key={m.id} className="border-b border-panel-border/50">
-                    <td className="py-2 pr-3">
-                      <span className="mono">{m.id}</span>
-                      {m.files.length > 1 && (
-                        <span className="ml-1.5 text-xs text-panel-muted">
-                          ({m.files.length} files)
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-2 pr-3">{formatBytes(m.sizeBytes)}</td>
-                    <td className="py-2 pr-3">{formatDateTime(m.modifiedAtMs)}</td>
-                    <td className="py-2 pr-3">
-                      <Badge tone={m.enabled ? 'good' : 'muted'}>
-                        {m.enabled ? 'enabled' : 'disabled'}
-                      </Badge>
-                    </td>
-                    <td className="py-2 text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button variant="ghost" disabled={busy === m.id} onClick={() => toggle(m)}>
-                          {m.enabled ? 'Disable' : 'Enable'}
-                        </Button>
-                        <Button variant="danger" disabled={busy === m.id} onClick={() => del(m)}>
-                          Delete
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={MOD_COLUMNS}
+            empty="No mods installed. Upload a .pak file (or a .zip containing one) to get started."
+            rows={mods.map((m) => ({
+              id: m.id,
+              cells: [
+                <>
+                  <span className="mono">{m.id}</span>
+                  {m.files.length > 1 && (
+                    <span className="cmd-note ml-1.5">({m.files.length} files)</span>
+                  )}
+                </>,
+                formatBytes(m.sizeBytes),
+                formatDateTime(m.modifiedAtMs),
+                <Badge tone={m.enabled ? 'good' : 'muted'}>
+                  {m.enabled ? 'enabled' : 'disabled'}
+                </Badge>,
+                <div className="flex justify-end gap-2">
+                  <Button variant="ghost" size="sm" disabled={busy === m.id} onClick={() => toggle(m)}>
+                    {m.enabled ? 'Disable' : 'Enable'}
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    disabled={busy === m.id}
+                    onClick={() => setPendingDelete(m)}
+                  >
+                    Delete
+                  </Button>
+                </div>,
+              ],
+            }))}
+          />
         )}
-        <p className="mt-4 text-xs text-panel-muted">
+        <p className="cmd-note mt-4">
           Mods are .pak files loaded from <span className="mono">Pal/Content/Paks/~mods</span> on the
           server. Disabling a mod parks it in a sibling folder without deleting it. Players may also
           need the same mod installed on their own game for it to work.
         </p>
       </Card>
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Delete mod"
+          body={
+            <>
+              Delete <span className="mono">{pendingDelete.pakFilename}</span> permanently? This
+              cannot be undone.
+            </>
+          }
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={() => del(pendingDelete)}
+        />
+      )}
     </div>
   )
 }
