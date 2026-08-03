@@ -1,0 +1,36 @@
+/* rallypoint-cmd — server-status tokens. APP-OWNED (not vendored).
+ *
+ * Ink has no amber, and its only green is `--map-highlight: #39ff14` —
+ * a neon map direction-line that reads garish as a "Running" dot. The
+ * panel needs a lifecycle triad (running / degraded / stopped) plus disk
+ * usage thresholds, so those two hues are defined here.
+ *
+ * Only the two bases are literal, exactly like Ink's own `--hot`
+ * constant; everything else derives via `color-mix()`. The shapes mirror
+ * Ink's `--hot` / `--hot-text` / `--hot-soft` trio so adding a light
+ * chassis later means re-picking two hues, not rewriting call sites.
+ *
+ * Consume these through the recipe classes in cmd.css, not directly —
+ * Badge / ProgressBar / Banner already encapsulate every use. */
+
+:root {
+  --ok: #22c55e;    /* = Ink's own [data-color='green'] accent; stays in-system */
+  --warn: #f59e0b;  /* amber; distinct enough from Ink's #fb923c orange accent */
+
+  /* Text tints: pulled toward --ink so they clear contrast on --surface
+     without the raw hue vibrating against the navy chassis. */
+  --ok-text: color-mix(in srgb, var(--ok) 82%, var(--ink));
+  --ok-soft: color-mix(in srgb, var(--ok) 18%, transparent);
+  --warn-text: color-mix(in srgb, var(--warn) 88%, var(--ink));
+  --warn-soft: color-mix(in srgb, var(--warn) 18%, transparent);
+
+  /* Re-exported so panel code never reaches for Ink's --hot directly and
+     the whole triad reads consistently at call sites. */
+  --bad: var(--hot);
+  --bad-text: var(--hot-text);
+  --bad-soft: var(--hot-soft);
+
+  /* Fourth, neutral state — stopped / unknown / not installed. */
+  --idle-text: var(--ink-mute);
+  --idle-soft: var(--surface-2);
+}

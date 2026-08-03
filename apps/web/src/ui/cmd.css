@@ -1,0 +1,38 @@
+/* rallypoint-cmd — app-owned recipes on top of the vendored Ink system.
+ *
+ * Everything the panel needs that Ink does not ship lives here, so
+ * ui/ink/ stays a clean copy of upstream. Imported into
+ * `layer(components)` alongside shell.css — see index.css. */
+
+/* ─── SCROLLBARS ───────────────────────────────────────────── */
+/* Thin scrollbars for log panes and overflow regions. Retinted onto the
+   Ink hairline; Firefox gets the standard property, WebKit the pseudo. */
+.thin-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.thin-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: var(--radius-badge);
+}
+
+/* ─── REDUCED MOTION ───────────────────────────────────────── */
+/* The vendored CSS ships no `prefers-reduced-motion` coverage at all —
+   upstream's only such block sits on `.rp-swipe-content`, which is not
+   vendored. The panel animates more than most of its surfaces do (op
+   progress, spinners, a pulsing indeterminate bar), so opt the whole
+   thing out here rather than per-recipe. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

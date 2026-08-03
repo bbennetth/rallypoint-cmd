@@ -8,8 +8,8 @@
  *    are HOISTED into apps/web/src/index.css instead, because this file
  *    is imported `layer(components)` (so its rules lose to Tailwind
  *    utilities) while the token files must stay UNLAYERED (so Ink's
- *    --text-*/--radius-* beat Tailwind's `@layer theme` defaults of the
- *    same name). A nested @import inherits the parent's layer, which
+ *    text and radius scales beat Tailwind's `@layer theme` defaults of
+ *    the same name). A nested @import inherits the parent's layer, which
  *    would put the tokens in the wrong place. See index.css.
  *
  * 2. Everything below the safe-area helpers is dropped: the light-mode

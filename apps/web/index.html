@@ -1,10 +1,15 @@
 <!doctype html>
-<html lang="en" class="dark">
+<!-- Ink dual-axis theme attributes. Static: the panel is dark-only, so
+     there is no theme store and no pre-hydration boot script. They are
+     redundant with the `:root` fallback in ui/ink/tokens/colors.css, but
+     keep the selector shape identical to upstream so re-adding light
+     mode or accent switching stays a paste-back. -->
+<html lang="en" data-mode="dark" data-color="blue">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
-    <meta name="theme-color" content="#0b0f17" />
+    <meta name="theme-color" content="#0b1b2b" />
     <title>Rallypoint</title>
   </head>
   <body>
