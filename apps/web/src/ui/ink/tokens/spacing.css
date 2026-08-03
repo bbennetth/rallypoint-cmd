@@ -1,0 +1,72 @@
+/* Rallypoint "Soft Ink" — spacing, borders, radius, shadow, motion tokens.
+ *
+ * The brand is SOFT about edges: surfaces separate by surface-step contrast
+ * and low soft shadows, not borders. Corners are rounded on a 7–14px scale —
+ * 8px buttons/inputs, 10px nav links / segmented containers, 12px content
+ * rows, 14px cards/panels, the 22px pill for the floating mobile tab-bar,
+ * and full-round for FAB/avatar/chips. Hairlines (1px, low-alpha ink) are
+ * residual — section rules and structural dividers only. Accent controls
+ * carry a soft accent glow. */
+
+:root {
+  /* Spacing scale (px). Page gutters: 18 mobile / 34-44 desktop. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Control heights — the single size scale every button/input derives
+     from (sm = compact row-trailing, md = default button/input, lg =
+     primary tap target, icon = square icon-only buttons). --tap-min is
+     the coarse-pointer floor applied via @media (any-pointer: coarse). */
+  --control-h-sm: 28px;
+  --control-h-md: 36px;
+  --control-h-lg: 44px;
+  --control-h-icon: 32px;
+  --tap-min: 44px;
+
+  /* Borders — residual. 1.5px survives only where a drawn edge is the
+     point (checkbox); 1px --hairline-soft rules elsewhere. */
+  --border-width: 1.5px;
+  --border-width-thin: 1px;
+  --border-accent: 3px;       /* timeline event left edge */
+
+  /* Radius — rounded by default, 7–14px scale. */
+  --radius-none: 0;
+  --radius-badge: 4px;        /* smallest badge */
+  --radius-sm: 6px;           /* legacy chip */
+  --radius-checkbox: 7px;     /* .pl-check */
+  --radius-md: 8px;           /* button / input */
+  --radius-seg-active: 8px;   /* active segment inside a .seg */
+  --radius-nav: 10px;         /* sidebar navlink / seg container */
+  --radius-lg: 12px;          /* content row / pl-row */
+  --radius-xl: 14px;          /* card / panel / auth card */
+  --radius-pill: 22px;        /* floating mobile tab-bar capsule */
+  --radius-round: 999px;      /* FAB / avatar / chip / status dot */
+
+  /* Shadows — soft elevation. Cards/rows get the low card shadow, panels
+     and floats the deeper panel shadow; accent controls add a glow. */
+  --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.18);
+  --shadow-panel: 0 4px 16px rgba(0, 0, 0, 0.22);
+  --glow-accent: 0 2px 8px color-mix(in srgb, var(--acid) 42%, transparent);
+  --glow-accent-strong: 0 2px 8px color-mix(in srgb, var(--acid) 45%, transparent);
+  --shadow-flyout: 0 12px 28px rgba(0, 0, 0, 0.35);
+  --shadow-fab: 0 8px 24px color-mix(in srgb, var(--acid) 45%, transparent);
+  --shadow-tabbar: 0 10px 30px rgba(0, 0, 0, 0.35),
+    inset 0 0 0 1px color-mix(in srgb, #fff 6%, transparent);
+  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.35);
+
+  /* Glass — the mobile tab-bar's backdrop blur. */
+  --blur-glass: blur(20px) saturate(180%);
+
+  /* Motion — soft, eased-out, no bounce. */
+  --ease-out: ease-out;
+  --dur-fast: 180ms;
+  --dur-base: 200ms;
+  --dur-slow: 220ms;
+}

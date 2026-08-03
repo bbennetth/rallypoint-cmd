@@ -1,0 +1,82 @@
+/* Rallypoint "Ink" — color tokens.
+ *
+ * VENDORED from @rallypoint/ui — see ../VENDORED.md. Trimmed to the dark
+ * chassis + blue accent: rallypoint-cmd ships dark-only, so the light
+ * chassis, the light shadow/accent overrides, the five non-blue accents
+ * and the legacy `data-theme` back-compat selectors are all dropped.
+ *
+ * The selector SHAPES are kept (`:root, [data-mode='dark']` and
+ * `:root, [data-color='blue']`) so re-adding light or the other accents
+ * later is a paste-back from upstream, not a rewrite. Everything below
+ * the chassis derives via `color-mix()` off `--acid`/`--ink` — nothing
+ * downstream hardcodes an accent hex, which is what makes that possible.
+ *
+ * Base values come first; semantic aliases live at the bottom. */
+
+:root {
+  /* Theme-agnostic constants. */
+  --map-highlight: #39ff14;  /* neon green — upstream's map direction line */
+  --hot: #ef4444;            /* destructive red, mode-independent */
+  --focus-ring: var(--acid);
+}
+
+/* ─── CHASSIS (data-mode) ───────────────────────────────────
+   Dark is the only chassis here; applied to bare `:root` too so the app
+   renders correctly even before <html data-mode> is read. */
+:root,
+[data-mode='dark'] {
+  --bg: #0b1b2b;
+  --surface: #152638;
+  --surface-2: #1d2f45;
+  --line: #24364e;
+  --ink: #ffffff;
+  --ink-dim: #a8bcd4;
+  --ink-mute: #7a8fa6;
+  /* Soft Ink danger + edge tokens. */
+  --hot-text: #f87171;
+  --hot-soft: rgba(239, 68, 68, 0.18);
+  --edge-highlight: color-mix(in srgb, #fff 4%, transparent);
+  color-scheme: dark;
+}
+
+/* ─── ACCENT (data-color) ───────────────────────────────────
+   `:root` carries the default so `--acid`/`--accent` resolve with no
+   attribute set. `--accent` always aliases `--acid`. */
+:root,
+[data-color='blue'] {
+  --acid: #0ea5e9;
+  --accent: var(--acid);
+  --accent-ink: #ffffff;
+}
+
+/* ─── DERIVED ACCENT WASHES ─────────────────────────────────
+   Soft accent fills derived from the live accent — used for active-nav
+   backgrounds, hover washes, secondary accent text/borders. */
+:root,
+[data-mode] {
+  --accent-soft: color-mix(in srgb, var(--acid) 14%, transparent);
+  --accent-soft-2: color-mix(in srgb, var(--acid) 8%, transparent);
+  --accent-soft-strong: color-mix(in srgb, var(--acid) 18%, transparent);
+  --accent-ring: color-mix(in srgb, var(--acid) 35%, transparent);
+  --accent-avatar: color-mix(in srgb, var(--acid) 22%, transparent);
+  --acid-dim: color-mix(in srgb, var(--acid) 60%, transparent);
+  /* Ink-derived washes — hover fills and residual hairlines. */
+  --wash-hover: color-mix(in srgb, var(--ink) 4%, transparent);
+  --hairline-soft: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+/* ─── SEMANTIC ALIASES ──────────────────────────────────────
+   Prefer these in new code; they re-point if the base scale changes.
+   Existing code keeps using --bg/--surface/--line directly. */
+:root {
+  --text-strong: var(--ink);       /* headings, primary text */
+  --text-body: var(--ink-dim);     /* paragraph / secondary */
+  --text-muted: var(--ink-mute);   /* captions, meta, placeholders */
+  --surface-page: var(--bg);       /* page background */
+  --surface-card: var(--surface);  /* card / sidebar surface */
+  --surface-sunken: var(--bg);     /* inputs sit on the page color */
+  --surface-raised: var(--surface-2);
+  --border-line: var(--line);      /* the residual hairline */
+  --success: var(--map-highlight);
+  --danger: var(--hot);
+}

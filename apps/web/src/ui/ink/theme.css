@@ -1,0 +1,115 @@
+/* Rallypoint "Ink" — base reset + form normalize.
+ *
+ * VENDORED from @rallypoint/ui — see ./VENDORED.md.
+ *
+ * TWO DELIBERATE DIFFERENCES FROM UPSTREAM:
+ *
+ * 1. Upstream `@import`s the four tokens files from here. Those imports
+ *    are HOISTED into apps/web/src/index.css instead, because this file
+ *    is imported `layer(components)` (so its rules lose to Tailwind
+ *    utilities) while the token files must stay UNLAYERED (so Ink's
+ *    --text-*/--radius-* beat Tailwind's `@layer theme` defaults of the
+ *    same name). A nested @import inherits the parent's layer, which
+ *    would put the tokens in the wrong place. See index.css.
+ *
+ * 2. Everything below the safe-area helpers is dropped: the light-mode
+ *    Tailwind remap block (dark-only app, and no `text-white/40`-style
+ *    call-sites exist here), the `[data-platform='android']` scale (never
+ *    set), `.star-clip`, the planner/lists layout helpers — and the whole
+ *    legacy `.app-*` shell + `.sidebar-link` / `.tabbar-link` + PWA
+ *    standalone block. That shell is superseded by `.plapp` in shell.css,
+ *    and `.app-root`'s height depends on the `--app-vh` custom property
+ *    set by `useViewportHeight`, which is not vendored — so leaving it in
+ *    would ship a shell that collapses to zero height if anything ever
+ *    used it.
+ *
+ * The form-control normalize below is kept VERBATIM, comments included:
+ * it encodes real iOS auto-zoom bugs and the specificity reasoning that
+ * fixes them. Do not "simplify" it. */
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+
+html {
+  /* Prevent iOS Safari from auto-enlarging text on orientation change */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Fill the visual viewport even when the address bar collapses */
+  height: 100%;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  overscroll-behavior: none;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  -webkit-touch-callout: none;
+  min-height: 100%;
+}
+
+/* Normalize form controls — iOS applies heavy default styling that
+   Android doesn't. Strip it so both platforms use our styles. Exclude
+   checkbox/radio: stripping `appearance` there removes the native
+   glyph entirely. */
+button,
+input:not([type='checkbox']):not([type='radio']),
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 0;
+  background-clip: padding-box;
+}
+
+/* Inputs ≥ 16px so iOS/iPadOS Safari never auto-zooms on focus. The
+   selector MUST mirror the normalize block's `input:not(...)` shape above:
+   that block sets `font: inherit`, and the shorthand also resets
+   font-size, at specificity (0,2,1). A bare `input { font-size: 16px }`
+   (0,0,1) is therefore out-ranked — the input ignores the 16px and instead
+   inherits its container's size, which re-arms the focus-zoom. Matching
+   (0,2,1) + later source order lets the 16px win on every device, no
+   `!important` needed. */
+input:not([type='checkbox']):not([type='radio']),
+textarea,
+select {
+  font-size: 16px;
+}
+
+/* Belt-and-suspenders for touch-capable devices: an inline
+   `style={{ fontSize }}` (specificity 1,0,0,0) or an `!important` app rule
+   still out-ranks the rule above. `!important` here reclaims the 16px floor
+   wherever the device has a coarse pointer. Use `any-pointer` (not
+   `pointer`) so an iPad driven by a trackpad — which reports a *fine*
+   primary pointer yet still has a touchscreen that zooms — is covered too.
+   Desktop (mouse-only) keeps its intended sizes; checkbox/radio carry no
+   text to zoom. */
+@media (any-pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
+/* Safe area helpers. `safe-x` covers the side notch / Dynamic Island
+   in landscape; top/bottom cover the portrait status bar + home
+   indicator. */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.safe-top    { padding-top: env(safe-area-inset-top, 0px); }
+.safe-x {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* Scrollbar hide */
+.scroll-hide::-webkit-scrollbar { display: none; }
+.scroll-hide { scrollbar-width: none; }

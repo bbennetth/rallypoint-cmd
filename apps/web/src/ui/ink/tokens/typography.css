@@ -1,0 +1,49 @@
+/* Rallypoint "Ink" — typography tokens.
+ *
+ * Three roles, no more. Display is heavy & tight (Archivo Black), body is
+ * the workhorse (Space Grotesk), mono carries every eyebrow / label / meta
+ * line — the signature "cyber-brutalist" texture of the brand.
+ *
+ * The actual @font-face rules live in ../fonts.css; this file just
+ * defines the variable scale and family stack. */
+
+:root {
+  /* Families. */
+  --font-display: 'Archivo Black', system-ui, -apple-system, sans-serif;
+  --font-body: 'Space Grotesk', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Space Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Display sizes (Archivo Black; letter-spacing -0.02em, line-height 1). */
+  --text-display-xl: 40px;   /* marketing hero */
+  --text-display-lg: 34px;   /* product page H1 */
+  --text-display-md: 30px;   /* page head H1 */
+  --text-display-sm: 20px;   /* card / section title */
+
+  /* Body sizes (Space Grotesk). */
+  --text-lg: 16px;           /* lede paragraph; input floor (no iOS zoom) */
+  --text-md: 14px;           /* default UI / button label */
+  --text-sm: 13px;           /* dense rows, secondary */
+  --text-xs: 12px;           /* fine print */
+
+  /* Mono sizes (Space Mono; uppercase, wide tracking). */
+  --text-mono-eyebrow: 9px;  /* section eyebrow — letter-spacing 0.16em */
+  --text-mono-nav: 12px;     /* sidebar nav label — 0.08em, weight 700 */
+  --text-mono-meta: 11px;    /* timestamps / meta — 0.02em */
+
+  /* Weights. */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-bold: 700;
+
+  /* Tracking. */
+  --tracking-display: -0.02em;
+  --tracking-tight: -0.04em;   /* wordmark */
+  --tracking-eyebrow: 0.16em;
+  --tracking-nav: 0.08em;
+  --tracking-caps: 0.06em;
+
+  /* Line-heights. */
+  --leading-display: 1;
+  --leading-body: 1.5;
+  --leading-tight: 1.35;
+}

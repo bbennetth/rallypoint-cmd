@@ -1,0 +1,63 @@
+/* Rallypoint "Ink" — standalone utility primitives.
+ *
+ * VENDORED from @rallypoint/ui — see ../VENDORED.md. Heavily trimmed.
+ *
+ * Dropped, and why:
+ *   .chip / .chip-solid, .btn-brutal / .btn-ghost / .btn-hot,
+ *   .cyber-input        — superseded by shell.css's .pl-chip / .pl-btn /
+ *                         .pl-input. Upstream ships both because older
+ *                         sibling apps still use the kit vocabulary;
+ *                         shipping two button families here would just
+ *                         give the panel two ways to draw a button, with
+ *                         the shell.css one silently winning on source
+ *                         order.
+ *   .checkbox-field*, .image-picker*
+ *                       — no image uploads in the panel (mods are .pak,
+ *                         backups .tar.gz) and one bare checkbox.
+ *
+ * What is left resolves entirely off the color/spacing tokens.
+ *
+ * ONE DELIBERATE DIFFERENCE FROM UPSTREAM: the four type roles below are
+ * defined here ONLY. Upstream defines them in both this file and
+ * shell.css (same values, shell.css winning on source order). Keeping
+ * them here makes the type layer independent of the shell — which
+ * matters because shell.css also carries `html, body { overflow:
+ * hidden }`, so it can only be imported once a `.plapp` scroll container
+ * exists. `.mono` takes shell.css's real definition, not upstream's
+ * deliberately-empty one: the panel's log panes rely on it. */
+
+/* ─── TYPE ROLES ───────────────────────────────────────────── */
+.display { font-family: var(--font-display); letter-spacing: var(--tracking-display); line-height: var(--leading-display); }
+.mono { font-family: var(--font-mono); }
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-eyebrow);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+.meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-meta);
+  color: var(--ink-dim);
+  letter-spacing: 0.02em;
+}
+
+/* ─── FORM ─────────────────────────────────────────────────── */
+/* Re-tints the native check glyph + rounds the box while keeping native
+   a11y semantics (screen readers + keyboard nav still work). */
+.cyber-checkbox {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--acid);
+  border-radius: var(--radius-sm);
+}
+
+.sr-only { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important; }
+
+/* ─── PROGRESS / DIVIDER ───────────────────────────────────── */
+.progress { height: 4px; background: var(--surface-2); border-radius: var(--radius-round); position: relative; overflow: hidden; }
+.progress > div { position: absolute; inset: 0; background: var(--accent); border-radius: var(--radius-round); transform-origin: left; }
+.divider { height: 1px; background: var(--line); }
