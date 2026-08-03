@@ -4,6 +4,7 @@ import { useAuth } from '../lib/auth.js'
 import { ApiError } from '../lib/api.js'
 import { Button, Field, inputClass, Spinner } from '../ui/primitives.js'
 import { AppBrandLockup } from '../ui/ink/icons.js'
+import { Banner } from '../ui/Banner.js'
 
 export function LoginPage() {
   const { session, login } = useAuth()
@@ -54,8 +55,8 @@ export function LoginPage() {
               autoComplete="current-password"
             />
           </Field>
-          {error && <p className="text-sm text-panel-bad">{error}</p>}
-          <Button variant="primary" className="w-full justify-center" disabled={busy}>
+          {error && <Banner tone="bad">{error}</Banner>}
+          <Button variant="primary" className="w-full" disabled={busy}>
             {busy ? <Spinner /> : 'Sign in'}
           </Button>
         </div>

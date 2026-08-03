@@ -216,6 +216,25 @@
   flex: 0 0 6px;
 }
 
+/* Schedule row. A `.pl-row` grid does not fit — the content is two
+   clusters that need to wrap as units on narrow screens, not three fixed
+   grid tracks. Same surface step and radius as `.pl-row` otherwise. */
+.cmd-sched {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--surface-2);
+  border-radius: var(--radius-lg);
+}
+/* `.pl-btn.ghost` is `--surface-2`, which is exactly this row's own fill —
+   so a ghost button here renders invisible. Lift it one more step. */
+.cmd-sched .pl-btn.ghost {
+  background: color-mix(in srgb, var(--ink) 8%, var(--surface-2));
+}
+
 /* ─── TABLE ────────────────────────────────────────────────── */
 .cmd-table-wrap {
   overflow-x: auto;

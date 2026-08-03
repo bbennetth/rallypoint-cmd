@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { api, ApiError } from '../lib/api.js'
 import { Button, Card, Field, inputClass } from '../ui/primitives.js'
+import { Banner } from '../ui/Banner.js'
 
 export function AccountPage() {
   const [current, setCurrent] = useState('')
@@ -32,6 +33,10 @@ export function AccountPage() {
 
   return (
     <div className="max-w-md">
+      <div className="pg-head">
+        <h1>Account</h1>
+      </div>
+
       <Card title="Change password">
         <form onSubmit={submit} className="space-y-4">
           <Field label="Current password">
@@ -61,11 +66,7 @@ export function AccountPage() {
               autoComplete="new-password"
             />
           </Field>
-          {msg && (
-            <p className={msg.tone === 'good' ? 'text-sm text-panel-good' : 'text-sm text-panel-bad'}>
-              {msg.text}
-            </p>
-          )}
+          {msg && <Banner tone={msg.tone === 'good' ? 'ok' : 'bad'}>{msg.text}</Banner>}
           <Button variant="primary" disabled={busy}>
             Update password
           </Button>

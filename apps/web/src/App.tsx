@@ -17,7 +17,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
   if (loading)
     return (
-      <div className="flex h-full items-center justify-center text-panel-muted">
+      <div className="cmd-empty flex h-full items-center justify-center">
         <Spinner />
       </div>
     )
