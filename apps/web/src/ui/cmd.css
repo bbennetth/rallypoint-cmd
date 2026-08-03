@@ -41,28 +41,32 @@
   }
 }
 
+/* Reclaim the mobile bottom gutter. shell.css reserves 104px there to
+   clear a floating tab-bar capsule — but `.pl-tabbar` is a static flex
+   sibling of `.plapp-main`, not an overlay (measured: main.bottom ===
+   tabbar.top), so upstream's reservation is dead space in this app. It
+   costs ~86px of every mobile screen and leaves a visible band under
+   full-height pages. The pill carries its own safe-area margin. */
+@media (max-width: 1023px) {
+  .plapp-main {
+    padding-bottom: 18px;
+  }
+}
+
 /* Fill the scroll container exactly — for the Console log viewer, which
    wants its own internal scroll rather than growing the page.
-   `.plapp-main` is the scroll container now, so this mirrors ITS padding
-   plus the mobile top bar (shell.css: `.plapp-main` padding and
-   `.pl-topbar` height). Keep the two in sync. */
-:root {
-  --cmd-main-pt: 34px;
-  --cmd-main-pb: 56px;
-  --cmd-topbar-h: 0px;
-}
-@media (max-width: 1023px) {
-  :root {
-    --cmd-main-pt: 18px;
-    --cmd-main-pb: calc(104px + env(safe-area-inset-bottom, 0px));
-    --cmd-topbar-h: 52px;
-  }
+   Percentage height against `.plapp-main`'s content box, rather than
+   reconstructing it from copied constants: the arithmetic version has to
+   know the top-bar height, both gutters AND the tab bar's footprint, and
+   silently overflows the moment any of them changes. */
+.plapp-content:has(> .cmd-fill) {
+  height: 100%;
 }
 .cmd-fill {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  height: calc(100dvh - var(--cmd-topbar-h) - var(--cmd-main-pt) - var(--cmd-main-pb));
+  height: 100%;
 }
 
 /* Login sits outside the chrome, and shell.css locks `html, body` to
@@ -147,6 +151,35 @@
 .cmd-stat-sub {
   margin-top: 4px;
   color: var(--ink-mute);
+}
+
+/* ─── SMALL TEXT ROLES ─────────────────────────────────────── */
+/* Secondary body copy and the "nothing here" line — the shape the routes
+   spelled out ~40 times as `text-sm text-panel-muted`. */
+.cmd-note {
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
+}
+.cmd-link {
+  color: var(--acid);
+  text-decoration: underline;
+}
+/* Inline copyable value (the public-access address). */
+.cmd-code {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  background: var(--surface-2);
+  border-radius: var(--radius-md);
+  padding: 6px 12px;
+}
+/* Status dot beside a lifecycle chip. Inherits the chip's colour, so it
+   never needs a per-tone rule. */
+.cmd-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-round);
+  background: currentColor;
+  flex: 0 0 6px;
 }
 
 /* ─── TABLE ────────────────────────────────────────────────── */

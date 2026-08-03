@@ -29,15 +29,23 @@ export function LogPane({
   /** Lines matching this are tinted with the danger colour. */
   errorPattern?: RegExp
 }) {
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const paneRef = useRef<HTMLDivElement>(null)
   const arr = typeof lines === 'string' ? (lines ? lines.split('\n') : []) : lines
 
   useEffect(() => {
-    if (autoscroll) bottomRef.current?.scrollIntoView({ behavior: 'auto' })
+    if (!autoscroll) return
+    const pane = paneRef.current
+    if (!pane) return
+    // Set scrollTop directly rather than scrollIntoView on a bottom
+    // marker: scrollIntoView walks up and scrolls EVERY scrollable
+    // ancestor, so on a page whose log pane is nested in the app's own
+    // scroll container it drags the page header out of view too.
+    pane.scrollTop = pane.scrollHeight
   }, [arr, autoscroll])
 
   return (
     <div
+      ref={paneRef}
       className={`cmd-log thin-scroll ${fill ? 'is-fill' : ''}`}
       style={!fill && maxHeight != null ? { maxHeight } : undefined}
     >
@@ -52,7 +60,6 @@ export function LogPane({
       ) : (
         <pre>{arr.join('\n')}</pre>
       )}
-      <div ref={bottomRef} />
     </div>
   )
 }
