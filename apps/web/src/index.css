@@ -40,6 +40,7 @@
 /* Layered: everything that emits rules. */
 @import './ui/ink/theme.css' layer(components);
 @import './ui/ink/tokens/primitives.css' layer(components);
+@import './ui/ink/shell.css' layer(components);
 @import './ui/cmd.css' layer(components);
 
 /* ─── panel-* COMPAT SHIM — TEMPORARY ───────────────────────────────
@@ -72,10 +73,5 @@
   --color-panel-bad: var(--hot-text);        /* the readable red, not --hot */
 }
 
-/* The old shell scrolls `body`; the Ink `.plapp` shell replaces this
-   with its own scroll container when it lands. */
-html,
-body,
-#root {
-  height: 100%;
-}
+/* No page-level height rules here: ui/ink/shell.css owns `html`, `body`
+   and `#root` for the `.plapp` shell, which is its own scroll container. */

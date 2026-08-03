@@ -4,6 +4,78 @@
  * ui/ink/ stays a clean copy of upstream. Imported into
  * `layer(components)` alongside shell.css — see index.css. */
 
+/* ─── CHROME ADDITIONS ─────────────────────────────────────── */
+
+/* Update-available dot on a nav item. `aria-hidden` in the markup — the
+   colour is the whole message, so it must not reach the accessible name. */
+.pl-navdot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-round);
+  background: var(--warn);
+  flex: 0 0 6px;
+}
+.pl-navlink .pl-navdot {
+  margin-left: auto;
+}
+/* In the tab bar there is no room beside the label, so it rides the icon.
+   `.pl-tab-icon` is the positioning parent. */
+.pl-tab-icon {
+  position: relative;
+}
+.pl-tab .pl-navdot {
+  position: absolute;
+  top: -1px;
+  right: -3px;
+}
+
+/* Full-bleed opt-out from `.plapp-content`'s 880px cap, for the surfaces
+   that genuinely need the width: the three five-column tables and the
+   two-column settings form. 880px is right for reading, wrong for a
+   backup listing with size, age and three actions per row. The negative
+   margin mirrors shell.css's own sidebar-compensating centring. */
+@media (min-width: 1024px) {
+  .plapp-content:has(> .cmd-wide) {
+    max-width: 1200px;
+    margin-left: max(0px, calc((100% - 1200px) / 2 - 110px));
+  }
+}
+
+/* Fill the scroll container exactly — for the Console log viewer, which
+   wants its own internal scroll rather than growing the page.
+   `.plapp-main` is the scroll container now, so this mirrors ITS padding
+   plus the mobile top bar (shell.css: `.plapp-main` padding and
+   `.pl-topbar` height). Keep the two in sync. */
+:root {
+  --cmd-main-pt: 34px;
+  --cmd-main-pb: 56px;
+  --cmd-topbar-h: 0px;
+}
+@media (max-width: 1023px) {
+  :root {
+    --cmd-main-pt: 18px;
+    --cmd-main-pb: calc(104px + env(safe-area-inset-bottom, 0px));
+    --cmd-topbar-h: 52px;
+  }
+}
+.cmd-fill {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: calc(100dvh - var(--cmd-topbar-h) - var(--cmd-main-pt) - var(--cmd-main-pb));
+}
+
+/* Login sits outside the chrome, and shell.css locks `html, body` to
+   `overflow: hidden` for the `.plapp` shell — so the auth screen has to
+   bring its own scroll container or a short viewport clips the card. */
+.cmd-auth {
+  height: 100%;
+  overflow-y: auto;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+}
+
 /* ─── SCROLLBARS ───────────────────────────────────────────── */
 /* Thin scrollbars for log panes and overflow regions. Retinted onto the
    Ink hairline; Firefox gets the standard property, WebKit the pseudo. */

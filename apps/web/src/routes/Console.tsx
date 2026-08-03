@@ -31,7 +31,7 @@ export function ConsolePage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col gap-3">
+    <div className="cmd-fill gap-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-sm font-semibold">Live console</h1>
