@@ -24,7 +24,9 @@ test('operator can log in and drive the server lifecycle', async ({ page }) => {
   // Back to the dashboard, start the server, expect it to go Running.
   await page.getByRole('link', { name: 'Dashboard' }).click()
   await page.getByRole('button', { name: /Start/ }).click()
-  await expect(page.getByText('Running')).toBeVisible({ timeout: 30_000 })
+  // `exact` matters: once the unit is up, the systemd detail row also renders
+  // "active / running", and a substring match resolves to two elements.
+  await expect(page.getByText('Running', { exact: true })).toBeVisible({ timeout: 30_000 })
 })
 
 test('backups: create then list', async ({ page }) => {
