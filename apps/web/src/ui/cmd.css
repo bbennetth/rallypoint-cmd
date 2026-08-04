@@ -6,6 +6,17 @@
 
 /* ─── CHROME ADDITIONS ─────────────────────────────────────── */
 
+/* Brand lockup: compass and wordmark side by side. Mirrors the flex row
+   upstream gets from `.pl-switch-trigger`, which the panel does not use
+   (it has no app switcher). `min-width: 0` so the row can shrink rather
+   than push the avatar off the mobile top bar. */
+.cmd-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
 /* Update-available dot on a nav item. `aria-hidden` in the markup — the
    colour is the whole message, so it must not reach the accessible name. */
 .pl-navdot {
