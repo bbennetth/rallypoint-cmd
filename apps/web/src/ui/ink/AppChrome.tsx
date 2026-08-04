@@ -34,8 +34,10 @@ export interface AppChromeNavItem {
 
 export interface AppChromeProps {
   nav: readonly AppChromeNavItem[]
-  /** App name shown under the brand lockup (e.g. "Planner", "Lists"). */
-  subLabel: string
+  /** App name shown under the brand lockup (e.g. "Planner", "Lists").
+   *  Optional here (ledger edit): the panel renders its own styled
+   *  sublabel inside the brand slot so it can align to the wordmark. */
+  subLabel?: string
   /** Brand slot, rendered in both sidebar (desktop) and top bar (mobile). */
   brand?: (ctx: { size: 'desktop' | 'mobile'; showToast: (msg: string) => void }) => ReactNode
   /** User-menu slot, rendered in both sidebar (desktop) and top bar (mobile). */
@@ -104,7 +106,7 @@ export function AppChrome({ nav, subLabel, brand, userMenu, topAction, fab, main
       <aside className="pl-side">
         <div className="pl-brand">
           {brand?.({ size: 'desktop', showToast })}
-          <div className="pl-sub">{subLabel}</div>
+          {subLabel && <div className="pl-sub">{subLabel}</div>}
         </div>
         <nav className="pl-nav" aria-label="Primary navigation">
           {nav.map((n) => (

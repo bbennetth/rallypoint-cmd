@@ -89,6 +89,7 @@ The **only** permitted hand-edits. Re-apply these after any re-sync.
 | `AppChrome.tsx` | swipe-nav removed (import, `SwipeStart`, both touch handlers, the `activeIndex` block that only fed them, and `useLocation`/`useNavigate`); `AppChromeNavItem.badge` added and rendered in both nav variants. |
 | `theme.css` | its four `@import './tokens/*.css'` lines deleted — hoisted into `apps/web/src/index.css`. A nested `@import` inherits its parent's cascade layer, and the tokens must stay unlayered while `theme.css` is imported `layer(components)`. See the note in `index.css`. |
 | `tokens/primitives.css` + `shell.css` | the four type roles (`.display`, `.mono`, `.eyebrow`, `.meta`) are defined in **primitives.css only**. Upstream duplicates them into both, with shell.css winning on source order; `.mono` here takes shell.css's real `font-family` rather than upstream's deliberately-empty primitives copy. Splitting them apart keeps the type layer usable without shell.css, which carries `html, body { overflow: hidden }` and therefore can only be imported once a `.plapp` scroll container exists. |
+| `AppChrome.tsx` | `subLabel` made optional and `.pl-sub` rendered only when set — the panel renders its own two-tone sublabel inside the brand slot so it can right-align to the wordmark, which the full-sidebar-width `.pl-sub` cannot do. |
 | `*.css` | `@import` paths rewritten to local relative paths. |
 
 ## Known interactions with Tailwind
