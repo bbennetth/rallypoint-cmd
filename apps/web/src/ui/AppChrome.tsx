@@ -56,7 +56,16 @@ export function AppChrome({ children }: { children: ReactNode }) {
     <InkAppChrome
       nav={navItems(updateAvailable)}
       subLabel="CMD"
-      brand={({ size }) => <AppBrandLockup size={size} />}
+      brand={({ size }) => (
+        // AppBrandLockup is a bare fragment (compass span + wordmark span)
+        // that relies on its parent being a flex row — upstream only ever
+        // renders it inside `.pl-switch-trigger`. Without this wrapper the
+        // sidebar stacks the two (its container is a plain block) and the
+        // mobile top bar's `space-between` shoves them to opposite ends.
+        <div className="cmd-brand">
+          <AppBrandLockup size={size} />
+        </div>
+      )}
       userMenu={({ size }) => (
         <UserMenu
           username={session?.username ?? null}

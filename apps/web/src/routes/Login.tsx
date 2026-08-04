@@ -33,7 +33,7 @@ export function LoginPage() {
   return (
     <div className="cmd-auth">
       <form onSubmit={submit} className="pl-card w-full max-w-sm p-6">
-        <div className="mb-6 flex items-center gap-2.5">
+        <div className="cmd-brand mb-6">
           <AppBrandLockup />
         </div>
         <div className="space-y-4">
