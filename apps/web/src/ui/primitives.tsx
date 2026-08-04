@@ -1,50 +1,76 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 
 // Small set of styled primitives so every page looks like one system.
+// Built on the vendored Ink recipes (.pl-card / .pl-btn / .pl-chip /
+// .pl-input) plus the panel-specific ones in cmd.css.
+//
+// The exported API is deliberately unchanged from the pre-Ink version —
+// same names, same props — so the routes keep compiling while they are
+// swept one at a time. Two additive options were needed (Card `size`,
+// Button `size`); nothing was removed.
 
 export function Card({
   title,
   actions,
+  size = 'eyebrow',
   children,
   className = '',
 }: {
   title?: ReactNode
   actions?: ReactNode
+  /**
+   * `eyebrow` (default) heads the card with the Ink mono-caps section
+   * rule. `title` uses the display face at 20px — for the few cards
+   * whose heading is the page's main message rather than a label.
+   */
+  size?: 'eyebrow' | 'title'
   children: ReactNode
   className?: string
 }) {
   return (
-    <section
-      className={`rounded-xl border border-panel-border bg-panel-surface ${className}`}
-    >
+    <section className={`pl-card ${className}`}>
       {(title || actions) && (
-        <header className="flex items-center justify-between border-b border-panel-border px-4 py-3">
-          <h2 className="text-sm font-semibold tracking-wide text-panel-text">{title}</h2>
+        <header className="cmd-card-head">
+          {size === 'title' ? (
+            <h2 className="display cmd-card-title">{title}</h2>
+          ) : (
+            <>
+              <h2 className="eyebrow">{title}</h2>
+              <span className="ln" />
+            </>
+          )}
           {actions}
         </header>
       )}
-      <div className="p-4">{children}</div>
+      <div className="cmd-card-body">{children}</div>
     </section>
   )
 }
 
 type Variant = 'primary' | 'ghost' | 'danger' | 'warn'
+// `primary` is the bare .pl-btn (solid accent + glow); the rest are its
+// modifiers. `warn` has no Ink equivalent — see cmd.css.
 const VARIANTS: Record<Variant, string> = {
-  primary: 'bg-panel-accent/90 hover:bg-panel-accent text-black font-medium',
-  ghost: 'bg-panel-surface-2 hover:bg-panel-border text-panel-text border border-panel-border',
-  danger: 'bg-panel-bad/90 hover:bg-panel-bad text-black font-medium',
-  warn: 'bg-panel-warn/90 hover:bg-panel-warn text-black font-medium',
+  primary: '',
+  ghost: 'ghost',
+  danger: 'hot',
+  warn: 'warn',
 }
 
 export function Button({
   variant = 'ghost',
+  size,
   className = '',
   children,
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: 'sm' }) {
+  // No `type` default on purpose: five of the panel's forms (Login,
+  // Console broadcast, Players broadcast, Schedules create, Account
+  // password) rely on the implicit submit. Defaulting to "button" would
+  // silently turn them all into no-ops.
   return (
     <button
-      className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${VARIANTS[variant]} ${className}`}
+      className={`pl-btn ${VARIANTS[variant]} ${size === 'sm' ? 'sm' : ''} ${className}`}
       {...props}
     >
       {children}
@@ -52,44 +78,43 @@ export function Button({
   )
 }
 
-export function Badge({ tone, children }: { tone: 'good' | 'bad' | 'warn' | 'muted'; children: ReactNode }) {
-  const tones = {
-    good: 'bg-panel-good/15 text-panel-good',
-    bad: 'bg-panel-bad/15 text-panel-bad',
-    warn: 'bg-panel-warn/15 text-panel-warn',
-    muted: 'bg-panel-surface-2 text-panel-muted',
-  }
-  return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${tones[tone]}`}>
-      {children}
-    </span>
-  )
+export function Badge({
+  tone,
+  children,
+}: {
+  tone: 'good' | 'bad' | 'warn' | 'muted'
+  children: ReactNode
+}) {
+  const tones = { good: 'ok', bad: 'bad', warn: 'warn', muted: '' }
+  return <span className={`pl-chip ${tones[tone]}`}>{children}</span>
 }
 
 export function Stat({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
   return (
-    <div className="rounded-lg border border-panel-border bg-panel-surface-2 px-4 py-3">
-      <div className="text-xs uppercase tracking-wide text-panel-muted">{label}</div>
-      <div className="mt-1 text-2xl font-semibold text-panel-text">{value}</div>
-      {sub && <div className="mt-0.5 text-xs text-panel-muted">{sub}</div>}
+    <div className="cmd-stat">
+      <div className="eyebrow">{label}</div>
+      <div className="display cmd-stat-value">{value}</div>
+      {sub && <div className="meta cmd-stat-sub">{sub}</div>}
     </div>
   )
 }
 
+// The <label> WRAPS its control — the association is structural, with no
+// htmlFor/id pair to keep in sync, and the e2e `getByLabel` assertions
+// depend on that shape. Do not "improve" this into a sibling label.
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-medium text-panel-muted">{label}</span>
+      <span className="eyebrow mb-1.5 block">{label}</span>
       {children}
     </label>
   )
 }
 
-export const inputClass =
-  'w-full rounded-lg border border-panel-border bg-panel-bg px-3 py-2 text-sm text-panel-text outline-none focus:border-panel-accent'
+export const inputClass = 'pl-input'
 
 export function Spinner() {
   return (
-    <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-panel-muted border-t-transparent" />
+    <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--line)] border-t-[var(--acid)]" />
   )
 }

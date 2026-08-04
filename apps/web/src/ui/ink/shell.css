@@ -1,0 +1,759 @@
+/* Rallypoint "Ink" shell — chrome + primitives.
+ *
+ * VENDORED from @rallypoint/ui — see ./VENDORED.md. Trimmed from 1373
+ * lines to the chrome and primitives rallypoint-cmd actually renders.
+ * Depends on the tokens; import this AFTER them (index.css does).
+ *
+ * Dropped, and why:
+ *   .pl-app-row / .pl-theme-row / .tt-*  — cross-app switcher + the
+ *       theme-toggle rows; this app is standalone and dark-only.
+ *   .pl-topaction-btn                    — the topAction slot is unused.
+ *   .pl-check                            — planner's task checkbox; the
+ *       panel's one checkbox is a native `.cyber-checkbox`.
+ *   .rp-swipe-*                          — swipe-to-reveal row actions.
+ *       Deliberate: a stray horizontal drag on a scrolling log pane or
+ *       table would fire a destructive action mid-incident. The panel
+ *       keeps visible buttons.
+ *   .pl-pritag / .pl-donebtn             — planner priority tags.
+ *   .pl-fab-* / .rp-subbar / .rp-fab     — quick-add FAB + section
+ *       sub-bar chrome the panel does not render.
+ *
+ *   .display / .mono / .eyebrow / .meta  — upstream defines these here
+ *       AND in tokens/primitives.css. Kept in primitives.css only, so
+ *       the type layer doesn't depend on this file: `html, body {
+ *       overflow: hidden }` below means shell.css can only be imported
+ *       once a `.plapp` scroll container exists.
+ *
+ * `.pl-switch` is kept despite being named for the app switcher: it is
+ * the positioning parent every `.pl-flyout` anchors to, including the
+ * user menu's.
+ *
+ * The focus-ring block below is kept verbatim, dead selectors included,
+ * so a future `diff -u` against upstream stays a clean hunk. */
+
+/* ---- viewport reset ----
+   The .plapp shell is height:100%, so its ancestor chain needs a definite
+   height. Apps that adopt AppChrome get this wiring for free by importing
+   shell.css; keep it here (not per-app) so the chrome can't render into a
+   zero-height container. */
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+#root {
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* ============================================================
+   RESPONSIVE SHELL — desktop sidebar ≥1024, mobile top bar + bottom pill tabs
+   ============================================================ */
+.plapp {
+  height: 100%;
+  display: flex;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+.plapp,
+.plapp * {
+  box-sizing: border-box;
+}
+.plapp-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.plapp-main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 34px 44px 56px;
+}
+.plapp-content {
+  max-width: 880px;
+  margin: 0 auto;
+}
+/* Desktop: the 220px sidebar sits to the left of .plapp-main, so a plain
+   `margin: 0 auto` centers the column in the LEFTOVER space and the page
+   reads as pushed right (sidebar + gutter on the left vs just the gutter
+   on the right). Pull the column left by half the sidebar width so it
+   centers on the viewport instead; the max() clamp keeps it from going
+   negative when the window is barely wider than the cap. */
+@media (min-width: 1024px) {
+  .plapp-content {
+    margin-left: max(0px, calc((100% - 880px) / 2 - 110px));
+    margin-right: auto;
+  }
+}
+/* Full-bleed opt-out: a page that needs the whole viewport (e.g. a kanban
+   board) marks its root with .plapp-full and the 880px cap lifts. */
+.plapp-content:has(.plapp-full) {
+  max-width: none;
+  /* Full-bleed fills the column — the sidebar-compensating margin above
+     must not shove it right. */
+  margin-left: 0;
+}
+.plapp .pl-topbar,
+.plapp .pl-tabbar {
+  display: none;
+}
+@media (max-width: 1023px) {
+  .plapp .pl-side {
+    display: none;
+  }
+  .plapp .pl-topbar {
+    display: flex;
+  }
+  .plapp .pl-tabbar {
+    display: flex;
+  }
+  .plapp-main {
+    /* Bottom padding must clear the floating tab-bar capsule (66px tall
+       + 14px bottom buffer = 80px footprint; `--rp-tabbar-clear`'s 88px
+       default adds headroom) plus safe-area, or the page's last rows can
+       never scroll into view. */
+    padding: 18px 18px calc(104px + env(safe-area-inset-bottom, 0px));
+  }
+  /* Pages that also float an .rp-subbar (section-switcher pill above the
+     tab-bar) need to clear that second bar too: the kit-positioned pill's
+     bottom edge sits at 92px + safe-area and it's ≈50px tall. (Fitness's
+     ResumeSessionPill can stack a THIRD bar above the SubBar — its app
+     stylesheet reserves the extra clearance itself, see
+     `.fit-resume-pill` in apps/fitness-web/src/fitness.css.) */
+  .plapp-main:has(.rp-subbar) {
+    padding-bottom: calc(164px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* ============================================================
+   ACCESSIBILITY — focus rings for every shell control
+   (#415: restore visible outline stripped by `all: unset`)
+   ============================================================ */
+.pl-navlink:focus-visible,
+.pl-tab:focus-visible,
+.pl-switch-trigger:focus-visible,
+.pl-app-row:focus-visible,
+.pl-shortcut:focus-visible,
+.pl-topaction-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* ============================================================
+   DESKTOP SIDEBAR
+   ============================================================ */
+.pl-side {
+  width: 220px;
+  flex: 0 0 220px;
+  height: 100%;
+  background: var(--surface);
+  box-shadow: inset -1px 0 0 var(--edge-highlight);
+  display: flex;
+  flex-direction: column;
+}
+.pl-brand {
+  padding: 20px 16px 16px;
+  border-bottom: 1px solid var(--hairline-soft);
+}
+.pl-wordmark {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 19px;
+  letter-spacing: -0.04em;
+  color: var(--ink);
+}
+.pl-wordmark b {
+  color: var(--acid);
+  font-weight: 700;
+}
+.pl-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  margin-top: 8px;
+}
+.pl-nav {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 8px 0;
+  flex: 1;
+  gap: 2px;
+}
+.pl-navlink {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  border-radius: var(--radius-nav);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.pl-navlink .ic {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  opacity: 0.75;
+}
+.pl-navlink:hover {
+  color: var(--ink);
+  background: var(--wash-hover);
+}
+.pl-navlink.is-active {
+  color: var(--ink);
+  background: var(--accent-soft-strong);
+  box-shadow: inset 0 0 0 1px var(--accent-ring);
+}
+.pl-navlink.is-active:hover {
+  color: var(--ink);
+}
+.pl-navlink.is-active .ic {
+  opacity: 1;
+}
+.pl-side-foot {
+  padding: 14px 16px;
+  border-top: 1px solid var(--hairline-soft);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pl-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-round);
+  flex: 0 0 30px;
+  background: var(--accent-avatar);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--acid);
+}
+
+/* ============================================================
+   APP SWITCHER (brand-lockup trigger → fly-out)
+   ============================================================ */
+.pl-switch {
+  position: relative;
+  z-index: 30;
+}
+.pl-switch-trigger {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.pl-flyout {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 244px;
+  /* Never exceed the viewport, so a flyout from an edge-anchored trigger can't
+     overflow off-screen on narrow mobile widths. */
+  max-width: calc(100vw - 32px);
+  z-index: 40;
+  background: var(--surface);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-flyout);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+/* Foot-anchored menus open upward so they don't fall off the viewport. */
+.pl-flyout.is-up {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+/* Right-edge triggers (mobile top bar) align the menu to their right. */
+.pl-flyout.is-right {
+  left: auto;
+  right: 0;
+}
+/* User-bar trigger: a full-width row (desktop) or bare avatar (mobile). */
+.pl-user-trigger {
+  all: unset;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.pl-shortcut {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--ink-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.pl-shortcut:hover {
+  color: var(--ink);
+}
+
+/* ============================================================
+   PAGE HEAD + SECTION EYEBROW
+   ============================================================ */
+.pg-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.pg-head h1 {
+  font-family: var(--font-display);
+  font-size: 30px;
+  margin: 0;
+  color: var(--ink);
+  line-height: 1;
+}
+.pg-head .sub {
+  color: var(--ink-dim);
+  font-size: 13.5px;
+  margin-top: 8px;
+}
+@media (max-width: 1023px) {
+  .pg-head h1 {
+    font-size: 25px;
+  }
+}
+.pl-eyerow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 9px;
+}
+.pl-eyerow .eyebrow {
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+}
+.pl-eyerow .ln {
+  flex: 1;
+  height: 1px;
+  background: var(--hairline-soft);
+}
+
+/* ============================================================
+   CARDS / ROWS / CONTROLS
+   ============================================================ */
+.pl-card {
+  background: var(--surface);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-panel);
+}
+.pl-row {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 12px 16px;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.pl-row:hover {
+  background: var(--surface-2);
+}
+
+.pl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  background: var(--surface-2);
+  border-radius: var(--radius-round);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  white-space: nowrap;
+}
+.pl-chip.accent {
+  background: var(--accent-soft-strong);
+  color: var(--acid);
+}
+/* Danger-tinted chip — the Tasks Overdue section's missed-date chip. */
+.pl-chip.hot {
+  background: var(--hot-soft);
+  color: var(--hot-text);
+}
+.pl-chip.repeat {
+  background: color-mix(in srgb, var(--acid) 8%, var(--surface-2));
+  color: var(--ink-dim);
+}
+/* Interactive toggle chip — one size for the mood + day-of-week pickers
+   (their active colors are still set by the component). */
+.pl-chip.toggle {
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+.pl-chip.toggle:active {
+  transform: scale(0.98);
+}
+/* Selected state for chip toggles/filters. Referenced by the fitness
+   WOD-library filters and composer toggles (`pl-chip-active`), which
+   previously pointed at a class that was never defined — selected
+   chips were indistinguishable from unselected ones. */
+.pl-chip-active {
+  background: var(--accent-soft-strong);
+  color: var(--acid);
+}
+/* Smaller badge variant (e.g. CUSTOM tags in dense rows) — replaces
+   the per-site inline `fontSize: 9` copies. */
+.pl-chip.sm {
+  font-size: 9px;
+  padding: 2px 7px;
+  letter-spacing: 0.08em;
+}
+/* A row's title rendered as a button that opens its detail view: reads as
+   plain row text, but stays keyboard-reachable with a real focus ring
+   (which a bare `all: unset` button silently loses). Truncation and the
+   completed-state color are the caller's, since they vary per surface. */
+.pl-rowtitle {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  text-align: left;
+  border-radius: var(--radius-sm);
+}
+.pl-rowtitle:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.pl-btn {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--control-h-md);
+  padding: 0 16px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: var(--radius-md);
+  box-shadow: var(--glow-accent);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: filter var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+.pl-btn:hover {
+  filter: brightness(1.08);
+}
+.pl-btn:active {
+  transform: scale(0.98);
+}
+.pl-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: none;
+}
+.pl-btn.ghost {
+  background: var(--surface-2);
+  color: var(--ink);
+  box-shadow: none;
+  letter-spacing: 0.08em;
+  filter: none;
+}
+.pl-btn.ghost:hover {
+  filter: brightness(1.15);
+}
+.pl-btn.hot {
+  background: var(--hot, #d4504e);
+  color: var(--bg);
+}
+/* Selected state for .pl-btn used as a filter/toggle (e.g. Notes folder
+   filter, which applied `active` with no backing rule — the selected
+   folder was visually indistinguishable). */
+.pl-btn.ghost.active {
+  background: var(--accent-soft-strong);
+  color: var(--acid);
+}
+/* Compact size — inline / row-trailing actions (Edit, Get, View, Hide, …).
+   Pairs with .ghost. Shares the mono-caps type, just shorter. */
+.pl-btn.sm {
+  min-height: var(--control-h-sm);
+  padding: 0 11px;
+  font-size: 10.5px;
+}
+/* Add-row fill — a .pl-btn placed beside a .pl-input in a flex row stretches
+   to the input's height (≈44px) instead of a per-site `padding: 0 16px` hack. */
+.pl-btn.grow {
+  align-self: stretch;
+}
+/* Icon-only square button — one consistent box for ×/pencil/pin/calendar-nav,
+   replacing the ad-hoc icon uses of .pl-donebtn / .pl-note-del / .cal-nav-btn.
+   .danger tints the hover red for destructive (delete) actions. */
+.pl-iconbtn {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h-icon);
+  height: var(--control-h-icon);
+  flex: 0 0 auto;
+  background: var(--surface-2);
+  border-radius: var(--radius-md);
+  color: var(--ink-dim);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+.pl-iconbtn:hover {
+  color: var(--ink);
+}
+.pl-iconbtn.danger:hover {
+  background: var(--hot-soft);
+  color: var(--hot-text);
+}
+
+.pl-input {
+  width: 100%;
+  background: var(--bg);
+  border: none;
+  border-radius: var(--radius-nav);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  padding: 11px 13px;
+  letter-spacing: 0.02em;
+  transition: box-shadow var(--dur-fast) var(--ease-out);
+}
+.pl-input:focus-visible {
+  /* Accent-tint the resting inset ring for the soft look, and keep the
+     standard offset outline every other shell control uses — the outline
+     is the accessible focus indicator (survives forced-colors mode, where
+     box-shadow is stripped); the ring is decorative. */
+  box-shadow: inset 0 0 0 1.5px var(--accent-ring);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.pl-input::placeholder {
+  color: var(--ink-mute);
+}
+/* Compact modifier — in-row selects / inline rename inputs. Replaces the
+   per-site inline `fontSize/padding/width` shrinks; the coarse-pointer
+   tap floor above still lifts these to --tap-min on touch devices. */
+.pl-input.sm {
+  font-size: 12px;
+  padding: 4px 8px;
+  min-height: var(--control-h-sm);
+}
+.pl-div {
+  height: 1px;
+  background: var(--hairline-soft);
+}
+
+/* segmented control */
+.seg {
+  display: inline-flex;
+  background: var(--surface);
+  border-radius: var(--radius-nav);
+  padding: 3px;
+  gap: 2px;
+}
+.seg button {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  padding: 6px 14px;
+  border-radius: var(--radius-seg-active);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.seg button.on {
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: var(--glow-accent);
+}
+
+/* ============================================================
+   MOBILE — top bar + bottom pill tab-bar
+   ============================================================ */
+.pl-topbar {
+  height: 52px;
+  flex: 0 0 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--hairline-soft);
+  background: var(--bg);
+  position: relative;
+  z-index: 3;
+}
+/* Trailing cluster in the mobile top bar — the calendar button + avatar sit
+   together on the right (brand is on the left; the top bar is space-between). */
+.pl-topbar-trail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pl-tabbar {
+  flex: 0 0 auto;
+  /* Float clear of the iPhone home-indicator / app-switcher zone (bottom) and
+     the screen's rounded corners (sides, incl. landscape) — base buffer plus
+     the safe-area insets. */
+  margin: 0 calc(14px + env(safe-area-inset-right, 0px))
+    calc(16px + env(safe-area-inset-bottom, 0px))
+    calc(14px + env(safe-area-inset-left, 0px));
+  padding: 8px;
+  display: flex;
+  gap: 4px;
+  align-items: stretch;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  backdrop-filter: var(--blur-glass);
+  -webkit-backdrop-filter: var(--blur-glass);
+  box-shadow: var(--shadow-tabbar);
+  /* Scroll rather than clip. The 9-tab event-owner nav overflows this bar by
+     ~200px at phone widths, and `overflow: hidden` put the tail out of reach
+     entirely — including Preview, the only route to the attendee view on
+     mobile. `overflow-x: auto` still clips to the pill radius, and bars whose
+     tabs already fit don't scroll at all. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.pl-tabbar::-webkit-scrollbar {
+  display: none;
+}
+.pl-tab {
+  all: unset;
+  box-sizing: border-box;
+  min-height: 52px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 7px 4px;
+  border-radius: var(--radius-lg);
+  color: var(--ink-dim);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--dur-base) var(--ease-out),
+    color var(--dur-base) var(--ease-out);
+}
+/* Long navs only. `flex: 1` above divides the pill evenly, which is right up
+   to about six tabs but turns the nine-tab event-owner nav into a row of
+   unreadable slivers whose tail is clipped out of reach — Preview among them,
+   the only route to the attendee view on mobile. Letting those tabs size to
+   their own content makes the bar overflow, which the scroll rule on
+   `.pl-tabbar` then makes reachable. Scoped to 7+ tabs so every other shell
+   (all ≤6) keeps its existing equal-width layout exactly. */
+.pl-tabbar:has(> .pl-tab:nth-child(7)) > .pl-tab {
+  min-width: max-content;
+}
+.pl-tab.is-active {
+  color: var(--acid);
+  background: var(--accent-soft);
+}
+.pl-tab-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.pl-tab-label {
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+/* ============================================================
+   TOAST
+   ============================================================ */
+.pl-toast {
+  position: fixed;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: var(--bg);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 11px 18px;
+  border-radius: var(--radius-lg);
+  z-index: 80;
+  box-shadow: var(--shadow-toast);
+}
+@media (max-width: 1023px) {
+  .pl-toast {
+    bottom: 90px;
+  }
+}
+
+/* scrollbars */
+.plapp-main::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.plapp-main::-webkit-scrollbar-thumb {
+  background: var(--line);
+}
+

@@ -6,6 +6,10 @@ import { usePoll } from '../lib/usePoll.js'
 import { useLongOp } from '../lib/useEventSource.js'
 import { formatBytes, formatUptime } from '../lib/format.js'
 import { Badge, Button, Card, Spinner, Stat } from '../ui/primitives.js'
+import { Banner } from '../ui/Banner.js'
+import { ProgressBar } from '../ui/ProgressBar.js'
+import { LogPane } from '../ui/LogPane.js'
+import { Icon } from '../ui/ink/icons.js'
 
 const LIFECYCLE: Record<ServerLifecycle, { tone: 'good' | 'bad' | 'warn' | 'muted'; label: string }> = {
   active: { tone: 'good', label: 'Running' },
@@ -36,7 +40,7 @@ export function DashboardPage() {
 
   if (!status)
     return (
-      <div className="flex items-center gap-2 text-panel-muted">
+      <div className="cmd-empty flex items-center gap-2">
         <Spinner /> Loading status…
       </div>
     )
@@ -48,19 +52,27 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <div className="pg-head">
+        <h1>Dashboard</h1>
+      </div>
+
       {status.pendingRestart && (
-        <div className="flex items-center justify-between rounded-lg border border-panel-warn/40 bg-panel-warn/10 px-4 py-3 text-sm text-panel-warn">
-          <span>Settings changed — restart the server to apply them.</span>
-          <Button variant="warn" disabled={busy !== null} onClick={() => power('restart')}>
-            Restart now
-          </Button>
-        </div>
+        <Banner
+          tone="warn"
+          actions={
+            <Button variant="warn" disabled={busy !== null} onClick={() => power('restart')}>
+              Restart now
+            </Button>
+          }
+        >
+          Settings changed — restart the server to apply them.
+        </Banner>
       )}
 
       {!installed && (
-        <Card title="Palworld is not installed">
+        <Card title="Palworld is not installed" size="title">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-panel-muted">
+            <p className="cmd-empty">
               No dedicated server found on disk. Install it via SteamCMD to get started.
             </p>
             <Link to="/updates">
@@ -75,7 +87,7 @@ export function DashboardPage() {
           <span className="flex items-center gap-3">
             Server
             <Badge tone={lc.tone}>
-              {running && <span className="h-1.5 w-1.5 rounded-full bg-panel-good" />}
+              {running && <span className="cmd-dot" />}
               {lc.label}
             </Badge>
           </span>
@@ -87,26 +99,30 @@ export function DashboardPage() {
               disabled={!installed || running || busy !== null}
               onClick={() => power('start')}
             >
-              {busy === 'start' ? <Spinner /> : '▶'} Start
+              {busy === 'start' ? <Spinner /> : <Icon name="play" size={13} />} Start
             </Button>
             <Button
               variant="ghost"
               disabled={!running || busy !== null}
               onClick={() => power('restart')}
             >
-              {busy === 'restart' ? <Spinner /> : '↻'} Restart
+              {busy === 'restart' ? <Spinner /> : <Icon name="repeat" size={13} />} Restart
             </Button>
             <Button
               variant="danger"
               disabled={!running || busy !== null}
               onClick={() => power('stop')}
             >
-              {busy === 'stop' ? <Spinner /> : '■'} Stop
+              {busy === 'stop' ? <Spinner /> : <Icon name="stop" size={13} />} Stop
             </Button>
           </div>
         }
       >
-        {err && <p className="mb-3 text-sm text-panel-bad">{err}</p>}
+        {err && (
+          <div className="mb-3">
+            <Banner tone="bad">{err}</Banner>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Stat
             label="Players"
@@ -141,25 +157,18 @@ export function DashboardPage() {
 
         <Card title="Storage">
           <div className="space-y-3">
-            {status.disks.length === 0 && <p className="text-sm text-panel-muted">No disk data.</p>}
+            {status.disks.length === 0 && <p className="cmd-empty">No disk data.</p>}
             {status.disks.map((d) => {
               const used = d.totalBytes - d.freeBytes
               const pct = d.totalBytes ? Math.round((used / d.totalBytes) * 100) : 0
               return (
-                <div key={d.mount}>
-                  <div className="mb-1 flex justify-between text-xs text-panel-muted">
-                    <span>{d.label}</span>
-                    <span>
-                      {formatBytes(d.freeBytes)} free of {formatBytes(d.totalBytes)}
-                    </span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-panel-surface-2">
-                    <div
-                      className={`h-full ${pct > 90 ? 'bg-panel-bad' : pct > 75 ? 'bg-panel-warn' : 'bg-panel-accent'}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
+                <ProgressBar
+                  key={d.mount}
+                  value={pct}
+                  tone={pct > 90 ? 'bad' : pct > 75 ? 'warn' : 'accent'}
+                  label={d.label}
+                  right={`${formatBytes(d.freeBytes)} free of ${formatBytes(d.totalBytes)}`}
+                />
               )
             })}
           </div>
@@ -172,8 +181,8 @@ export function DashboardPage() {
 function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
   return (
     <div className="flex justify-between gap-4">
-      <dt className="text-panel-muted">{k}</dt>
-      <dd className={`truncate text-right ${mono ? 'mono text-xs' : ''}`}>{v}</dd>
+      <dt className="eyebrow">{k}</dt>
+      <dd className={`truncate text-right ${mono ? 'mono text-xs' : 'text-sm'}`}>{v}</dd>
     </div>
   )
 }
@@ -279,44 +288,37 @@ function PublicAccessCard() {
         </div>
       }
     >
-      {err && <p className="mb-3 text-sm text-panel-bad">{err}</p>}
+      {err && (
+        <div className="mb-3">
+          <Banner tone="bad">{err}</Banner>
+        </div>
+      )}
       {!status ? (
-        <p className="text-sm text-panel-muted">Loading…</p>
+        <p className="cmd-empty">Loading…</p>
       ) : busy ? (
         <div className="space-y-3">
           {status.pendingClaim ? (
-            <div className="rounded-lg border border-panel-accent/40 bg-panel-accent/10 px-3 py-2 text-sm">
+            <Banner>
               Approve this server in your playit.gg account:{' '}
-              <a
-                className="font-medium text-panel-accent underline"
-                href={status.pendingClaim.url}
-                target="_blank"
-                rel="noreferrer"
-              >
+              <a className="cmd-link" href={status.pendingClaim.url} target="_blank" rel="noreferrer">
                 {status.pendingClaim.url}
               </a>
-            </div>
+            </Banner>
           ) : (
-            <div className="flex items-center gap-2 text-sm text-panel-muted">
+            <div className="flex items-center gap-2 text-sm text-[var(--ink-mute)]">
               <Spinner /> Setting up playit.gg…
             </div>
           )}
-          <div className="h-2 overflow-hidden rounded-full bg-panel-surface-2">
-            <div
-              className={`h-full bg-panel-accent transition-all ${progress == null ? 'w-1/3 animate-pulse' : ''}`}
-              style={progress != null ? { width: `${progress}%` } : undefined}
-            />
-          </div>
-          {lastLine && <p className="mono truncate text-xs text-panel-muted">{lastLine}</p>}
+          <ProgressBar value={progress} />
+          {lastLine && <p className="meta truncate">{lastLine}</p>}
         </div>
       ) : online ? (
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <code className="mono rounded-lg bg-panel-surface-2 px-3 py-1.5 text-sm">
-              {status.address}
-            </code>
+            <code className="cmd-code">{status.address}</code>
             <Button
               variant="ghost"
+              size="sm"
               onClick={() => {
                 void navigator.clipboard.writeText(status.address ?? '')
                 setCopied(true)
@@ -326,15 +328,15 @@ function PublicAccessCard() {
               {copied ? 'Copied!' : 'Copy'}
             </Button>
           </div>
-          <p className="text-xs text-panel-muted">
+          <p className="cmd-note">
             Players join with this address — no port-forwarding needed (relayed via playit.gg).
           </p>
         </div>
       ) : status.running ? (
-        <p className="text-sm text-panel-muted">
+        <p className="cmd-empty">
           Agent is running but no UDP tunnel targets port {status.gamePort ?? 8211}. Create one at{' '}
           <a
-            className="text-panel-accent underline"
+            className="cmd-link"
             href="https://playit.gg/account/tunnels"
             target="_blank"
             rel="noreferrer"
@@ -345,15 +347,10 @@ function PublicAccessCard() {
         </p>
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-panel-muted">
+          <p className="cmd-empty">
             Let players join over the internet without port-forwarding, via a free{' '}
-            <a
-              className="text-panel-accent underline"
-              href="https://playit.gg"
-              target="_blank"
-              rel="noreferrer"
-            >
-              playit.gg
+            <a className="cmd-link" href="https://playit.gg" target="_blank" rel="noreferrer">
+            playit.gg
             </a>{' '}
             UDP tunnel.
           </p>
@@ -364,7 +361,7 @@ function PublicAccessCard() {
       )}
 
       {consoleOpen && (
-        <div className="mt-4 space-y-3 border-t border-panel-border pt-3">
+        <div className="mt-4 space-y-3 border-t border-[var(--hairline-soft)] pt-3">
           <ConsoleSection
             title="Panel ⇄ playit"
             lines={(consoleData?.trace ?? []).map(
@@ -386,25 +383,11 @@ function PublicAccessCard() {
 function ConsoleSection({ title, lines, empty }: { title: string; lines: string[]; empty: string }) {
   return (
     <div>
-      <div className="mb-1 text-xs font-medium uppercase tracking-wide text-panel-muted">
-        {title}
+      <div className="pl-eyerow">
+        <span className="eyebrow">{title}</span>
+        <span className="ln" />
       </div>
-      <div className="thin-scroll max-h-48 overflow-auto rounded-lg bg-black/40 p-2">
-        {lines.length === 0 ? (
-          <p className="text-xs text-panel-muted">{empty}</p>
-        ) : (
-          <pre className="mono whitespace-pre-wrap break-words text-xs leading-relaxed">
-            {lines.map((l, i) => (
-              <div
-                key={i}
-                className={/error|failed|FAILED/i.test(l) ? 'text-panel-bad' : 'text-panel-text/90'}
-              >
-                {l}
-              </div>
-            ))}
-          </pre>
-        )}
-      </div>
+      <LogPane lines={lines} empty={empty} maxHeight={192} errorPattern={/error|failed/i} />
     </div>
   )
 }

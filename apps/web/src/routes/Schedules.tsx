@@ -3,11 +3,14 @@ import type { Schedule, ScheduleKind } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
 import { formatDateTime } from '../lib/format.js'
 import { Badge, Button, Card, Field, inputClass } from '../ui/primitives.js'
+import { Banner } from '../ui/Banner.js'
+import { ConfirmDialog } from '../ui/ConfirmDialog.js'
 
 export function SchedulesPage() {
   const [schedules, setSchedules] = useState<Schedule[] | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<Schedule | null>(null)
 
   async function load() {
     setSchedules((await api.schedules()).schedules)
@@ -26,52 +29,70 @@ export function SchedulesPage() {
     }
   }
   async function remove(id: string) {
-    if (!confirm('Delete this schedule?')) return
     setBusy(id)
     try {
       await api.deleteSchedule(id)
       await load()
     } finally {
       setBusy(null)
+      setPendingDelete(null)
     }
   }
 
   return (
     <div className="space-y-6">
+      <div className="pg-head">
+        <h1>Schedules</h1>
+      </div>
+
       <Card title="Schedules">
-        {err && <p className="mb-3 text-sm text-panel-bad">{err}</p>}
+        {err && (
+          <div className="mb-3">
+            <Banner tone="bad">{err}</Banner>
+          </div>
+        )}
         {!schedules ? (
-          <p className="text-panel-muted">Loading…</p>
+          <p className="cmd-empty">Loading…</p>
         ) : schedules.length === 0 ? (
-          <p className="text-sm text-panel-muted">No schedules. Add one below.</p>
+          <p className="cmd-empty">No schedules. Add one below.</p>
         ) : (
           <div className="space-y-2">
             {schedules.map((s) => (
-              <div
-                key={s.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-panel-border bg-panel-surface-2 px-4 py-3"
-              >
+              <div key={s.id} className="cmd-sched">
                 <div className="flex items-center gap-3">
                   <Badge tone={s.kind === 'restart' ? 'warn' : 'good'}>{s.kind}</Badge>
                   <span className="mono text-sm">{s.cron}</span>
-                  <span className="text-xs text-panel-muted">{s.timezone}</span>
+                  <span className="meta">{s.timezone}</span>
                 </div>
-                <div className="flex items-center gap-4 text-xs text-panel-muted">
-                  <span>next: {formatDateTime(s.nextRunAtMs)}</span>
-                  <span>
+                <div className="flex flex-wrap items-center gap-4">
+                  <span className="meta">next: {formatDateTime(s.nextRunAtMs)}</span>
+                  <span className="meta flex items-center gap-1.5">
                     last:{' '}
                     {s.lastStatus ? (
-                      <Badge tone={s.lastStatus === 'succeeded' ? 'good' : s.lastStatus === 'failed' ? 'bad' : 'muted'}>
+                      <Badge
+                        tone={
+                          s.lastStatus === 'succeeded'
+                            ? 'good'
+                            : s.lastStatus === 'failed'
+                              ? 'bad'
+                              : 'muted'
+                        }
+                      >
                         {s.lastStatus}
                       </Badge>
                     ) : (
                       '—'
                     )}
                   </span>
-                  <Button variant="ghost" disabled={busy === s.id} onClick={() => toggle(s)}>
+                  <Button variant="ghost" size="sm" disabled={busy === s.id} onClick={() => toggle(s)}>
                     {s.enabled ? 'Disable' : 'Enable'}
                   </Button>
-                  <Button variant="danger" disabled={busy === s.id} onClick={() => remove(s.id)}>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    disabled={busy === s.id}
+                    onClick={() => setPendingDelete(s)}
+                  >
                     Delete
                   </Button>
                 </div>
@@ -88,6 +109,20 @@ export function SchedulesPage() {
         }}
         onError={setErr}
       />
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Delete schedule"
+          body={
+            <>
+              Delete the {pendingDelete.kind} schedule{' '}
+              <span className="mono">{pendingDelete.cron}</span>? This cannot be undone.
+            </>
+          }
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={() => remove(pendingDelete.id)}
+        />
+      )}
     </div>
   )
 }
@@ -166,7 +201,7 @@ function NewSchedule({
             />
           </Field>
         ) : (
-          <div className="flex items-end text-xs text-panel-muted">
+          <div className="cmd-note flex items-end">
             Announces at T-5m and T-1m, saves, then restarts.
           </div>
         )}

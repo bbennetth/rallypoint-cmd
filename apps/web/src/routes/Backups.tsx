@@ -1,9 +1,24 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Backup, LongOp, RestorePreview } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
 import { useLongOp } from '../lib/useEventSource.js'
 import { formatBytes, formatDateTime } from '../lib/format.js'
 import { Badge, Button, Card, inputClass, Spinner } from '../ui/primitives.js'
+import { Banner } from '../ui/Banner.js'
+import { ConfirmDialog } from '../ui/ConfirmDialog.js'
+import { DataTable } from '../ui/DataTable.js'
+import { Dialog } from '../ui/Dialog.js'
+import { ProgressBar } from '../ui/ProgressBar.js'
+import { Icon } from '../ui/ink/icons.js'
+import { useFilePicker } from '../lib/useFilePicker.js'
+
+const BACKUP_COLUMNS = [
+  { key: 'created', header: 'Created' },
+  { key: 'kind', header: 'Kind' },
+  { key: 'world', header: 'World', cellClassName: 'mono text-xs text-[var(--ink-mute)]' },
+  { key: 'size', header: 'Size' },
+  { key: 'actions', header: 'Actions', align: 'right' as const },
+]
 
 export function BackupsPage() {
   const [backups, setBackups] = useState<Backup[] | null>(null)
@@ -15,7 +30,7 @@ export function BackupsPage() {
   // progress + final status over SSE instead of blind-polling.
   const [activeOp, setActiveOp] = useState<LongOp | null>(null)
   const { progress, lastLine, doneOp, reset } = useLongOp(activeOp !== null)
-  const fileRef = useRef<HTMLInputElement>(null)
+  const [pendingDelete, setPendingDelete] = useState<Backup | null>(null)
 
   async function load() {
     setBackups((await api.backups()).backups)
@@ -59,13 +74,13 @@ export function BackupsPage() {
   }
 
   async function del(id: string) {
-    if (!confirm('Delete this backup permanently?')) return
     setBusy(id)
     try {
       await api.deleteBackup(id)
       await load()
     } finally {
       setBusy(null)
+      setPendingDelete(null)
     }
   }
 
@@ -79,98 +94,99 @@ export function BackupsPage() {
       setErr(e instanceof ApiError ? e.message : 'Upload rejected')
     } finally {
       setBusy(null)
-      if (fileRef.current) fileRef.current.value = ''
     }
   }
+  const picker = useFilePicker(onUpload, { accept: '.gz,.tgz,application/gzip' })
 
   return (
-    <div className="space-y-6">
+    <div className="cmd-wide space-y-6">
+      <div className="pg-head">
+        <h1>Backups</h1>
+      </div>
+
       <Card
         title="Backups"
         actions={
           <div className="flex gap-2">
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".gz,.tgz,application/gzip"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0]
-                if (f) void onUpload(f)
-              }}
-            />
-            <Button variant="ghost" disabled={busy !== null} onClick={() => fileRef.current?.click()}>
-              {busy === 'upload' ? <Spinner /> : '↑'} Upload & restore
+            {picker.input}
+            <Button variant="ghost" disabled={busy !== null} onClick={picker.open}>
+              {busy === 'upload' ? <Spinner /> : <Icon name="upload" size={13} />} Upload & restore
             </Button>
             <Button variant="primary" disabled={busy !== null} onClick={create}>
-              {busy === 'create' ? <Spinner /> : '＋'} Create backup
+              {busy === 'create' ? <Spinner /> : <Icon name="plus" size={13} />} Create backup
             </Button>
           </div>
         }
       >
-        {err && <p className="mb-3 text-sm text-panel-bad">{err}</p>}
-        {ok && <p className="mb-3 text-sm text-panel-good">{ok}</p>}
+        {err && (
+          <div className="mb-3">
+            <Banner tone="bad">{err}</Banner>
+          </div>
+        )}
+        {ok && (
+          <div className="mb-3">
+            <Banner tone="ok">{ok}</Banner>
+          </div>
+        )}
         {activeOp && (
-          <div className="mb-4 rounded-lg border border-panel-border bg-panel-surface-2 px-4 py-3">
-            <div className="mb-1 flex justify-between text-xs text-panel-muted">
-              <span className="capitalize">
-                {activeOp.kind === 'backup' ? 'Creating backup…' : 'Restoring world…'}
-              </span>
-              <span>{progress != null ? `${progress.toFixed(0)}%` : '…'}</span>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-panel-bg">
-              <div
-                className={`h-full bg-panel-accent transition-all ${progress == null ? 'w-1/3 animate-pulse' : ''}`}
-                style={progress != null ? { width: `${progress}%` } : undefined}
-              />
-            </div>
-            {lastLine && <p className="mono mt-2 truncate text-xs text-panel-muted">{lastLine}</p>}
+          <div className="cmd-op mb-4">
+            <ProgressBar
+              value={progress}
+              label={activeOp.kind === 'backup' ? 'Creating backup…' : 'Restoring world…'}
+              right={progress != null ? `${progress.toFixed(0)}%` : '…'}
+            />
+            {lastLine && <p className="meta mt-2 truncate">{lastLine}</p>}
           </div>
         )}
         {!backups ? (
-          <p className="text-panel-muted">Loading…</p>
-        ) : backups.length === 0 ? (
-          <p className="text-sm text-panel-muted">No backups yet.</p>
+          <p className="cmd-empty">Loading…</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-panel-border text-left text-xs uppercase text-panel-muted">
-                  <th className="pb-2 pr-3">Created</th>
-                  <th className="pb-2 pr-3">Kind</th>
-                  <th className="pb-2 pr-3">World</th>
-                  <th className="pb-2 pr-3">Size</th>
-                  <th className="pb-2 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {backups.map((b) => (
-                  <tr key={b.id} className="border-b border-panel-border/50">
-                    <td className="py-2 pr-3">{formatDateTime(b.createdAtMs)}</td>
-                    <td className="py-2 pr-3">
-                      <Badge tone={b.kind === 'manual' ? 'muted' : b.kind === 'pre_restore' ? 'warn' : 'good'}>
-                        {b.kind}
-                      </Badge>
-                    </td>
-                    <td className="mono py-2 pr-3 text-xs text-panel-muted">{b.worldId.slice(0, 12)}…</td>
-                    <td className="py-2 pr-3">{formatBytes(b.sizeBytes)}</td>
-                    <td className="py-2 text-right">
-                      <div className="flex justify-end gap-2">
-                        <a href={api.downloadBackupUrl(b.id)} download>
-                          <Button variant="ghost">Download</Button>
-                        </a>
-                        <Button variant="danger" disabled={busy === b.id} onClick={() => del(b.id)}>
-                          Delete
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={BACKUP_COLUMNS}
+            empty="No backups yet."
+            rows={backups.map((b) => ({
+              id: b.id,
+              cells: [
+                formatDateTime(b.createdAtMs),
+                <Badge
+                  tone={b.kind === 'manual' ? 'muted' : b.kind === 'pre_restore' ? 'warn' : 'good'}
+                >
+                  {b.kind}
+                </Badge>,
+                `${b.worldId.slice(0, 12)}…`,
+                formatBytes(b.sizeBytes),
+                <div className="flex justify-end gap-2">
+                  {/* Button inside the anchor, deliberately: the download is a
+                      real link (right-click, middle-click, Save As all work)
+                      and the e2e asserts on its button role. */}
+                  <a href={api.downloadBackupUrl(b.id)} download>
+                    <Button variant="ghost" size="sm">
+                      Download
+                    </Button>
+                  </a>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    disabled={busy === b.id}
+                    onClick={() => setPendingDelete(b)}
+                  >
+                    Delete
+                  </Button>
+                </div>,
+              ],
+            }))}
+          />
         )}
       </Card>
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Delete backup"
+          body={`Delete the backup from ${formatDateTime(pendingDelete.createdAtMs)} permanently? This cannot be undone.`}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={() => del(pendingDelete.id)}
+        />
+      )}
 
       {preview && (
         <RestoreDialog
@@ -215,54 +231,62 @@ function RestoreDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <Card title="Confirm restore" className="w-full max-w-lg">
-        <div className="space-y-3 text-sm">
-          <p className="text-panel-muted">
-            This will <span className="text-panel-bad">stop the server</span> and replace the current
-            world with the uploaded backup. The current world is snapshotted first for rollback. If
-            the backup includes server settings (PalWorldSettings.ini) they are imported too —
-            panel-managed keys (REST API, RCON, admin password) stay under panel control.
-          </p>
-          <dl className="space-y-1 rounded-lg bg-panel-surface-2 p-3 text-xs">
-            <Row k="Backup world" v={preview.manifest.worldId} />
-            <Row k="Current world" v={preview.currentWorldId ?? '— (none)'} />
-            <Row k="Created" v={preview.manifest.createdAt} />
-            <Row k="Build" v={preview.manifest.buildId ?? '—'} />
-            <Row k="Files" v={String(preview.manifest.files.length)} />
-          </dl>
-          {preview.worldIdMismatch && (
-            <p className="rounded-lg border border-panel-warn/40 bg-panel-warn/10 px-3 py-2 text-xs text-panel-warn">
-              World ID differs from the running world — restoring will also point the server at the
-              backup's world.
-            </p>
-          )}
-          <label className="block">
-            <span className="mb-1 block text-xs text-panel-muted">
-              Type the backup world ID to confirm: <span className="mono">{required}</span>
-            </span>
-            <input className={inputClass} value={confirmText} onChange={(e) => setConfirmText(e.target.value)} />
-          </label>
-          {err && <p className="text-sm text-panel-bad">{err}</p>}
-          <div className="flex justify-end gap-2 pt-1">
-            <Button variant="ghost" onClick={onClose} disabled={busy}>
-              Cancel
-            </Button>
-            <Button variant="danger" onClick={restore} disabled={busy || confirmText !== required}>
-              {busy ? <Spinner /> : null} Stop server & restore
-            </Button>
-          </div>
-        </div>
-      </Card>
-    </div>
+    <Dialog
+      title="Confirm restore"
+      onClose={busy ? () => {} : onClose}
+      width={560}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={restore} disabled={busy || confirmText !== required}>
+            {busy ? <Spinner /> : null} Stop server & restore
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3 text-sm">
+        <p className="cmd-empty">
+          This will <span className="cmd-danger">stop the server</span> and replace the current
+          world with the uploaded backup. The current world is snapshotted first for rollback. If
+          the backup includes server settings (PalWorldSettings.ini) they are imported too —
+          panel-managed keys (REST API, RCON, admin password) stay under panel control.
+        </p>
+        <dl className="cmd-kv space-y-1">
+          <Row k="Backup world" v={preview.manifest.worldId} />
+          <Row k="Current world" v={preview.currentWorldId ?? '— (none)'} />
+          <Row k="Created" v={preview.manifest.createdAt} />
+          <Row k="Build" v={preview.manifest.buildId ?? '—'} />
+          <Row k="Files" v={String(preview.manifest.files.length)} />
+        </dl>
+        {preview.worldIdMismatch && (
+          <Banner tone="warn">
+            World ID differs from the running world — restoring will also point the server at the
+            backup's world.
+          </Banner>
+        )}
+        <label className="block">
+          <span className="eyebrow mb-1.5 block">
+            Type the backup world ID to confirm: <span className="mono">{required}</span>
+          </span>
+          <input
+            className={inputClass}
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+          />
+        </label>
+        {err && <Banner tone="bad">{err}</Banner>}
+      </div>
+    </Dialog>
   )
 }
 
 function Row({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex justify-between gap-4">
-      <dt className="text-panel-muted">{k}</dt>
-      <dd className="mono truncate text-right">{v}</dd>
+      <dt className="eyebrow">{k}</dt>
+      <dd className="mono truncate text-right text-xs">{v}</dd>
     </div>
   )
 }

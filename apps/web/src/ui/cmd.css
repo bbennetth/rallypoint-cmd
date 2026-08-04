@@ -1,0 +1,469 @@
+/* rallypoint-cmd — app-owned recipes on top of the vendored Ink system.
+ *
+ * Everything the panel needs that Ink does not ship lives here, so
+ * ui/ink/ stays a clean copy of upstream. Imported into
+ * `layer(components)` alongside shell.css — see index.css. */
+
+/* ─── CHROME ADDITIONS ─────────────────────────────────────── */
+
+/* Update-available dot on a nav item. `aria-hidden` in the markup — the
+   colour is the whole message, so it must not reach the accessible name. */
+.pl-navdot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-round);
+  background: var(--warn);
+  flex: 0 0 6px;
+}
+.pl-navlink .pl-navdot {
+  margin-left: auto;
+}
+/* In the tab bar there is no room beside the label, so it rides the icon.
+   `.pl-tab-icon` is the positioning parent. */
+.pl-tab-icon {
+  position: relative;
+}
+.pl-tab .pl-navdot {
+  position: absolute;
+  top: -1px;
+  right: -3px;
+}
+
+/* Full-bleed opt-out from `.plapp-content`'s 880px cap, for the surfaces
+   that genuinely need the width: the three five-column tables and the
+   two-column settings form. 880px is right for reading, wrong for a
+   backup listing with size, age and three actions per row. The negative
+   margin mirrors shell.css's own sidebar-compensating centring. */
+@media (min-width: 1024px) {
+  .plapp-content:has(> .cmd-wide) {
+    max-width: 1200px;
+    margin-left: max(0px, calc((100% - 1200px) / 2 - 110px));
+  }
+}
+
+/* Reclaim the mobile bottom gutter. shell.css reserves 104px there to
+   clear a floating tab-bar capsule — but `.pl-tabbar` is a static flex
+   sibling of `.plapp-main`, not an overlay (measured: main.bottom ===
+   tabbar.top), so upstream's reservation is dead space in this app. It
+   costs ~86px of every mobile screen and leaves a visible band under
+   full-height pages. The pill carries its own safe-area margin. */
+@media (max-width: 1023px) {
+  .plapp-main {
+    padding-bottom: 18px;
+  }
+}
+
+/* Fill the scroll container exactly — for the Console log viewer, which
+   wants its own internal scroll rather than growing the page.
+   Percentage height against `.plapp-main`'s content box, rather than
+   reconstructing it from copied constants: the arithmetic version has to
+   know the top-bar height, both gutters AND the tab bar's footprint, and
+   silently overflows the moment any of them changes. */
+.plapp-content:has(> .cmd-fill) {
+  height: 100%;
+}
+.cmd-fill {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+/* Login sits outside the chrome, and shell.css locks `html, body` to
+   `overflow: hidden` for the `.plapp` shell — so the auth screen has to
+   bring its own scroll container or a short viewport clips the card. */
+.cmd-auth {
+  height: 100%;
+  overflow-y: auto;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+}
+
+/* ─── PRIMITIVES ───────────────────────────────────────────── */
+
+/* Card head + body. Ink's `.pl-card` is only the surface (bg, radius,
+   shadow) — upstream apps compose their own padding per surface. The
+   panel has one card shape, so it lives here. */
+.cmd-card-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 18px 0;
+}
+.cmd-card-head .ln {
+  flex: 1;
+  height: 1px;
+  background: var(--hairline-soft);
+}
+.cmd-card-head .eyebrow {
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  margin: 0;
+}
+.cmd-card-title {
+  font-size: 20px;
+  color: var(--ink);
+  margin: 0;
+  flex: 1;
+}
+.cmd-card-body {
+  padding: 14px 18px 16px;
+}
+
+/* Warn button. Ink has no amber variant — the panel needs one for
+   "Restart now", where the action is neither the happy path (accent) nor
+   destructive (hot). `--bg` text, not `--accent-ink`: amber is light. */
+.pl-btn.warn {
+  background: var(--warn);
+  color: var(--bg);
+  box-shadow: none;
+}
+
+/* Compact destructive buttons sit SOFT at rest and go solid on hover.
+   A table of five rows renders five Delete buttons; at Ink's full-solid
+   `.pl-btn.hot` they turn the page into a wall of red and make deleting
+   look like the primary action. Full-size danger buttons keep the solid
+   treatment — there they ARE the committed action (Stop the server, the
+   confirm dialog's final button). */
+.pl-btn.hot.sm {
+  background: var(--bad-soft);
+  color: var(--bad-text);
+}
+.pl-btn.hot.sm:hover {
+  background: var(--bad);
+  color: var(--bg);
+  filter: none;
+}
+
+/* Status chips off the cmd token triad, mirroring Ink's own
+   `.pl-chip.hot` shape. */
+.pl-chip.ok {
+  background: var(--ok-soft);
+  color: var(--ok-text);
+}
+.pl-chip.warn {
+  background: var(--warn-soft);
+  color: var(--warn-text);
+}
+.pl-chip.bad {
+  background: var(--bad-soft);
+  color: var(--bad-text);
+}
+
+/* KPI tile. Ink ships no stat primitive. Sits a step above the card it
+   is in (`--surface-2` on `--surface`), which is the Soft Ink way to
+   separate without a border. */
+.cmd-stat {
+  background: var(--surface-2);
+  border-radius: var(--radius-lg);
+  padding: 12px 16px;
+}
+.cmd-stat-value {
+  font-size: 24px;
+  color: var(--ink);
+  margin-top: 6px;
+}
+.cmd-stat-sub {
+  margin-top: 4px;
+  color: var(--ink-mute);
+}
+
+/* ─── SMALL TEXT ROLES ─────────────────────────────────────── */
+/* Secondary body copy and the "nothing here" line — a shape the routes
+   spelled out inline about forty times before the sweep. */
+.cmd-note {
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
+}
+.cmd-link {
+  color: var(--acid);
+  text-decoration: underline;
+}
+/* Inline copyable value (the public-access address). */
+.cmd-code {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  background: var(--surface-2);
+  border-radius: var(--radius-md);
+  padding: 6px 12px;
+}
+.cmd-danger {
+  color: var(--bad-text);
+}
+/* Running long-op card (backup / restore progress). A surface step above
+   the card it sits in — the Soft Ink way to nest without a border. */
+.cmd-op {
+  background: var(--surface-2);
+  border-radius: var(--radius-lg);
+  padding: 12px 16px;
+}
+/* Key/value summary block inside a dialog. */
+.cmd-kv {
+  background: var(--surface-2);
+  border-radius: var(--radius-lg);
+  padding: 12px;
+  margin: 0;
+}
+/* Status dot beside a lifecycle chip. Inherits the chip's colour, so it
+   never needs a per-tone rule. */
+.cmd-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-round);
+  background: currentColor;
+  flex: 0 0 6px;
+}
+
+/* Schedule row. A `.pl-row` grid does not fit — the content is two
+   clusters that need to wrap as units on narrow screens, not three fixed
+   grid tracks. Same surface step and radius as `.pl-row` otherwise. */
+.cmd-sched {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--surface-2);
+  border-radius: var(--radius-lg);
+}
+/* `.pl-btn.ghost` is `--surface-2`, which is exactly this row's own fill —
+   so a ghost button here renders invisible. Lift it one more step. */
+.cmd-sched .pl-btn.ghost {
+  background: color-mix(in srgb, var(--ink) 8%, var(--surface-2));
+}
+
+/* ─── TABLE ────────────────────────────────────────────────── */
+.cmd-table-wrap {
+  overflow-x: auto;
+}
+.cmd-table {
+  width: 100%;
+  /* Overflow and scroll on narrow screens rather than squeezing. With a
+     plain `width: 100%` a phone crushes "8/1/2026, 9:30:00 PM" onto three
+     lines AND still clips the actions column off the right edge — worst
+     of both. `min-width: max-content` is a no-op wherever the table
+     already fits, so desktop is unaffected. */
+  min-width: max-content;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+.cmd-table th,
+.cmd-table td {
+  white-space: nowrap;
+}
+/* Header recipe lifted from @rallypoint/ui's Table so the panel's tables
+   and the sibling apps' read as the same component. */
+.cmd-table th {
+  padding: 0 12px 8px 0;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  border-bottom: var(--border-width) solid var(--line);
+  white-space: nowrap;
+}
+.cmd-table td {
+  padding: 10px 12px 10px 0;
+  border-bottom: var(--border-width-thin) solid var(--hairline-soft);
+  vertical-align: middle;
+}
+.cmd-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.cmd-table tbody tr {
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.cmd-table tbody tr:hover {
+  background: var(--surface-2);
+}
+.cmd-table th.is-right,
+.cmd-table td.is-right {
+  text-align: right;
+  padding-right: 0;
+}
+.cmd-empty {
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+}
+
+/* ─── BANNER ───────────────────────────────────────────────── */
+/* Soft: a tinted fill plus a low-alpha inset ring, not a drawn border. */
+.cmd-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
+}
+.cmd-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+.cmd-banner.info {
+  background: var(--accent-soft);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--accent-ring);
+}
+.cmd-banner.ok {
+  background: var(--ok-soft);
+  color: var(--ok-text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ok) 28%, transparent);
+}
+.cmd-banner.warn {
+  background: var(--warn-soft);
+  color: var(--warn-text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 28%, transparent);
+}
+.cmd-banner.bad {
+  background: var(--bad-soft);
+  color: var(--bad-text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bad) 28%, transparent);
+}
+
+/* ─── PROGRESS ─────────────────────────────────────────────── */
+.cmd-progress-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink-mute);
+}
+/* Ink's `.progress` is a 4px meter; the panel's disk and op bars are 8px. */
+.progress.lg {
+  height: 8px;
+}
+.progress.ok > div {
+  background: var(--ok);
+}
+.progress.warn > div {
+  background: var(--warn);
+}
+.progress.bad > div {
+  background: var(--bad);
+}
+/* Indeterminate: a sweep rather than a width. The reduced-motion block
+   below freezes the animation, which leaves the bar parked at its
+   start offset — so give it a visible resting width too. */
+.progress > div.is-indeterminate {
+  width: 33%;
+  animation: cmd-sweep 1.4s var(--ease-out) infinite;
+}
+@keyframes cmd-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+
+/* ─── LOG PANE ─────────────────────────────────────────────── */
+/* `--surface-sunken` is Ink's own alias for the page colour, which is
+   what a recessed pane should sit on — the old panes hardcoded
+   `bg-black/40`, a hole punched through the chassis. */
+.cmd-log {
+  overflow: auto;
+  padding: 12px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-sunken);
+  box-shadow: inset 0 0 0 1px var(--hairline-soft);
+}
+.cmd-log.is-fill {
+  flex: 1;
+  min-height: 0;
+}
+.cmd-log pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--ink) 90%, transparent);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.cmd-log pre.err {
+  color: var(--bad-text);
+}
+.cmd-log-empty {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink-mute);
+}
+
+/* ─── DIALOG ───────────────────────────────────────────────── */
+/* Chassis-tinted blur rather than black/60 — a black scrim reads as a
+   hole punched in the page against the navy chassis. */
+.cmd-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  overflow-y: auto;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  backdrop-filter: var(--blur-glass);
+  -webkit-backdrop-filter: var(--blur-glass);
+}
+.cmd-dialog {
+  width: 100%;
+  outline: none;
+}
+.cmd-dialog-body {
+  margin: 0;
+  color: var(--ink-dim);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+.cmd-dialog-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 18px 16px;
+}
+
+/* ─── SCROLLBARS ───────────────────────────────────────────── */
+/* Thin scrollbars for log panes and overflow regions. Retinted onto the
+   Ink hairline; Firefox gets the standard property, WebKit the pseudo. */
+.thin-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.thin-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: var(--radius-badge);
+}
+
+/* ─── REDUCED MOTION ───────────────────────────────────────── */
+/* The vendored CSS ships no `prefers-reduced-motion` coverage at all —
+   upstream's only such block sits on `.rp-swipe-content`, which is not
+   vendored. The panel animates more than most of its surfaces do (op
+   progress, spinners, a pulsing indeterminate bar), so opt the whole
+   thing out here rather than per-recipe. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* Drop the sweep outright rather than letting the blanket rule run it
+     once at 0.01ms — the bar still needs to read as "working", so park
+     it as a static partial fill. */
+  .progress > div.is-indeterminate {
+    animation: none !important;
+    transform: none;
+  }
+}

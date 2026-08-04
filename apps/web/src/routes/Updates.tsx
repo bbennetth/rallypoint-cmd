@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { LongOp, PanelUpdateInfo } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
 import { useSseUpdates } from '../lib/useEventSource.js'
 import { formatDateTime } from '../lib/format.js'
 import { Badge, Button, Card, Spinner } from '../ui/primitives.js'
+import { Banner } from '../ui/Banner.js'
+import { LogPane } from '../ui/LogPane.js'
+import { ProgressBar } from '../ui/ProgressBar.js'
 
 export function UpdatesPage() {
   const [installedBuild, setInstalledBuild] = useState<string | null>(null)
@@ -11,7 +14,6 @@ export function UpdatesPage() {
   const [err, setErr] = useState<string | null>(null)
   const running = op?.status === 'running'
   const { log, progress, done, reset } = useSseUpdates('/api/updates/stream', running)
-  const logRef = useRef<HTMLDivElement>(null)
 
   async function refresh() {
     const s = await api.updateState()
@@ -27,10 +29,6 @@ export function UpdatesPage() {
     if (done) void refresh()
   }, [done])
 
-  useEffect(() => {
-    logRef.current?.scrollTo({ top: logRef.current.scrollHeight })
-  }, [log])
-
   async function run(kind: 'install' | 'update' | 'validate') {
     setErr(null)
     reset()
@@ -43,15 +41,19 @@ export function UpdatesPage() {
 
   return (
     <div className="space-y-6">
+      <div className="pg-head">
+        <h1>Updates</h1>
+      </div>
+
       <Card
         title="SteamCMD"
-        actions={
-          <span className="text-xs text-panel-muted">
-            installed build {installedBuild ?? '—'}
-          </span>
-        }
+        actions={<span className="meta">installed build {installedBuild ?? '—'}</span>}
       >
-        {err && <p className="mb-3 text-sm text-panel-bad">{err}</p>}
+        {err && (
+          <div className="mb-3">
+            <Banner tone="bad">{err}</Banner>
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="primary" disabled={running} onClick={() => run(installedBuild ? 'update' : 'install')}>
             {running ? <Spinner /> : null} {installedBuild ? 'Update server' : 'Install server'}
@@ -68,9 +70,9 @@ export function UpdatesPage() {
           )}
         </div>
         {op?.status === 'failed' && op.error && (
-          <p className="mono mt-3 text-sm text-panel-bad">{op.error}</p>
+          <p className="mono cmd-danger mt-3 text-sm">{op.error}</p>
         )}
-        <p className="mt-3 text-xs text-panel-muted">
+        <p className="cmd-note mt-3">
           Updates stop the server first, run <span className="mono">app_update 2394010 validate</span>,
           then restart it.
         </p>
@@ -89,23 +91,10 @@ export function UpdatesPage() {
         <Card title="Progress">
           {progress != null && (
             <div className="mb-3">
-              <div className="mb-1 flex justify-between text-xs text-panel-muted">
-                <span>Downloading…</span>
-                <span>{progress.toFixed(1)}%</span>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-panel-surface-2">
-                <div className="h-full bg-panel-accent transition-all" style={{ width: `${progress}%` }} />
-              </div>
+              <ProgressBar value={progress} label="Downloading…" right={`${progress.toFixed(1)}%`} />
             </div>
           )}
-          <div
-            ref={logRef}
-            className="thin-scroll max-h-80 overflow-auto rounded-lg bg-black/40 p-3"
-          >
-            <pre className="mono whitespace-pre-wrap break-words text-xs text-panel-text/90">
-              {log.join('\n') || 'Waiting for output…'}
-            </pre>
-          </div>
+          <LogPane lines={log} maxHeight={320} autoscroll empty="Waiting for output…" />
         </Card>
       )}
     </div>
@@ -183,19 +172,19 @@ function PanelUpdateCard({
   return (
     <Card
       title="Rallypoint"
-      actions={
-        <span className="text-xs text-panel-muted">
-          {info ? `v${info.current.replace(/^v/, '')}` : ''}
-        </span>
-      }
+      actions={<span className="meta">{info ? `v${info.current.replace(/^v/, '')}` : ''}</span>}
     >
-      {err && <p className="mb-3 text-sm text-panel-bad">{err}</p>}
+      {err && (
+        <div className="mb-3">
+          <Banner tone="bad">{err}</Banner>
+        </div>
+      )}
       {phase === 'restarting' ? (
-        <div className="flex items-center gap-3 text-sm text-panel-muted">
+        <div className="cmd-empty flex items-center gap-3">
           <Spinner /> Applying update — the panel is restarting…
         </div>
       ) : !info ? (
-        <p className="text-sm text-panel-muted">Checking for updates…</p>
+        <p className="cmd-empty">Checking for updates…</p>
       ) : info.updateAvailable && info.latest ? (
         <div className="space-y-3">
           <div className="flex items-center gap-3">
@@ -203,17 +192,11 @@ function PanelUpdateCard({
             <span className="text-sm">
               {info.latest}
               {info.publishedAt && (
-                <span className="ml-2 text-xs text-panel-muted">
-                  {formatDateTime(Date.parse(info.publishedAt))}
-                </span>
+                <span className="meta ml-2">{formatDateTime(Date.parse(info.publishedAt))}</span>
               )}
             </span>
           </div>
-          {info.notes && (
-            <pre className="thin-scroll max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-panel-surface-2 p-3 text-xs text-panel-muted">
-              {info.notes}
-            </pre>
-          )}
+          {info.notes && <LogPane lines={info.notes} maxHeight={160} />}
           <div className="flex gap-2">
             <Button variant="primary" disabled={opRunning || phase !== 'idle'} onClick={runUpdate}>
               Update to {info.latest}
@@ -222,7 +205,7 @@ function PanelUpdateCard({
               {checking ? <Spinner /> : 'Re-check'}
             </Button>
           </div>
-          <p className="text-xs text-panel-muted">
+          <p className="cmd-note">
             Downloads the release artifact, verifies it, swaps it in via the root helper, and
             restarts the panel. The game server keeps running.
           </p>
@@ -230,7 +213,7 @@ function PanelUpdateCard({
       ) : (
         <div className="flex items-center gap-3">
           <Badge tone="good">up to date</Badge>
-          <span className="text-xs text-panel-muted">
+          <span className="meta">
             last checked {info.checkedAtMs ? formatDateTime(info.checkedAtMs) : 'never'}
           </span>
           <Button variant="ghost" disabled={checking} onClick={() => check(true)}>

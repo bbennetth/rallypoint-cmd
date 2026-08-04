@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { api, ApiError } from '../lib/api.js'
 import { useSseLines } from '../lib/useEventSource.js'
 import { Badge, Button, inputClass } from '../ui/primitives.js'
+import { Banner } from '../ui/Banner.js'
+import { LogPane } from '../ui/LogPane.js'
 
 export function ConsolePage() {
   const { lines, connected, clear } = useSseLines('/api/console/stream', 'log', { max: 2000 })
@@ -9,11 +11,6 @@ export function ConsolePage() {
   const [sending, setSending] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [autoscroll, setAutoscroll] = useState(true)
-  const bottomRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (autoscroll) bottomRef.current?.scrollIntoView({ behavior: 'auto' })
-  }, [lines, autoscroll])
 
   async function announce(e: React.FormEvent) {
     e.preventDefault()
@@ -31,37 +28,34 @@ export function ConsolePage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col gap-3">
-      <div className="flex items-center justify-between">
+    <div className="cmd-fill gap-3">
+      <div className="pg-head">
         <div className="flex items-center gap-3">
-          <h1 className="text-sm font-semibold">Live console</h1>
+          <h1>Live console</h1>
           <Badge tone={connected ? 'good' : 'muted'}>{connected ? 'streaming' : 'connecting…'}</Badge>
         </div>
-        <div className="flex items-center gap-3 text-xs text-panel-muted">
-          <label className="flex items-center gap-1.5">
+        <div className="flex items-center gap-4">
+          <label className="eyebrow flex cursor-pointer items-center gap-2">
             <input
+              className="cyber-checkbox"
               type="checkbox"
               checked={autoscroll}
               onChange={(e) => setAutoscroll(e.target.checked)}
             />
             Auto-scroll
           </label>
-          <Button variant="ghost" onClick={clear}>
+          <Button variant="ghost" size="sm" onClick={clear}>
             Clear
           </Button>
         </div>
       </div>
 
-      <div className="thin-scroll flex-1 overflow-auto rounded-xl border border-panel-border bg-black/40 p-3">
-        <pre className="mono whitespace-pre-wrap break-words text-xs leading-relaxed text-panel-text/90">
-          {lines.length === 0 ? (
-            <span className="text-panel-muted">Waiting for journal output…</span>
-          ) : (
-            lines.join('\n')
-          )}
-        </pre>
-        <div ref={bottomRef} />
-      </div>
+      <LogPane
+        lines={lines}
+        fill
+        autoscroll={autoscroll}
+        empty="Waiting for journal output…"
+      />
 
       <form onSubmit={announce} className="flex gap-2">
         <input
@@ -70,11 +64,11 @@ export function ConsolePage() {
           value={message}
           onChange={(e) => setMessage(e.target.value)}
         />
-        <Button variant="primary" disabled={sending || !message.trim()}>
+        <Button variant="primary" className="grow" disabled={sending || !message.trim()}>
           Broadcast
         </Button>
       </form>
-      {err && <p className="text-xs text-panel-bad">{err}</p>}
+      {err && <Banner tone="bad">{err}</Banner>}
     </div>
   )
 }

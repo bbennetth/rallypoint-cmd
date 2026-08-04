@@ -1,49 +1,55 @@
+/* rallypoint-cmd panel — stylesheet entry.
+ *
+ * The look is the Rallypoint "Soft Ink" design system, vendored from
+ * @rallypoint/ui under ./ui/ink/ (see ui/ink/VENDORED.md).
+ *
+ * ─── IMPORT ORDER IS LOAD-BEARING ──────────────────────────────────
+ *
+ * Tailwind first: `@import 'tailwindcss'` is what emits
+ * `@layer theme, base, components, utilities;`, and a `layer()` import
+ * below it has to land in an already-declared layer.
+ *
+ * Token files UNLAYERED. Tailwind 4.3 and Ink both define --text-xs/-sm/
+ * -lg, --radius-sm/-md/-lg/-xl, --tracking-tight, --leading-tight,
+ * --ease-out and --font-mono. Tailwind's live in `@layer theme`, so an
+ * unlayered Ink token wins every collision — which is the intent:
+ * `text-sm` becomes Ink's 13px dense-row size and `rounded-lg` its 12px
+ * content radius, app-wide, without touching a single call site.
+ *
+ * Rule files in layer(components). Layered rules lose to Tailwind
+ * utilities, which is what a Tailwind codebase expects. Unlayered, they
+ * would win instead — and `.pl-input { font-size: 16px }` silently
+ * beating `text-xs` turns the Settings raw-editor textarea into a wall
+ * of 16px monospace INI with no error anywhere. That textarea is the
+ * sentinel for this: if it stops rendering at 12px, the layering broke.
+ *
+ * The four token @imports are hoisted here out of ui/ink/theme.css for
+ * exactly this reason — a nested @import inherits its parent's layer,
+ * so leaving them in place would drag the tokens into
+ * layer(components) and hand every collision back to Tailwind. */
+
 @import 'tailwindcss';
 
-/* Dark control-panel theme. */
-:root {
-  color-scheme: dark;
-}
+/* Unlayered: @font-face + custom properties. */
+@import './ui/ink/fonts.css';
+@import './ui/ink/tokens/colors.css';
+@import './ui/ink/tokens/typography.css';
+@import './ui/ink/tokens/spacing.css';
+@import './ui/cmd-tokens.css';
 
-@theme {
-  --color-panel-bg: #0b0f17;
-  --color-panel-surface: #131a26;
-  --color-panel-surface-2: #1b2432;
-  --color-panel-border: #263243;
-  --color-panel-text: #e6edf6;
-  --color-panel-muted: #8b9bb1;
-  --color-panel-accent: #4ea1ff;
-  --color-panel-good: #37d67a;
-  --color-panel-warn: #f6c445;
-  --color-panel-bad: #ff5c6c;
-}
+/* Layered: everything that emits rules. */
+@import './ui/ink/theme.css' layer(components);
+@import './ui/ink/tokens/primitives.css' layer(components);
+@import './ui/ink/shell.css' layer(components);
+@import './ui/cmd.css' layer(components);
 
-html,
-body,
-#root {
-  height: 100%;
-}
-
-body {
-  margin: 0;
-  background: var(--color-panel-bg);
-  color: var(--color-panel-text);
-  font-family:
-    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-}
-
-/* Console + log monospace */
-.mono {
-  font-family: ui-monospace, 'SFMono-Regular', 'JetBrains Mono', Menlo, Consolas, monospace;
-}
-
-/* thin scrollbars in the console */
-.thin-scroll::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-.thin-scroll::-webkit-scrollbar-thumb {
-  background: var(--color-panel-border);
-  border-radius: 4px;
-}
+/* No `@theme` block and no page-level height rules here. The pre-Ink
+ * palette was carried through the sweep by a compatibility `@theme` that
+ * re-pointed its old colour names at Ink tokens; every call site is now
+ * on an Ink recipe or a `.cmd-*` class, so it is gone.
+ *
+ * If you reintroduce one, remember that deleting an `@theme` entry makes
+ * its utilities vanish SILENTLY — no build error, just unstyled elements.
+ *
+ * ui/ink/shell.css owns `html`, `body` and `#root` for the `.plapp`
+ * shell, which is its own scroll container. */

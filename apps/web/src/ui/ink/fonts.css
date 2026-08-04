@@ -1,0 +1,65 @@
+/* Rallypoint "Ink" — brand fonts (self-hosted woff2).
+ *
+ * VENDORED from @rallypoint/ui — see ./VENDORED.md. Upstream's trailing
+ * Inter face is dropped: it exists there as back-compat for sibling apps
+ * that still hardcode `font-family: 'Inter'`, rallypoint-cmd has no such
+ * call-site, and it is 344 KB — bigger than all six Ink faces combined.
+ *
+ * The Ink type stack:
+ *   --font-display : Archivo Black  (heavy geometric display / headings)
+ *   --font-body    : Space Grotesk  (UI body, weights 400/500/700)
+ *   --font-mono    : Space Mono     (eyebrows, labels, code; 400/700)
+ *
+ * Self-hosted under `./fonts/` (Vite fingerprints each as an asset)
+ * rather than a CDN — the panel is served from an LXC that may have no
+ * outbound internet, so a Google Fonts request would simply never
+ * resolve. Only the latin subset ships per face.
+ *
+ * Licenses: Archivo Black, Space Grotesk, Space Mono — SIL OFL 1.1. */
+
+@font-face {
+  font-family: 'Archivo Black';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/archivo-black-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/space-grotesk-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./fonts/space-grotesk-500.woff2') format('woff2');
+}
+/* 600 reuses the 700 cut — Space Grotesk ships no dedicated semibold in
+   this subset; the weight gap is visually negligible at UI sizes. */
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 600 700;
+  font-display: swap;
+  src: url('./fonts/space-grotesk-700.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Space Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/space-mono-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Space Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./fonts/space-mono-700.woff2') format('woff2');
+}

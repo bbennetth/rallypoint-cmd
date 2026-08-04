@@ -3,35 +3,27 @@ import { PAL_KEY_SPECS, SETTINGS_CATEGORIES } from '@rallypoint-cmd/shared'
 import type { SettingsEntry, SettingValue } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
 import { Badge, Button, Card, inputClass } from '../ui/primitives.js'
+import { Banner } from '../ui/Banner.js'
+import { LogPane } from '../ui/LogPane.js'
 
 export function SettingsPage() {
   const [mode, setMode] = useState<'form' | 'raw'>('form')
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-sm font-semibold">PalWorldSettings.ini</h1>
-        <div className="flex gap-1 rounded-lg border border-panel-border p-0.5">
-          <TabBtn active={mode === 'form'} onClick={() => setMode('form')}>
+    <div className="cmd-wide space-y-4">
+      <div className="pg-head">
+        <h1>Settings</h1>
+        {/* Ink's segmented control replaces the page-local TabBtn pair. */}
+        <div className="seg">
+          <button className={mode === 'form' ? 'on' : ''} onClick={() => setMode('form')}>
             Structured
-          </TabBtn>
-          <TabBtn active={mode === 'raw'} onClick={() => setMode('raw')}>
+          </button>
+          <button className={mode === 'raw' ? 'on' : ''} onClick={() => setMode('raw')}>
             Raw
-          </TabBtn>
+          </button>
         </div>
       </div>
       {mode === 'form' ? <StructuredEditor /> : <RawEditor />}
     </div>
-  )
-}
-
-function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`rounded-md px-3 py-1 text-xs ${active ? 'bg-panel-surface-2 text-panel-text' : 'text-panel-muted'}`}
-    >
-      {children}
-    </button>
   )
 }
 
@@ -86,14 +78,14 @@ function StructuredEditor() {
     }
   }
 
-  if (!entries) return <p className="text-panel-muted">Loading settings…</p>
+  if (!entries) return <p className="cmd-empty">Loading settings…</p>
 
   return (
     <div className="space-y-4">
       {pendingRestart && (
-        <div className="rounded-lg border border-panel-warn/40 bg-panel-warn/10 px-4 py-2 text-sm text-panel-warn">
+        <Banner tone="warn">
           Unapplied changes — restart the server for them to take effect.
-        </div>
+        </Banner>
       )}
       <Card
         title="Server settings"
@@ -104,16 +96,17 @@ function StructuredEditor() {
         }
       >
         {msg && (
-          <p className={`mb-3 text-sm ${msg.tone === 'good' ? 'text-panel-good' : 'text-panel-bad'}`}>
-            {msg.text}
-          </p>
+          <div className="mb-3">
+            <Banner tone={msg.tone === 'good' ? 'ok' : 'bad'}>{msg.text}</Banner>
+          </div>
         )}
         <div className="space-y-6">
           {sections.map(([category, list]) => (
             <section key={category}>
-              <h3 className="mb-3 border-b border-panel-border pb-1.5 text-xs font-semibold uppercase tracking-wider text-panel-muted">
-                {category}
-              </h3>
+              <div className="pl-eyerow">
+                <span className="eyebrow">{category}</span>
+                <span className="ln" />
+              </div>
               <div className="grid gap-x-6 gap-y-3 md:grid-cols-2">
                 {list.map((e) => (
                   <EntryField
@@ -131,13 +124,7 @@ function StructuredEditor() {
 
       {unknown.length > 0 && (
         <Card title={`Other keys (${unknown.length}) — preserved verbatim`}>
-          <div className="mono max-h-48 space-y-1 overflow-auto text-xs text-panel-muted thin-scroll">
-            {unknown.map((e) => (
-              <div key={e.key}>
-                {e.key}={e.raw}
-              </div>
-            ))}
-          </div>
+          <LogPane lines={unknown.map((e) => `${e.key}=${e.raw}`)} maxHeight={192} />
         </Card>
       )}
     </div>
@@ -156,7 +143,7 @@ function EntryField({
   const label = entry.label ?? entry.key
   return (
     <label className="block">
-      <span className="mb-1 flex items-center gap-2 text-xs font-medium text-panel-muted">
+      <span className="eyebrow mb-1.5 flex items-center gap-2">
         {label}
         {entry.managed && <Badge tone="warn">managed</Badge>}
       </span>
@@ -228,7 +215,7 @@ function RawEditor() {
     }
   }
 
-  if (content == null) return <p className="text-panel-muted">Loading…</p>
+  if (content == null) return <p className="cmd-empty">Loading…</p>
   return (
     <Card
       title="Raw editor"
@@ -239,9 +226,9 @@ function RawEditor() {
       }
     >
       {msg && (
-        <p className={`mb-3 text-sm ${msg.tone === 'good' ? 'text-panel-good' : 'text-panel-bad'}`}>
-          {msg.text}
-        </p>
+        <div className="mb-3">
+          <Banner tone={msg.tone === 'good' ? 'ok' : 'bad'}>{msg.text}</Banner>
+        </div>
       )}
       <textarea
         className={`${inputClass} mono h-[28rem] resize-none text-xs`}
@@ -249,7 +236,7 @@ function RawEditor() {
         onChange={(e) => setContent(e.target.value)}
         spellCheck={false}
       />
-      <p className="mt-2 text-xs text-panel-muted">
+      <p className="cmd-note mt-2">
         Panel-managed keys (REST API, RCON, admin password) are re-asserted on save.
       </p>
     </Card>

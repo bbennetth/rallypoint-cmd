@@ -2,6 +2,15 @@ import { useState } from 'react'
 import { api, ApiError } from '../lib/api.js'
 import { usePoll } from '../lib/usePoll.js'
 import { Badge, Button, Card, inputClass } from '../ui/primitives.js'
+import { DataTable } from '../ui/DataTable.js'
+
+const PLAYER_COLUMNS = [
+  { key: 'name', header: 'Name' },
+  { key: 'level', header: 'Level' },
+  { key: 'ping', header: 'Ping' },
+  { key: 'userId', header: 'User ID', cellClassName: 'mono text-xs text-[var(--ink-mute)]' },
+  { key: 'actions', header: 'Actions', align: 'right' as const },
+]
 
 export function PlayersPage() {
   const { data, error, refresh } = usePoll(api.players, 5000)
@@ -23,12 +32,14 @@ export function PlayersPage() {
   const offline = error instanceof ApiError && error.status === 503
 
   return (
-    <div className="space-y-6">
+    <div className="cmd-wide space-y-6">
+      <div className="pg-head">
+        <h1>Players</h1>
+      </div>
+
       <Card
         title="Broadcast"
-        actions={
-          <span className="text-xs text-panel-muted">{data ? `${data.players.length} online` : ''}</span>
-        }
+        actions={<span className="meta">{data ? `${data.players.length} online` : ''}</span>}
       >
         <form
           className="flex gap-2"
@@ -47,7 +58,7 @@ export function PlayersPage() {
             value={announce}
             onChange={(e) => setAnnounce(e.target.value)}
           />
-          <Button variant="primary" disabled={busy === 'announce' || !announce.trim()}>
+          <Button variant="primary" className="grow" disabled={busy === 'announce' || !announce.trim()}>
             Send
           </Button>
         </form>
@@ -55,53 +66,39 @@ export function PlayersPage() {
 
       <Card title="Players">
         {offline ? (
-          <p className="text-sm text-panel-muted">Server is offline — player list unavailable.</p>
-        ) : !data || data.players.length === 0 ? (
-          <p className="text-sm text-panel-muted">No players online.</p>
+          <p className="cmd-empty">Server is offline — player list unavailable.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-panel-border text-left text-xs uppercase text-panel-muted">
-                  <th className="pb-2 pr-3">Name</th>
-                  <th className="pb-2 pr-3">Level</th>
-                  <th className="pb-2 pr-3">Ping</th>
-                  <th className="pb-2 pr-3">User ID</th>
-                  <th className="pb-2 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.players.map((p) => (
-                  <tr key={p.userId} className="border-b border-panel-border/50">
-                    <td className="py-2 pr-3 font-medium">{p.name}</td>
-                    <td className="py-2 pr-3">{p.level ?? '—'}</td>
-                    <td className="py-2 pr-3">
-                      <Badge tone={(p.ping ?? 0) < 80 ? 'good' : 'warn'}>{p.ping ?? '—'} ms</Badge>
-                    </td>
-                    <td className="mono py-2 pr-3 text-xs text-panel-muted">{p.userId}</td>
-                    <td className="py-2 text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          disabled={busy === p.userId}
-                          onClick={() => act(() => api.kick(p.userId), p.userId)}
-                        >
-                          Kick
-                        </Button>
-                        <Button
-                          variant="danger"
-                          disabled={busy === p.userId}
-                          onClick={() => act(() => api.ban(p.userId), p.userId)}
-                        >
-                          Ban
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={PLAYER_COLUMNS}
+            empty="No players online."
+            rows={(data?.players ?? []).map((p) => ({
+              id: p.userId,
+              cells: [
+                <span className="font-medium">{p.name}</span>,
+                p.level ?? '—',
+                <Badge tone={(p.ping ?? 0) < 80 ? 'good' : 'warn'}>{p.ping ?? '—'} ms</Badge>,
+                p.userId,
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy === p.userId}
+                    onClick={() => act(() => api.kick(p.userId), p.userId)}
+                  >
+                    Kick
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    disabled={busy === p.userId}
+                    onClick={() => act(() => api.ban(p.userId), p.userId)}
+                  >
+                    Ban
+                  </Button>
+                </div>,
+              ],
+            }))}
+          />
         )}
       </Card>
     </div>
