@@ -6,15 +6,40 @@
 
 /* ─── CHROME ADDITIONS ─────────────────────────────────────── */
 
-/* Brand lockup: compass and wordmark side by side. Mirrors the flex row
-   upstream gets from `.pl-switch-trigger`, which the panel does not use
-   (it has no app switcher). `min-width: 0` so the row can shrink rather
-   than push the avatar off the mobile top bar. */
+/* Brand lockup: compass and wordmark side by side, with the desktop
+   sublabel ("command") in a second row under the wordmark column only.
+   A grid rather than the flex row upstream gets from `.pl-switch-trigger`
+   (which the panel doesn't use — no app switcher): `fit-content` +
+   `justify-self: end` is what makes the sublabel's right edge land
+   exactly on the wordmark's, which the full-width `.pl-sub` can't do.
+   With only the two lockup children (mobile top bar, Login) the grid
+   renders identically to the old flex row. `min-width: 0` so the row
+   shrinks rather than pushing the avatar off the mobile top bar. */
 .cmd-brand {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto auto;
   align-items: center;
-  gap: 9px;
+  column-gap: 9px;
+  width: fit-content;
   min-width: 0;
+}
+.cmd-brand-sub {
+  grid-column: 2;
+  justify-self: end;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  /* Tracking adds a trailing gap after the final `d`, which would break
+     the flush right edge — swallow it. */
+  margin-right: -0.16em;
+  color: var(--ink);
+}
+/* c / first m / d — the "cmd" inside "command", same accent as the
+   wordmark's `pt`. Tone change only, no bold. */
+.cmd-brand-sub b {
+  color: var(--acid);
+  font-weight: inherit;
 }
 
 /* Update-available dot on a nav item. `aria-hidden` in the markup — the

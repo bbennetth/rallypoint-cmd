@@ -55,15 +55,22 @@ export function AppChrome({ children }: { children: ReactNode }) {
   return (
     <InkAppChrome
       nav={navItems(updateAvailable)}
-      subLabel="CMD"
       brand={({ size }) => (
         // AppBrandLockup is a bare fragment (compass span + wordmark span)
-        // that relies on its parent being a flex row — upstream only ever
-        // renders it inside `.pl-switch-trigger`. Without this wrapper the
-        // sidebar stacks the two (its container is a plain block) and the
-        // mobile top bar's `space-between` shoves them to opposite ends.
+        // that relies on its parent laying it out — upstream only ever
+        // renders it inside `.pl-switch-trigger`, a flex row. `.cmd-brand`
+        // is a 2-col grid so the desktop sublabel can sit in row 2 under
+        // the wordmark column, right edge flush with the wordmark (which
+        // the vendored `.pl-sub` cannot do — it spans the whole sidebar).
+        // The blue c/m/d echo the wordmark's two-tone `pt`; aria-hidden so
+        // the decorated string stays out of the accessible name.
         <div className="cmd-brand">
           <AppBrandLockup size={size} />
+          {size === 'desktop' && (
+            <span className="cmd-brand-sub" aria-hidden="true">
+              <b>c</b>o<b>m</b>man<b>d</b>
+            </span>
+          )}
         </div>
       )}
       userMenu={({ size }) => (
