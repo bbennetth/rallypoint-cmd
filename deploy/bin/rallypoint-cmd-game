@@ -51,7 +51,7 @@ case "$VERB" in
     MEM_HIGH="${REST%%|*}"; MEM_MAX="${REST#*|}"
     INSTALL_DIR="$GAMES_ROOT/$SLUG"
 
-    install -d -o palworld -g palworld "$INSTALL_DIR"
+    install -d -o rallypoint -g rallypoint "$INSTALL_DIR"
     install -d -o root -g root "$CONF_ROOT/$SLUG" "$DROPIN_DIR"
 
     cat > "$CONF_ROOT/$SLUG/start.sh" <<EOF

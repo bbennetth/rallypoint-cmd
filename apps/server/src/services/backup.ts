@@ -518,7 +518,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
         const code = (err as NodeJS.ErrnoException).code
         if (code === 'EACCES' || code === 'EPERM') {
           throw new BackupError(
-            `The panel user cannot write ${saveRoot} (some files are probably root-owned from a manual copy). Fix inside the container with: chown -R palworld:palworld ${installDir}/Pal/Saved`,
+            `The panel user cannot write ${saveRoot} (some files are probably root-owned from a manual copy). Fix inside the container with: chown -R rallypoint:rallypoint ${installDir}/Pal/Saved`,
             'restore_failed',
           )
         }
@@ -549,7 +549,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
       // 1. Stop the game — never swap saves under a running server.
       pct(5)
       if (wasActive) {
-        say('[restore] Stopping palworld.service...')
+        say('[restore] Stopping the server...')
         await deps.gameControl.stop()
         const stopped = await deps.gameControl.waitFor('inactive', 120_000)
         if (!stopped) throw new BackupError('Game did not stop within 120s.', 'restore_failed')
@@ -652,7 +652,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
         // restore, not report success.
         pct(70)
         if (wasActive) {
-          say('[restore] Starting palworld.service...')
+          say('[restore] Starting the server...')
           await deps.gameControl.start()
           const up = await deps.gameControl.waitFor('active', 180_000)
           if (!up) throw new BackupError('Game failed to come back up after restore.', 'restore_failed')

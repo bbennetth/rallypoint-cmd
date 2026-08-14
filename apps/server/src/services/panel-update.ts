@@ -18,7 +18,7 @@ const execFileAsync = promisify(execFile)
 
 // Panel self-update from GitHub Releases.
 //
-// Security shape: /opt/rallypoint-cmd is root:palworld READ-ONLY — the
+// Security shape: /opt/rallypoint-cmd is root:rallypoint READ-ONLY — the
 // panel never writes its own code. It downloads + verifies the release
 // artifact into DATA_DIR staging, then hands off to the pinned root
 // helper (sudoers-whitelisted) which swaps files in and restarts the

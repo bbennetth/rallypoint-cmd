@@ -1,65 +1,61 @@
 # /etc/sudoers.d/rallypoint-cmd   (install root:root 0440; verify: visudo -cf <file>)
 #
-# The panel runs as the `palworld` user and needs exactly two privileged
+# The panel runs as the `rallypoint` user and needs exactly two privileged
 # capabilities per game unit: bounce it, and tail its journal. Everything
 # else (files, saves, config, steamcmd, backups) it owns directly.
 #
 # Wildcard-free on purpose — a `systemctl *` sudoers wildcard is a classic
 # privilege-escalation footgun. These argv strings must match the frozen
-# constants in apps/server/src/services/constants.ts EXACTLY: the legacy
-# palworld.service plus one rallypoint-game@<slug>.service line per game
-# registry slug (packages/shared/src/games.ts). Drift-tested by
+# constants in apps/server/src/services/constants.ts EXACTLY: one
+# rallypoint-game@<slug>.service line per game registry slug
+# (packages/shared/src/games.ts). Drift-tested by
 # apps/server/src/services/real-hardening.test.ts.
 
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl start palworld.service
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl stop palworld.service
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl restart palworld.service
-palworld ALL=(root) NOPASSWD: /usr/bin/journalctl -u palworld.service -n 500 -o cat -f
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl start rallypoint-game@palworld.service
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl stop rallypoint-game@palworld.service
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl restart rallypoint-game@palworld.service
-palworld ALL=(root) NOPASSWD: /usr/bin/journalctl -u rallypoint-game@palworld.service -n 500 -o cat -f
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl start rallypoint-game@valheim.service
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl stop rallypoint-game@valheim.service
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl restart rallypoint-game@valheim.service
-palworld ALL=(root) NOPASSWD: /usr/bin/journalctl -u rallypoint-game@valheim.service -n 500 -o cat -f
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl start rallypoint-game@rust.service
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl stop rallypoint-game@rust.service
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl restart rallypoint-game@rust.service
-palworld ALL=(root) NOPASSWD: /usr/bin/journalctl -u rallypoint-game@rust.service -n 500 -o cat -f
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl start rallypoint-game@ark-survival-evolved.service
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl stop rallypoint-game@ark-survival-evolved.service
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl restart rallypoint-game@ark-survival-evolved.service
-palworld ALL=(root) NOPASSWD: /usr/bin/journalctl -u rallypoint-game@ark-survival-evolved.service -n 500 -o cat -f
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl start rallypoint-game@7-days-to-die.service
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl stop rallypoint-game@7-days-to-die.service
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl restart rallypoint-game@7-days-to-die.service
-palworld ALL=(root) NOPASSWD: /usr/bin/journalctl -u rallypoint-game@7-days-to-die.service -n 500 -o cat -f
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl start rallypoint-game@project-zomboid.service
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl stop rallypoint-game@project-zomboid.service
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl restart rallypoint-game@project-zomboid.service
-palworld ALL=(root) NOPASSWD: /usr/bin/journalctl -u rallypoint-game@project-zomboid.service -n 500 -o cat -f
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl start rallypoint-game@satisfactory.service
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl stop rallypoint-game@satisfactory.service
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl restart rallypoint-game@satisfactory.service
-palworld ALL=(root) NOPASSWD: /usr/bin/journalctl -u rallypoint-game@satisfactory.service -n 500 -o cat -f
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl start rallypoint-game@team-fortress-2.service
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl stop rallypoint-game@team-fortress-2.service
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl restart rallypoint-game@team-fortress-2.service
-palworld ALL=(root) NOPASSWD: /usr/bin/journalctl -u rallypoint-game@team-fortress-2.service -n 500 -o cat -f
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl start rallypoint-game@counter-strike-2.service
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl stop rallypoint-game@counter-strike-2.service
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl restart rallypoint-game@counter-strike-2.service
-palworld ALL=(root) NOPASSWD: /usr/bin/journalctl -u rallypoint-game@counter-strike-2.service -n 500 -o cat -f
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl start rallypoint-game@unturned.service
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl stop rallypoint-game@unturned.service
-palworld ALL=(root) NOPASSWD: /usr/bin/systemctl restart rallypoint-game@unturned.service
-palworld ALL=(root) NOPASSWD: /usr/bin/journalctl -u rallypoint-game@unturned.service -n 500 -o cat -f
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl start rallypoint-game@palworld.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl stop rallypoint-game@palworld.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl restart rallypoint-game@palworld.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/journalctl -u rallypoint-game@palworld.service -n 500 -o cat -f
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl start rallypoint-game@valheim.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl stop rallypoint-game@valheim.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl restart rallypoint-game@valheim.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/journalctl -u rallypoint-game@valheim.service -n 500 -o cat -f
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl start rallypoint-game@rust.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl stop rallypoint-game@rust.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl restart rallypoint-game@rust.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/journalctl -u rallypoint-game@rust.service -n 500 -o cat -f
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl start rallypoint-game@ark-survival-evolved.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl stop rallypoint-game@ark-survival-evolved.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl restart rallypoint-game@ark-survival-evolved.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/journalctl -u rallypoint-game@ark-survival-evolved.service -n 500 -o cat -f
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl start rallypoint-game@7-days-to-die.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl stop rallypoint-game@7-days-to-die.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl restart rallypoint-game@7-days-to-die.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/journalctl -u rallypoint-game@7-days-to-die.service -n 500 -o cat -f
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl start rallypoint-game@project-zomboid.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl stop rallypoint-game@project-zomboid.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl restart rallypoint-game@project-zomboid.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/journalctl -u rallypoint-game@project-zomboid.service -n 500 -o cat -f
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl start rallypoint-game@satisfactory.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl stop rallypoint-game@satisfactory.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl restart rallypoint-game@satisfactory.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/journalctl -u rallypoint-game@satisfactory.service -n 500 -o cat -f
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl start rallypoint-game@team-fortress-2.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl stop rallypoint-game@team-fortress-2.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl restart rallypoint-game@team-fortress-2.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/journalctl -u rallypoint-game@team-fortress-2.service -n 500 -o cat -f
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl start rallypoint-game@counter-strike-2.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl stop rallypoint-game@counter-strike-2.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl restart rallypoint-game@counter-strike-2.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/journalctl -u rallypoint-game@counter-strike-2.service -n 500 -o cat -f
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl start rallypoint-game@unturned.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl stop rallypoint-game@unturned.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl restart rallypoint-game@unturned.service
+rallypoint ALL=(root) NOPASSWD: /usr/bin/journalctl -u rallypoint-game@unturned.service -n 500 -o cat -f
 # Panel self-update: pinned root helper (validates its argument is inside
 # /var/lib/rallypoint-cmd before touching anything).
-palworld ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-apply-update *
+rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-apply-update *
 # playit.gg public access: pinned helper with fixed verbs (install/claim/
 # start/stop/secret/reset/status), claim code validated in-script.
-palworld ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-playit *
+rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-playit *
 
-Defaults:palworld !requiretty
+Defaults:rallypoint !requiretty

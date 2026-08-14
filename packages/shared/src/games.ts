@@ -244,13 +244,8 @@ export function appManifestFor(steamAppId: number): string {
   return `steamapps/appmanifest_${steamAppId}.acf`
 }
 
-// The template-unit name a game's server runs under (fresh installs). A
-// legacy single-Palworld install keeps its original `palworld.service`
-// via the seeded server row's unitName — both schemes coexist.
+// The systemd template-unit instance a game's server runs under. Every
+// game (Palworld included) uses this scheme.
 export function templateUnitFor(slug: string): string {
   return `rallypoint-game@${slug}.service`
 }
-
-// The pre-migration Palworld install's id + unit, seeded on first boot.
-export const DEFAULT_SERVER_ID = 'default'
-export const LEGACY_PALWORLD_UNIT = 'palworld.service'

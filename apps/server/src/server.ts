@@ -6,7 +6,7 @@ import { runMigrations } from './db/migrate.js'
 import { composeServices } from './services/compose.js'
 import { createPasswordHasher } from './auth/password.js'
 import { buildApp } from './build-app.js'
-import { seedAdmin, seedDefaultSchedules, seedDefaultServer } from './seed.js'
+import { seedAdmin } from './seed.js'
 
 async function main(): Promise<void> {
   const env = parseEnv(process.env)
@@ -20,8 +20,6 @@ async function main(): Promise<void> {
     pepperVersion: env.PANEL_PEPPER_VERSION,
   })
   await seedAdmin(db, env, passwordHasher, logger)
-  seedDefaultServer(db, env, logger)
-  seedDefaultSchedules(db, logger)
 
   const services = composeServices(env, logger, db)
   services.scheduler.start()

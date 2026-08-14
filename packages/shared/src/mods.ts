@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-// Server-side .pak mods live under PAL_DIR/Pal/Content/Paks/~mods (UE
+// Server-side .pak mods live under the install dir's Pal/Content/Paks/~mods (UE
 // mounts every pak in that dir); disabled mods are parked in the sibling
 // ~mods-disabled dir. The filesystem is the source of truth — a "mod" is
 // a pak filename stem plus optional same-stem UE5 sidecars

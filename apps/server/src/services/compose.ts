@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { DEFAULT_SERVER_ID, gameBySlug } from '@rallypoint-cmd/shared'
+import { gameBySlug } from '@rallypoint-cmd/shared'
 import type { Env } from '../env.js'
 import type { Logger } from '../logger.js'
 import type { Db } from '../db/client.js'
@@ -32,7 +32,6 @@ import path from 'node:path'
 export interface InstanceManager {
   list(): ServerInstance[]
   get(id: string): ServerInstance | undefined
-  getDefault(): ServerInstance
   // Register a freshly-inserted server row.
   add(row: ServerRow): ServerInstance
   remove(id: string): void
@@ -43,6 +42,11 @@ export interface ComposedServices {
   scheduler: SchedulerService
   panelUpdate: PanelUpdateService
   publicAccess: PublicAccessService
+  // Panel-level coordination for panel-scoped long-ops (self-update,
+  // public access) — independent of any game server, so these keep
+  // working when zero servers exist. Progress streams over /api/panel/stream.
+  longOps: LongOpRunner
+  worldLock: WorldLock
   // Request-scoped bag for handlers, built around one resolved instance.
   servicesFor(instance: ServerInstance): Services
   dispose(): void
@@ -55,17 +59,19 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
     const longOps = new LongOpRunner()
     const worldLock = new WorldLock()
 
-    // The seeded default server keeps its historical panel_state key and
-    // flat BACKUP_DIR layout; later servers get namespaced ones.
-    const stateKey = row.id === DEFAULT_SERVER_ID ? 'pendingRestart' : `pendingRestart:${row.id}`
-    const backupDir =
-      row.id === DEFAULT_SERVER_ID ? env.BACKUP_DIR : path.join(env.BACKUP_DIR, row.id)
+    // Per-server pending-restart flag + backup subdir, namespaced by id.
+    const stateKey = `pendingRestart:${row.id}`
+    const backupDir = path.join(env.BACKUP_DIR, row.id)
 
     // Settings/mods are always the real fs implementations — in mock
     // mode they just operate on the sandbox dirs.
     const settings =
       game.settingsAdapter === 'palworld-ini'
-        ? createSettingsService(env, db, { installDir: row.installDir, stateKey })
+        ? createSettingsService(env, db, {
+            installDir: row.installDir,
+            stateKey,
+            restPort: game.ports.find((p) => p.name === 'rest')?.port ?? 8212,
+          })
         : createNullSettings(db, game, stateKey)
     const mods =
       game.capabilities.mods === 'ue-paks'
@@ -86,7 +92,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
               }),
               query:
                 game.capabilities.query === 'pal-rest'
-                  ? createRealPalRest(env, logger, row.installDir)
+                  ? createRealPalRest(logger, row.installDir)
                   : createNullQuery(game),
               journal,
               steamcmd: createRealSteamCmd(env, logger, {
@@ -140,11 +146,6 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
   const instances: InstanceManager = {
     list: () => [...instanceMap.values()],
     get: (id) => instanceMap.get(id),
-    getDefault: () => {
-      const def = instanceMap.get(DEFAULT_SERVER_ID) ?? [...instanceMap.values()][0]
-      if (!def) throw new Error('no server instances configured (seed missing?)')
-      return def
-    },
     add: (row) => {
       const inst = createInstance(row)
       instanceMap.set(row.id, inst)
@@ -165,13 +166,20 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
 
   const scheduler = createScheduler({ env, db, logger, getInstance: (id) => instanceMap.get(id) })
   const panelUpdate = env.PANEL_MODE === 'mock' ? createFakePanelUpdate(env) : createRealPanelUpdate({ env, db, logger })
-  const publicAccess = env.PANEL_MODE === 'mock' ? createFakePublicAccess() : createRealPublicAccess({ env, db, logger })
+  const publicAccess =
+    env.PANEL_MODE === 'mock' ? createFakePublicAccess() : createRealPublicAccess({ db, logger, instances })
+  // Panel-scoped coordination (self-update + public access), independent
+  // of any game server.
+  const panelLongOps = new LongOpRunner()
+  const panelWorldLock = new WorldLock()
 
   return {
     instances,
     scheduler,
     panelUpdate,
     publicAccess,
+    longOps: panelLongOps,
+    worldLock: panelWorldLock,
     servicesFor: (instance) => ({
       instance,
       gameControl: instance.gameControl,

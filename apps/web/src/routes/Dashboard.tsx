@@ -4,6 +4,7 @@ import type { PublicAccessConsole, PublicAccessStatus, ServerLifecycle } from '@
 import { api, ApiError } from '../lib/api.js'
 import { usePoll } from '../lib/usePoll.js'
 import { useLongOp } from '../lib/useEventSource.js'
+import { useCurrentGame } from '../lib/useCurrentGame.js'
 import { formatBytes, formatUptime } from '../lib/format.js'
 import { Badge, Button, Card, Spinner, Stat } from '../ui/primitives.js'
 import { Banner } from '../ui/Banner.js'
@@ -22,6 +23,7 @@ const LIFECYCLE: Record<ServerLifecycle, { tone: 'good' | 'bad' | 'warn' | 'mute
 
 export function DashboardPage() {
   const { data: status, refresh } = usePoll(api.status, 3000)
+  const game = useCurrentGame()
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
@@ -70,7 +72,7 @@ export function DashboardPage() {
       )}
 
       {!installed && (
-        <Card title="Palworld is not installed" size="title">
+        <Card title={`${game?.name ?? 'Server'} is not installed`} size="title">
           <div className="flex items-center justify-between">
             <p className="cmd-empty">
               No dedicated server found on disk. Install it via SteamCMD to get started.
@@ -197,7 +199,8 @@ function PublicAccessCard() {
   const [copied, setCopied] = useState(false)
   const [consoleOpen, setConsoleOpen] = useState(false)
   const [consoleData, setConsoleData] = useState<PublicAccessConsole | null>(null)
-  const { lastLine, progress, doneOp, reset } = useLongOp(busy)
+  // Public access is a panel-scoped op — stream from the panel long-op.
+  const { lastLine, progress, doneOp, reset } = useLongOp(busy, '/api/panel/stream')
 
   async function loadConsole() {
     try {

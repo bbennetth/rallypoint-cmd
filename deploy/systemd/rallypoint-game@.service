@@ -5,8 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=palworld
-Group=palworld
+User=rallypoint
+Group=rallypoint
 # Per-game specifics (WorkingDirectory, memory limits, stop signal) live
 # in the drop-in written by `rallypoint-cmd-game add <slug>` at
 # /etc/systemd/system/rallypoint-game@<slug>.service.d/instance.conf,

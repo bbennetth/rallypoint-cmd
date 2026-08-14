@@ -28,7 +28,6 @@ export type GameServerSummary = z.infer<typeof gameServerSummarySchema>
 
 export const serversResponseSchema = z.object({
   servers: z.array(gameServerSummarySchema),
-  defaultServerId: serverIdSchema,
 })
 export type ServersResponse = z.infer<typeof serversResponseSchema>
 

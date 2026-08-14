@@ -8,7 +8,7 @@ import { LongOpConflictError } from '../services/long-op.js'
 export const publicAccessRoutes = new Hono<HonoApp>()
 
 publicAccessRoutes.get('/api/public-access', requireSession, async (c) => {
-  const { publicAccess } = c.get('services')
+  const { publicAccess } = c.get('composed')
   return c.json(publicAccessStatusSchema.parse(await publicAccess.status()))
 })
 
@@ -17,7 +17,7 @@ publicAccessRoutes.get('/api/public-access', requireSession, async (c) => {
 // also surfaced via GET status pendingClaim). No world lock — this never
 // touches game files.
 publicAccessRoutes.post('/api/public-access/enable', requireSession, (c) => {
-  const { publicAccess, longOps } = c.get('services')
+  const { publicAccess, longOps } = c.get('composed')
   try {
     const op = longOps.start('public_access', (sink) => publicAccess.enable(sink))
     return c.json(op, 202)
@@ -30,7 +30,7 @@ publicAccessRoutes.post('/api/public-access/enable', requireSession, (c) => {
 })
 
 publicAccessRoutes.post('/api/public-access/disable', requireSession, async (c) => {
-  const { publicAccess } = c.get('services')
+  const { publicAccess } = c.get('composed')
   await publicAccess.disable()
   return c.json({ ok: true as const })
 })
@@ -38,6 +38,6 @@ publicAccessRoutes.post('/api/public-access/disable', requireSession, async (c) 
 // Diagnostics: the panel↔playit trace (helper calls + api.playit.gg
 // exchanges, secret-redacted) and the agent's recent journal lines.
 publicAccessRoutes.get('/api/public-access/console', requireSession, async (c) => {
-  const { publicAccess } = c.get('services')
+  const { publicAccess } = c.get('composed')
   return c.json(publicAccessConsoleSchema.parse(await publicAccess.console()))
 })

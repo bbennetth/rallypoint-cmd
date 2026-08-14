@@ -7,10 +7,11 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/bbennetth/rallypoint-cmd
 ```
 
 That single self-contained script (`ct/rallypoint-cmd.sh`) does everything: creates an
-unprivileged Debian 12 LXC (nesting + i386 multiarch), installs Node 22 + SteamCMD + the
-Palworld dedicated server (app 2394010), clones + builds this panel, drops a REST-enabled
-`PalWorldSettings.ini` with a generated admin password, installs the two systemd units + a
-least-privilege sudoers rule, and starts it. It prints the panel URL + login at the end.
+unprivileged Debian 12 LXC (nesting + i386 multiarch), installs Node 22 + SteamCMD, creates
+the `rallypoint` service user, clones + builds this panel, installs the systemd units + a
+least-privilege sudoers rule, and starts it. **No game is installed** — the panel comes up with
+an empty server list; you add a game (Palworld, Valheim, …) from the panel, which installs it
+into `/opt/games/<slug>`. It prints the panel URL + login at the end.
 
 Defaults: 6 cores / 16 GiB / 64 GiB. Override with env vars inline, e.g.:
 
@@ -29,9 +30,10 @@ Common overrides: `CTID HN CORES RAM DISK STORAGE BRIDGE NET_IP NET_GW`
 
 ```
 ct/rallypoint-cmd.sh              # the single installer (host create + in-CT provision + update mode)
-deploy/systemd/*.service          # palworld.service + rallypoint-cmd.service
+deploy/systemd/rallypoint-cmd.service      # the panel service
+deploy/systemd/rallypoint-game@.service    # template unit for game servers (rallypoint-game@<slug>)
+deploy/bin/rallypoint-cmd-game             # root helper: provision a game unit (add|remove <slug>)
 deploy/sudoers/rallypoint-cmd     # only systemctl {start,stop,restart} + journal tail (wildcard-free)
-deploy/config/PalWorldSettings.default.ini
 deploy/update-panel.sh            # optional: workstation -> CT push for local dev (no git remote)
 ```
 
@@ -52,7 +54,7 @@ game keeps running. Releases are cut by tagging (`git tag v0.2.0 && git push --t
 
 **Git-based:** re-run the same one-liner _inside_ the CT. It detects
 `/etc/rallypoint-cmd/panel.env` and switches to update mode: `git reset --hard`, `npm ci`,
-`npm run build`, refresh helper+sudoers, restart the panel. **The Palworld game process keeps
+`npm run build`, refresh helper+sudoers, restart the panel. **The game servers keep
 running.**
 
 ```bash
@@ -68,8 +70,8 @@ PVE_HOST=root@192.168.1.10 CTID=<ctid> bash deploy/update-panel.sh
 
 Tars the working tree, ships it through the Proxmox host into the CT, rebuilds, restarts.
 
-**Updating the Palworld game itself** is separate — do it from the panel UI (Updates tab), which
-stops the server, runs `app_update 2394010 validate`, and restarts it.
+**Updating a game itself** is separate — do it from that server's panel page (Updates tab), which
+stops the server, runs the appropriate SteamCMD `app_update … validate`, and restarts it.
 
 ## Remote access
 
@@ -77,4 +79,5 @@ The panel binds `0.0.0.0:8080` by default so `http://<ct-ip>:8080` works on the 
 (override at install time with `PANEL_BIND=127.0.0.1` for tunnel-only). For remote access add a
 Cloudflare Tunnel ingress → `http://127.0.0.1:8080`, then set `COOKIE_SECURE=true` — and, if you
 no longer need LAN access, `PANEL_HOST=127.0.0.1` — in `/etc/rallypoint-cmd/panel.env` and restart
-`rallypoint-cmd`. Palworld's REST API stays on `127.0.0.1:8212` and is never exposed.
+`rallypoint-cmd`. A game's own admin API (e.g. Palworld's REST on `127.0.0.1:8212`) stays on
+loopback and is never exposed.

@@ -7,7 +7,7 @@
 #
 # It tars the working tree (excluding node_modules/dist/data/.git), ships
 # it to the CT via the Proxmox host, then rebuilds + restarts the panel.
-# The Palworld game process is left running throughout.
+# The game servers are left running throughout.
 #
 # Usage (from the repo root, on your workstation):
 #   PVE_HOST=root@192.168.1.10 CTID=210 bash deploy/update-panel.sh
@@ -51,7 +51,7 @@ ssh "$PVE_HOST" "pct exec $CTID -- bash -euo pipefail -c '
   cd /opt/rallypoint-cmd
   npm ci
   npm run build
-  chown -R root:palworld /opt/rallypoint-cmd
+  chown -R root:rallypoint /opt/rallypoint-cmd
   chmod -R g-w /opt/rallypoint-cmd
   systemctl restart rallypoint-cmd.service
   rm -f /tmp/panel-src.tar.gz

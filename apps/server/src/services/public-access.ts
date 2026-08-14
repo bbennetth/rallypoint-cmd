@@ -5,11 +5,22 @@ import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import type { PublicAccessConsole, PublicAccessStatus } from '@rallypoint-cmd/shared'
 import type { Db } from '../db/client.js'
-import type { Env } from '../env.js'
 import type { Logger } from '../logger.js'
 import { panelState } from '../db/schema/index.js'
 import type { OpSink } from './types.js'
 import { PAL_SETTINGS_INI } from './constants.js'
+
+// Minimal view of the instance manager (a structural type, to avoid a
+// compose.ts import cycle). public-access is panel-scoped and exposes one
+// UDP tunnel, so it resolves the port from the first server that has a
+// game port.
+interface ServerPortView {
+  installDir: string
+  game: { settingsAdapter: string; ports: { name: string; port: number }[] }
+}
+export interface InstancePortSource {
+  list(): ServerPortView[]
+}
 
 const execFileAsync = promisify(execFile)
 
@@ -94,24 +105,35 @@ export function extractTunnelAddress(payload: unknown, gamePort: number): string
   return null
 }
 
-function readGamePort(env: Env): number | null {
-  try {
-    const ini = fs.readFileSync(path.join(env.PAL_DIR, PAL_SETTINGS_INI), 'utf8')
-    const m = ini.match(/PublicPort\s*=\s*(\d+)/)
-    return m ? Number(m[1]) : null
-  } catch {
-    return null
+// Resolve the game's UDP port from the first server that has one. For a
+// Palworld server the live PublicPort in its ini wins; otherwise the
+// registry default. Null when no server exposes a game port.
+function readGamePort(instances: InstancePortSource): number | null {
+  for (const inst of instances.list()) {
+    const port = inst.game.ports.find((p) => p.name === 'game')
+    if (!port) continue
+    if (inst.game.settingsAdapter === 'palworld-ini') {
+      try {
+        const ini = fs.readFileSync(path.join(inst.installDir, PAL_SETTINGS_INI), 'utf8')
+        const m = ini.match(/PublicPort\s*=\s*(\d+)/)
+        if (m) return Number(m[1])
+      } catch {
+        // ini not present yet — fall through to the registry default
+      }
+    }
+    return port.port
   }
+  return null
 }
 
 interface Deps {
-  env: Env
   db: Db
   logger: Logger
+  instances: InstancePortSource
 }
 
 export function createRealPublicAccess(deps: Deps): PublicAccessService {
-  const { env, db, logger } = deps
+  const { db, logger, instances } = deps
   let pendingClaim: { code: string; url: string } | null = null
   const trace = new PlayitTrace()
 
@@ -206,7 +228,7 @@ export function createRealPublicAccess(deps: Deps): PublicAccessService {
   return {
     async status(): Promise<PublicAccessStatus> {
       const s = await helperStatus()
-      const gamePort = readGamePort(env) ?? 8211
+      const gamePort = readGamePort(instances) ?? 8211
       let address: string | null = null
       if (s.claimed) {
         address = (await fetchAddress(gamePort)) ?? cachedAddress()
@@ -262,7 +284,7 @@ export function createRealPublicAccess(deps: Deps): PublicAccessService {
       }
       sink.progress(80)
 
-      const gamePort = readGamePort(env) ?? 8211
+      const gamePort = readGamePort(instances) ?? 8211
       const address = await fetchAddress(gamePort)
       if (address) {
         sink.line(`[public-access] Public address: ${address}`)

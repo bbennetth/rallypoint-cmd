@@ -165,12 +165,18 @@ describe('sudoers drift (deploy/sudoers/rallypoint-cmd vs code)', () => {
     for (const unit of ALLOWED_UNITS) {
       for (const verb of SYSTEMCTL_VERBS) {
         expect(content).toContain(
-          `palworld ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} ${verb} ${unit}`,
+          `rallypoint ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} ${verb} ${unit}`,
         )
       }
       expect(content).toContain(
-        `palworld ALL=(root) NOPASSWD: ${JOURNALCTL_BIN} ${journalctlTailArgs(unit).join(' ')}`,
+        `rallypoint ALL=(root) NOPASSWD: ${JOURNALCTL_BIN} ${journalctlTailArgs(unit).join(' ')}`,
       )
+    }
+  })
+
+  it('every privileged rule uses the rallypoint principal (no leftover palworld user)', () => {
+    for (const line of content.split('\n')) {
+      if (line.includes('ALL=(root)')) expect(line.startsWith('rallypoint ')).toBe(true)
     }
   })
 

@@ -78,14 +78,7 @@ export function UpdatesPage() {
         </p>
       </Card>
 
-      <PanelUpdateCard
-        opRunning={running}
-        onStarted={(newOp) => {
-          setErr(null)
-          reset()
-          setOp(newOp)
-        }}
-      />
+      <PanelUpdateCard />
 
       {(running || log.length > 0) && (
         <Card title="Progress">
@@ -102,15 +95,10 @@ export function UpdatesPage() {
 }
 
 // Rallypoint's own updater: shows current vs latest GitHub release, runs
-// the update as a long-op, then — because applying restarts the panel —
-// polls /api/health until the NEW version answers and reloads the SPA.
-function PanelUpdateCard({
-  opRunning,
-  onStarted,
-}: {
-  opRunning: boolean
-  onStarted: (op: LongOp) => void
-}) {
+// the update as a panel-scoped long-op, then — because applying restarts
+// the panel — polls /api/health until the NEW version answers and reloads
+// the SPA. Independent of any game server's update flow.
+function PanelUpdateCard() {
   const [info, setInfo] = useState<PanelUpdateInfo | null>(null)
   const [checking, setChecking] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -135,8 +123,7 @@ function PanelUpdateCard({
     setErr(null)
     setPhase('updating')
     try {
-      const op = await api.runPanelUpdate()
-      onStarted(op)
+      await api.runPanelUpdate()
       // Wait for the service restart: the SSE will drop; poll health until
       // a DIFFERENT version responds, then hard-reload to load the new SPA.
       const before = info?.current
@@ -198,7 +185,7 @@ function PanelUpdateCard({
           </div>
           {info.notes && <LogPane lines={info.notes} maxHeight={160} />}
           <div className="flex gap-2">
-            <Button variant="primary" disabled={opRunning || phase !== 'idle'} onClick={runUpdate}>
+            <Button variant="primary" disabled={phase !== 'idle'} onClick={runUpdate}>
               Update to {info.latest}
             </Button>
             <Button variant="ghost" disabled={checking} onClick={() => check(true)}>
