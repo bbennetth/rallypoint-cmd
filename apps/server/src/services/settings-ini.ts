@@ -9,6 +9,7 @@ import type { Env } from '../env.js'
 import { panelState } from '../db/schema/index.js'
 import { PAL_SETTINGS_INI } from './constants.js'
 import { invalidateRestCredsCache } from './rest-creds.js'
+import { DEFAULT_PALWORLD_INI } from './palworld-default-ini.js'
 
 // PalWorldSettings.ini round-trip engine. The file is one
 // `[/Script/Pal.PalGameWorldSettings]` section whose OptionSettings=(…)
@@ -208,20 +209,25 @@ export interface SettingsService {
   writeStructured(values: Record<string, SettingValue>): void
   readRaw(): string
   writeRaw(content: string): void
+  // Seed a REST-enabled ini after a fresh install if the game has none
+  // (no-op when the ini exists, or for games without a settings file).
+  seedIfMissing(): void
   getPendingRestart(): boolean
   clearPendingRestart(): void
 }
 
 export interface SettingsTarget {
   installDir: string
-  // panel_state key tracking this instance's pending-restart flag. The
-  // seeded default server keeps the historical bare 'pendingRestart' key.
+  // panel_state key tracking this instance's pending-restart flag,
+  // namespaced by server id.
   stateKey: string
+  // REST API port the panel enforces in the ini (from the game registry).
+  restPort: number
 }
 
 export function createSettingsService(env: Env, db: Db, target: SettingsTarget): SettingsService {
   const iniPath = path.join(target.installDir, PAL_SETTINGS_INI)
-  const restPort = Number(new URL(env.PAL_REST_URL).port || '8212')
+  const restPort = target.restPort
 
   function readContent(): string {
     if (!fs.existsSync(iniPath)) {
@@ -308,6 +314,31 @@ export function createSettingsService(env: Env, db: Db, target: SettingsTarget):
       const parsed = parseIni(content) // throws IniParseError on garbage
       applyInvariants(parsed, restPort)
       writeContent(serializeIni(parsed))
+    },
+
+    seedIfMissing() {
+      if (fs.existsSync(iniPath)) return
+      // Prefer the game's shipped DefaultPalWorldSettings.ini; fall back to
+      // the bundled template. writeContent applies the panel invariants
+      // (REST on, managed AdminPassword, RCON off) via the parse below.
+      const shipped = path.join(target.installDir, 'DefaultPalWorldSettings.ini')
+      let base: string
+      try {
+        base = fs.readFileSync(shipped, 'utf8')
+      } catch {
+        base = DEFAULT_PALWORLD_INI
+      }
+      let parsed: ParsedIni
+      try {
+        parsed = parseIni(base)
+      } catch {
+        parsed = parseIni(DEFAULT_PALWORLD_INI)
+      }
+      applyInvariants(parsed, restPort)
+      fs.mkdirSync(path.dirname(iniPath), { recursive: true })
+      writeContent(serializeIni(parsed))
+      // A brand-new seed isn't a pending edit against a running server.
+      setPending(false)
     },
 
     getPendingRestart() {

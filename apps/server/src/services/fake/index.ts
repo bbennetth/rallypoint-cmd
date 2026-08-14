@@ -142,7 +142,7 @@ class FakeWorld {
   }
 
   private unitLabel(): string {
-    return this.game.slug === 'palworld' ? 'palworld.service' : `rallypoint-game@${this.game.slug}.service`
+    return `rallypoint-game@${this.game.slug}.service`
   }
 
   dispose(): void {

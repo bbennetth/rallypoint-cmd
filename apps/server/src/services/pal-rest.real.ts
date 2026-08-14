@@ -1,24 +1,20 @@
 import { palServerInfoSchema, palServerMetricsSchema, playersResponseSchema } from '@rallypoint-cmd/shared'
 import type { Player } from '@rallypoint-cmd/shared'
-import type { Env } from '../env.js'
 import type { Logger } from '../logger.js'
 import type { GameQuery } from './types.js'
 import { readRestCreds } from './rest-creds.js'
 
 const TIMEOUT_MS = 5000
 
-// Client for the Palworld REST API on loopback (127.0.0.1:8212).
-// Auth = HTTP Basic, user `admin`, password = the panel-managed
-// AdminPassword read from the ini. The browser never talks to this —
-// every call is proxied through panel routes.
+// Client for a Palworld instance's REST API on loopback. Auth = HTTP
+// Basic, user `admin`, password = the panel-managed AdminPassword; the
+// port is the RESTAPIPort from that instance's ini (default 8212). The
+// browser never talks to this — every call is proxied through panel routes.
 
-export function createRealPalRest(env: Env, logger: Logger, installDir: string): GameQuery {
+export function createRealPalRest(logger: Logger, installDir: string): GameQuery {
   function baseUrl(): string {
-    // PAL_REST_URL wins; its port is authoritative unless the ini moved it.
-    const url = new URL(env.PAL_REST_URL)
     const { port } = readRestCreds(installDir)
-    if (port && Number(url.port || '8212') !== port) url.port = String(port)
-    return url.origin
+    return `http://127.0.0.1:${port || 8212}`
   }
 
   async function call(method: 'GET' | 'POST', apiPath: string, body?: unknown): Promise<unknown> {

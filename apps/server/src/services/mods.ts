@@ -129,7 +129,7 @@ export function createModsService(env: Env, logger: Logger, installDir: string):
     return [...enabled, ...disabled]
   }
 
-  // Staging (DATA_DIR) and PAL_DIR can be different filesystems in a
+  // Staging (DATA_DIR) and the install dir can be different filesystems in a
   // live deploy — fall back to copy+unlink on EXDEV.
   function moveFile(src: string, dest: string): void {
     try {

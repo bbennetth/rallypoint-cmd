@@ -48,6 +48,9 @@ export function createNullSettings(db: Db, game: GameDef, stateKey: string): Set
     writeStructured: unsupported,
     readRaw: unsupported,
     writeRaw: unsupported,
+    seedIfMissing() {
+      // Games without a panel-editable settings file need no seed.
+    },
     getPendingRestart() {
       const row = db
         .select({ value: panelState.value })

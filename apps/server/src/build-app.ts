@@ -70,10 +70,10 @@ export function buildApp(deps: BuildAppDeps): Hono<HonoApp> {
     c.set('logger', deps.logger)
     c.set('db', deps.db)
     c.set('composed', composed)
-    // Legacy unprefixed /api/* paths (and panel routes) act on the
-    // default server; /api/servers/:serverId/* overrides this below.
-    c.set('services', composed.servicesFor(composed.instances.getDefault()))
     c.set('passwordHasher', passwordHasher)
+    // The per-instance `services` bag is set only on /api/servers/:serverId/*
+    // (below). Panel-scoped routes read panel singletons from `composed`, so
+    // the panel boots and serves fine with zero game servers.
     await next()
   })
 
@@ -91,9 +91,8 @@ export function buildApp(deps: BuildAppDeps): Hono<HonoApp> {
   app.route('/', panelUpdateRoutes)
   app.route('/', publicAccessRoutes)
 
-  // Game-scoped routers, mounted twice: under /api/servers/:serverId
-  // (canonical) and under /api (back-compat alias for the default
-  // server — kept for one release).
+  // Game-scoped routers, mounted under /api/servers/:serverId. The param
+  // middleware resolves the instance and injects its `services` bag.
   const gameRouters = [
     statusRoutes,
     powerRoutes,
@@ -115,7 +114,6 @@ export function buildApp(deps: BuildAppDeps): Hono<HonoApp> {
   })
   for (const r of gameRouters) {
     app.route('/api/servers/:serverId', r)
-    app.route('/api', r)
   }
 
   // Serve the built SPA in production (mounted last so it never shadows

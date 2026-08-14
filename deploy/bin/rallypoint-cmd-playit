@@ -3,7 +3,7 @@
 #
 # Installed at /usr/local/bin/rallypoint-cmd-playit (root:root 0755) and
 # whitelisted in /etc/sudoers.d/rallypoint-cmd. The panel (unprivileged
-# `palworld` user) drives the playit.gg agent exclusively through these
+# `rallypoint` user) drives the playit.gg agent exclusively through these
 # fixed verbs — it never touches playit config or apt itself.
 #
 # Verbs:

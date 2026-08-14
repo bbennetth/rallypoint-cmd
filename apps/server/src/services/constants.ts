@@ -1,10 +1,8 @@
-import { GAMES, LEGACY_PALWORLD_UNIT, templateUnitFor } from '@rallypoint-cmd/shared'
+import { GAMES, templateUnitFor } from '@rallypoint-cmd/shared'
 
 // Frozen argv constants. The sudoers file (deploy/sudoers/rallypoint-cmd)
 // pins these EXACT command lines — code and sudoers must never drift, so
 // both are generated from/checked against this file + the game registry.
-
-export const PAL_SERVICE = LEGACY_PALWORLD_UNIT
 
 export const SYSTEMCTL_BIN = '/usr/bin/systemctl'
 export const JOURNALCTL_BIN = '/usr/bin/journalctl'
@@ -14,12 +12,11 @@ export const SYSTEMCTL_VERBS = ['start', 'stop', 'restart'] as const
 export type SystemctlVerb = (typeof SYSTEMCTL_VERBS)[number]
 
 // The closed set of units the panel may ever pass to sudo systemctl /
-// journalctl: the legacy Palworld unit plus one template instance per
-// registry slug. The sudoers file enumerates exactly these (wildcard-free).
-export const ALLOWED_UNITS: readonly string[] = [
-  PAL_SERVICE,
-  ...Object.keys(GAMES).map((slug) => templateUnitFor(slug)),
-]
+// journalctl: one template instance per registry slug. The sudoers file
+// enumerates exactly these (wildcard-free).
+export const ALLOWED_UNITS: readonly string[] = Object.keys(GAMES).map((slug) =>
+  templateUnitFor(slug),
+)
 
 export function assertAllowedUnit(unit: string): void {
   if (!ALLOWED_UNITS.includes(unit)) {
@@ -31,9 +28,8 @@ export function assertAllowedUnit(unit: string): void {
 export function journalctlTailArgs(unit: string): readonly string[] {
   return ['-u', unit, '-n', '500', '-o', 'cat', '-f']
 }
-export const JOURNALCTL_TAIL_ARGS = journalctlTailArgs(PAL_SERVICE)
 
-// Paths inside PAL_DIR.
+// Paths inside a Palworld install dir.
 export const PAL_SERVER_SH = 'PalServer.sh'
 export const PAL_CONFIG_DIR = 'Pal/Saved/Config/LinuxServer'
 export const PAL_SETTINGS_INI = `${PAL_CONFIG_DIR}/PalWorldSettings.ini`

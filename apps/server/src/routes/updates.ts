@@ -1,14 +1,13 @@
 import { Hono } from 'hono'
-import { streamSSE } from 'hono/streaming'
-import type { LongOp, UpdateState } from '@rallypoint-cmd/shared'
+import type { UpdateState } from '@rallypoint-cmd/shared'
 import { updateRunRequestSchema } from '@rallypoint-cmd/shared'
 import type { HonoApp } from '../context.js'
 import { errors } from '../errors.js'
 import { requireSession } from '../middleware/session.js'
 import { LongOpConflictError } from '../services/long-op.js'
 import { assertDiskFloor } from '../services/disk.js'
+import { streamLongOp } from './long-op-stream.js'
 
-const HEARTBEAT_MS = 15_000
 // A game update can pull multiple GiB; be conservative.
 const PROJECTED_UPDATE_BYTES = 4 * 1024 ** 3
 
@@ -71,6 +70,19 @@ updateRoutes.post('/updates/run', requireSession, async (c) => {
             'SteamCMD finished but the server is still not installed (it may have self-updated first). Run install again.',
           )
         }
+        // Fresh install: seed a REST-enabled settings file if the game
+        // needs one and has none yet (no-op otherwise), so the panel can
+        // talk to it on first start.
+        if (kind === 'install') {
+          try {
+            settings.seedIfMissing()
+            sink.line('[panel] Seeded server settings (panel-managed REST enabled).')
+          } catch (err) {
+            sink.line(
+              `[panel] Could not seed settings automatically: ${err instanceof Error ? err.message : String(err)}`,
+            )
+          }
+        }
         if (wasActive) {
           sink.line(`[panel] SteamCMD finished — starting ${instance.unitName}...`)
           await gameControl.start()
@@ -92,39 +104,7 @@ updateRoutes.post('/updates/run', requireSession, async (c) => {
 })
 
 // SSE progress stream: replays the op's line buffer then live lines,
-// progress percentages, and the final done event.
+// progress percentages, and the final done event (this instance's ops).
 updateRoutes.get('/updates/stream', requireSession, (c) => {
-  c.header('X-Accel-Buffering', 'no')
-  return streamSSE(c, async (stream) => {
-    const { longOps } = c.get('services')
-
-    const current = longOps.current()
-    if (current) {
-      await stream.writeSSE({ event: 'op', data: JSON.stringify(current) })
-    }
-    for (const line of longOps.buffer()) {
-      await stream.writeSSE({ event: 'log', data: line })
-    }
-
-    const unsubLine = longOps.subscribe('line', (line) => {
-      void stream.writeSSE({ event: 'log', data: String(line) })
-    })
-    const unsubProgress = longOps.subscribe('progress', (pct) => {
-      void stream.writeSSE({ event: 'progress', data: String(pct) })
-    })
-    const unsubDone = longOps.subscribe('done', (op) => {
-      void stream.writeSSE({ event: 'done', data: JSON.stringify(op as LongOp) })
-    })
-    const heartbeat = setInterval(() => {
-      void stream.writeSSE({ event: 'ping', data: '' })
-    }, HEARTBEAT_MS)
-
-    stream.onAbort(() => {
-      unsubLine()
-      unsubProgress()
-      unsubDone()
-      clearInterval(heartbeat)
-    })
-    await new Promise<void>((resolve) => stream.onAbort(resolve))
-  })
+  return streamLongOp(c, c.get('services').longOps)
 })

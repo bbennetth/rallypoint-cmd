@@ -94,7 +94,7 @@ export function createPasswordHasher(config: PasswordHasherConfig): PasswordHash
     let cached = dummyHashCache.get(cacheKey)
     if (!cached) {
       cached = (async () => {
-        const peppered = pepper('palworld-dummy-password-not-a-real-secret', currentKeyVersion)
+        const peppered = pepper('rallypoint-dummy-password-not-a-real-secret', currentKeyVersion)
         const salt = randomBytes(SALT_BYTES)
         const dk = await derive(peppered, salt, {
           N: SCRYPT_N,

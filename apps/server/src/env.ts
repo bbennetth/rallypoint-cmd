@@ -38,17 +38,13 @@ const EnvSchema = z.object({
   // Filesystem layout (live defaults match the LXC provisioner).
   DATA_DIR: z.string().optional(),
   BACKUP_DIR: z.string().optional(),
-  PAL_DIR: z.string().optional(),
-  // Parent dir for NEW game-server installs (each server gets
-  // GAMES_ROOT/<slug>). The legacy Palworld install stays at PAL_DIR.
+  // Parent dir for game-server installs — each server lives at
+  // GAMES_ROOT/<slug>.
   GAMES_ROOT: z.string().optional(),
   STEAMCMD_BIN: z.string().optional(),
   // When set, the panel serves the built React SPA from here (production).
   // Unset in dev — Vite serves the SPA and proxies /api to this server.
   WEB_DIST_DIR: z.string().optional(),
-
-  // Palworld REST API (loopback only; AdminPassword is read from the ini).
-  PAL_REST_URL: z.string().url().default('http://127.0.0.1:8212'),
 
   // Secrets. Required in production; dev/test fall back to fixed values.
   PANEL_PASSWORD_PEPPER: z.string().min(16).optional(),
@@ -82,12 +78,10 @@ export interface Env {
   PANEL_PORT: number
   DATA_DIR: string
   BACKUP_DIR: string
-  PAL_DIR: string
   GAMES_ROOT: string
   STEAMCMD_BIN: string
   WEB_DIST_DIR: string | undefined
   DB_PATH: string
-  PAL_REST_URL: string
   PANEL_PASSWORD_PEPPER: string
   PANEL_PEPPER_VERSION: number
   PANEL_ADMIN_USERNAME: string
@@ -119,8 +113,7 @@ export function parseEnv(raw: NodeJS.ProcessEnv): Env {
   const sandboxRoot = path.resolve(process.cwd(), 'data')
   const dataDir = parsed.DATA_DIR ?? (mock ? path.join(sandboxRoot, 'panel') : '/var/lib/rallypoint-cmd')
   const backupDir =
-    parsed.BACKUP_DIR ?? (mock ? path.join(sandboxRoot, 'backups') : '/var/backups/palworld')
-  const palDir = parsed.PAL_DIR ?? (mock ? path.join(sandboxRoot, 'palworld') : '/opt/palworld')
+    parsed.BACKUP_DIR ?? (mock ? path.join(sandboxRoot, 'backups') : '/var/backups/rallypoint-cmd')
   const gamesRoot = parsed.GAMES_ROOT ?? (mock ? path.join(sandboxRoot, 'games') : '/opt/games')
   // SteamCMD is shared by every game, so it lives at the game-neutral
   // /opt/steamcmd. Existing deploys pin STEAMCMD_BIN in panel.env; the
@@ -133,7 +126,6 @@ export function parseEnv(raw: NodeJS.ProcessEnv): Env {
     ...parsed,
     DATA_DIR: dataDir,
     BACKUP_DIR: backupDir,
-    PAL_DIR: palDir,
     GAMES_ROOT: gamesRoot,
     STEAMCMD_BIN: steamcmdBin,
     DB_PATH: path.join(dataDir, 'panel.sqlite'),

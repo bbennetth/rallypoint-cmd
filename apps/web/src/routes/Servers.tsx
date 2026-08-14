@@ -21,17 +21,24 @@ const LIFECYCLE: Record<ServerLifecycle, { tone: 'good' | 'bad' | 'warn' | 'mute
 // Home: one card per managed game server, plus the add-server flow.
 export function ServersPage() {
   const navigate = useNavigate()
-  const { data, refresh } = usePoll(api.servers, 5000)
+  const { data, error, loading, refresh } = usePoll(api.servers, 5000)
   const [err, setErr] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [removing, setRemoving] = useState<GameServerSummary | null>(null)
 
   if (!data)
-    return (
+    return error ? (
+      <div className="space-y-4">
+        <div className="pg-head">
+          <h1>Servers</h1>
+        </div>
+        <Banner tone="bad">Could not load servers: {error.message}</Banner>
+      </div>
+    ) : loading ? (
       <div className="cmd-empty flex items-center gap-2">
         <Spinner /> Loading servers…
       </div>
-    )
+    ) : null
 
   return (
     <div className="space-y-6">
@@ -41,6 +48,19 @@ export function ServersPage() {
       </div>
 
       {err && <Banner tone="bad">{err}</Banner>}
+
+      {data.servers.length === 0 && (
+        <Card title="No servers yet">
+          <div className="flex items-center justify-between gap-4">
+            <p className="cmd-empty">
+              Add a game server to get started — pick a game, and the panel installs and manages it.
+            </p>
+            <Button variant="primary" onClick={() => setAdding(true)}>
+              Add server
+            </Button>
+          </div>
+        </Card>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {data.servers.map((s) => {
@@ -61,11 +81,9 @@ export function ServersPage() {
                   <Link to={`/servers/${s.id}`}>
                     <Button>Open</Button>
                   </Link>
-                  {s.id !== data.defaultServerId && (
-                    <Button variant="ghost" onClick={() => setRemoving(s)}>
-                      Remove
-                    </Button>
-                  )}
+                  <Button variant="ghost" onClick={() => setRemoving(s)}>
+                    Remove
+                  </Button>
                 </div>
               </div>
             </Card>

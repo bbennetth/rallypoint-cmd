@@ -26,12 +26,6 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <AppChrome>{children}</AppChrome>
 }
 
-// Legacy single-server bookmarks (/console, /settings, …) land on the
-// default server's page.
-function LegacyRedirect({ page }: { page: string }) {
-  return <Navigate to={`/servers/default/${page}`} replace />
-}
-
 function ServerPage({ page }: { page: React.ReactNode }) {
   // Key the subtree by server id so switching servers remounts pages
   // (polling hooks re-fetch under the new API scope).
@@ -52,13 +46,6 @@ export function App() {
       <Route path="/servers/:serverId/mods" element={<RequireAuth><ServerPage page={<ModsPage />} /></RequireAuth>} />
       <Route path="/servers/:serverId/backups" element={<RequireAuth><ServerPage page={<BackupsPage />} /></RequireAuth>} />
       <Route path="/servers/:serverId/schedules" element={<RequireAuth><ServerPage page={<SchedulesPage />} /></RequireAuth>} />
-      <Route path="/console" element={<LegacyRedirect page="console" />} />
-      <Route path="/players" element={<LegacyRedirect page="players" />} />
-      <Route path="/settings" element={<LegacyRedirect page="settings" />} />
-      <Route path="/updates" element={<LegacyRedirect page="updates" />} />
-      <Route path="/mods" element={<LegacyRedirect page="mods" />} />
-      <Route path="/backups" element={<LegacyRedirect page="backups" />} />
-      <Route path="/schedules" element={<LegacyRedirect page="schedules" />} />
       <Route path="/account" element={<RequireAuth><AccountPage /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

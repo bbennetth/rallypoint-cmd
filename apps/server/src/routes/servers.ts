@@ -2,10 +2,10 @@ import path from 'node:path'
 import { Hono } from 'hono'
 import { ulid } from 'ulid'
 import {
-  DEFAULT_SERVER_ID,
   createServerRequestSchema,
   gameBySlug,
   templateUnitFor,
+  type CreateScheduleRequest,
   type GameServerSummary,
   type ServersResponse,
 } from '@rallypoint-cmd/shared'
@@ -15,6 +15,34 @@ import { requireSession } from '../middleware/session.js'
 import { servers } from '../db/schema/index.js'
 
 export const serverRoutes = new Hono<HonoApp>()
+
+// Sensible defaults every new server starts with: a nightly restart
+// (memory-leak hygiene) and — for games the panel can back up — a nightly
+// backup before it. Seeded per-server on create (there is no global seed).
+function defaultSchedules(canBackup: boolean): CreateScheduleRequest[] {
+  const restart: CreateScheduleRequest = {
+    kind: 'restart',
+    cron: '0 5 * * *', // 05:00 daily
+    timezone: 'UTC',
+    enabled: true,
+    payload: {
+      saveBeforeStop: true,
+      announceSteps: [
+        { secondsBefore: 300, message: 'Server restart in 5 minutes.' },
+        { secondsBefore: 60, message: 'Server restart in 1 minute — find a safe spot!' },
+      ],
+    },
+  }
+  if (!canBackup) return [restart]
+  const backup: CreateScheduleRequest = {
+    kind: 'backup',
+    cron: '30 4 * * *', // 04:30 daily, before the restart
+    timezone: 'UTC',
+    enabled: true,
+    payload: { retention: { keepLast: 14, keepDays: 30 } },
+  }
+  return [backup, restart]
+}
 
 // List every managed server with a cheap status summary (systemd state +
 // build id; no admin-API probe — the dashboard cards don't need it).
@@ -49,10 +77,7 @@ serverRoutes.get('/api/servers', requireSession, async (c) => {
       }
     }),
   )
-  const body: ServersResponse = {
-    servers: summaries,
-    defaultServerId: instances.getDefault().id,
-  }
+  const body: ServersResponse = { servers: summaries }
   return c.json(body)
 })
 
@@ -86,6 +111,11 @@ serverRoutes.post('/api/servers', requireSession, async (c) => {
   db.insert(servers).values(row).run()
   const inserted = db.select().from(servers).all().find((r) => r.id === row.id)!
   const inst = instances.add(inserted)
+  // Seed this server's default nightly schedules (backup only when the
+  // game supports it).
+  for (const req of defaultSchedules(game.capabilities.world)) {
+    c.get('composed').scheduler.create(inst.id, req)
+  }
   c.get('logger').info('server created', { id: inst.id, game: game.slug })
   return c.json(
     {
@@ -99,15 +129,11 @@ serverRoutes.post('/api/servers', requireSession, async (c) => {
   )
 })
 
-// Delete a server row (the seeded default is not deletable). Game files
-// and backups on disk are left untouched — removal is an unregistration,
-// not an uninstall.
+// Delete a server row. Game files and backups on disk are left untouched
+// — removal is an unregistration, not an uninstall.
 serverRoutes.delete('/api/servers/:serverId', requireSession, (c) => {
   const { instances } = c.get('composed')
   const id = c.req.param('serverId')
-  if (id === DEFAULT_SERVER_ID) {
-    throw errors.conflict('default_server', 'The default server cannot be deleted.')
-  }
   const inst = instances.get(id)
   if (!inst) throw errors.notFound('Server')
   const release = inst.worldLock.tryAcquire('delete')

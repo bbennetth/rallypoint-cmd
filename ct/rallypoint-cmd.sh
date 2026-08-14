@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright (c) 2026 Byron Howell — MIT
-# Rallypoint — a web manager for a Palworld dedicated server, in one Debian 12 Proxmox LXC.
+# Rallypoint — a web manager for self-hosted Steam game servers, in one Debian 12 Proxmox LXC.
 #
 # One-line install, run ON the Proxmox VE host as root:
 #   bash -c "$(curl -fsSL https://raw.githubusercontent.com/bbennetth/rallypoint-cmd/main/ct/rallypoint-cmd.sh)"
@@ -17,9 +17,9 @@ set -euo pipefail
 CTID="${CTID:-}"                         # empty = next free id
 HN="${HN:-rallypoint-cmd}"
 CORES="${CORES:-6}"
-RAM="${RAM:-16384}"                      # MiB (Palworld leak climbs 15-25 GiB)
+RAM="${RAM:-16384}"                      # MiB (headroom for a memory-hungry game)
 SWAP="${SWAP:-4096}"
-DISK="${DISK:-64}"                       # GiB (game ~15 + backups)
+DISK="${DISK:-64}"                       # GiB (SteamCMD + games + backups)
 STORAGE="${STORAGE:-local-lvm}"
 TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-local}"
 BRIDGE="${BRIDGE:-vmbr0}"
@@ -33,7 +33,6 @@ PANEL_ADMIN_USER="${PANEL_ADMIN_USER:-admin}"
 PANEL_ADMIN_PASSWORD="${PANEL_ADMIN_PASSWORD:-}"  # empty = random (printed once)
 PANEL_REPO_URL="${PANEL_REPO_URL:-https://github.com/bbennetth/rallypoint-cmd.git}"
 PANEL_REPO_REF="${PANEL_REPO_REF:-main}"
-PAL_APP_ID=2394010
 DRYRUN="${DRYRUN:-}"                      # set to 1 to print the plan and exit (no changes)
 VERBOSE="${VERBOSE:-}"                    # set to 1 to show raw pveam/pct/apt/node output
 
@@ -72,7 +71,7 @@ install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-playit /usr/local/bin/
   install -m 0440 -o root -g root deploy/sudoers/rallypoint-cmd /etc/sudoers.d/rallypoint-cmd
   visudo -cf /etc/sudoers.d/rallypoint-cmd >/dev/null
   systemctl daemon-reload
-  chown -R root:palworld /opt/rallypoint-cmd && chmod -R g-w /opt/rallypoint-cmd
+  chown -R root:rallypoint /opt/rallypoint-cmd && chmod -R g-w /opt/rallypoint-cmd
   # Migrate SteamCMD to its game-neutral home (idempotent): the multi-game
   # panel shares one SteamCMD across games, so it no longer lives under
   # /opt/palworld. Ownership travels with the move.
@@ -92,7 +91,6 @@ fi
 [[ -n "$CT_PASSWORD" ]] || CT_PASSWORD="$(randpw)"
 if [[ -n "$PANEL_ADMIN_PASSWORD" ]]; then AP_PROVIDED=1; else PANEL_ADMIN_PASSWORD="$(randpw)"; AP_PROVIDED=0; fi
 PANEL_PEPPER="$(randpw)$(randpw)"
-GAME_ADMIN_PW="$(randpw)"
 
 HAVE_PCT=0; command -v pct >/dev/null && HAVE_PCT=1
 if [[ -z "$DRYRUN" ]]; then
@@ -145,9 +143,10 @@ if [[ -n "$DRYRUN" ]]; then
      --swap $SWAP --rootfs $STORAGE:$DISK --net0 $NETCONF \\
      --unprivileged 1 --features nesting=1 --onboot 1 --ostype debian --timezone host
 
- Then inside the CT: i386 multiarch + Node 22 + SteamCMD (app $PAL_APP_ID) + Palworld,
- clone & build the panel, write PalWorldSettings.ini / systemd units / sudoers / panel.env,
- lock down code (root:palworld, group-ro), enable + start palworld + rallypoint-cmd.
+ Then inside the CT: i386 multiarch + Node 22 + SteamCMD, create the rallypoint
+ user, clone & build the panel, install systemd units / sudoers / panel.env,
+ lock down code (root:rallypoint, group-ro), enable + start rallypoint-cmd.
+ No game is installed — add one from the panel after it is up.
 PLAN
   exit 0
 fi
@@ -185,7 +184,7 @@ fi
 msg_ok "Container network is up"
 
 # --- provision everything inside the CT (one inline pass) -------------------
-msg_info "Installing Node, SteamCMD, Palworld + the panel (several minutes)"
+msg_info "Installing Node, SteamCMD + the panel (several minutes)"
 pct exec "$CTID" -- bash -s <<EOF
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
@@ -206,30 +205,18 @@ else
 fi
 \$QT apt-get -qq -y install nodejs
 
-echo ">>> palworld user + data dirs"
-id palworld &>/dev/null || useradd -d /opt/palworld -m -s /bin/bash palworld
-install -d -o palworld -g palworld -m 0755 /opt/palworld
-install -d -o palworld -g palworld -m 0750 /var/lib/rallypoint-cmd /var/backups/palworld
-install -d -o root -g palworld -m 0750 /etc/rallypoint-cmd
+echo ">>> rallypoint user + data dirs"
+id rallypoint &>/dev/null || useradd -d /var/lib/rallypoint-cmd -m -s /bin/bash rallypoint
+install -d -o rallypoint -g rallypoint -m 0755 /opt/games
+install -d -o rallypoint -g rallypoint -m 0750 /var/lib/rallypoint-cmd /var/backups/rallypoint-cmd
+install -d -o root -g rallypoint -m 0750 /etc/rallypoint-cmd
 
-echo ">>> SteamCMD + Palworld dedicated server (pulls several GiB)"
-# SteamCMD is a panel-wide tool shared by every game — it lives at the
-# game-neutral /opt/steamcmd (its Steam/ state and logs land next to it).
-install -d -o palworld -g palworld /opt/steamcmd
-sudo -u palworld -H bash -c 'cd /opt/steamcmd && curl -sqL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz | tar zxf -'
-# SteamCMD's first run on a fresh box commonly fails the app install with
-# "ERROR! Failed to install app '2394010' (Missing configuration)" — the
-# appinfo cache isn't populated yet. Retrying is the documented fix; treat
-# success as PalServer.sh actually landing, not the (unreliable) exit code.
-sc_ok=0
-for attempt in 1 2 3; do
-  echo ">>>   SteamCMD attempt \$attempt/3"
-  sudo -u palworld -H bash -c 'cd /opt/steamcmd && ./steamcmd.sh +force_install_dir /opt/palworld +login anonymous +app_update $PAL_APP_ID validate +quit' || true
-  [[ -f /opt/palworld/PalServer.sh ]] && { sc_ok=1; break; }
-  echo ">>>   attempt \$attempt did not complete the install — retrying in 5s"
-  sleep 5
-done
-[[ \$sc_ok -eq 1 ]] || { echo "SteamCMD failed to install Palworld after 3 attempts (re-run with VERBOSE=1 for the full log)."; exit 1; }
+echo ">>> SteamCMD (panel-wide, game-neutral tool)"
+# SteamCMD is shared by every game and lives at /opt/steamcmd (its Steam/
+# state and logs land next to it). No game is installed here — the panel
+# installs games on demand into /opt/games/<slug>.
+install -d -o rallypoint -g rallypoint /opt/steamcmd
+sudo -u rallypoint -H bash -c 'cd /opt/steamcmd && curl -sqL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz | tar zxf -'
 
 echo ">>> panel: clone + build"
 git clone --depth 1 --branch "$PANEL_REPO_REF" "$PANEL_REPO_URL" /opt/rallypoint-cmd
@@ -237,25 +224,15 @@ cd /opt/rallypoint-cmd
 npm ci
 npm run build
 
-echo ">>> PalWorldSettings.ini (REST on, RCON off, generated AdminPassword)"
-PAL_CFG=/opt/palworld/Pal/Saved/Config/LinuxServer
-install -d -o palworld -g palworld -m 0755 "\$PAL_CFG"
-if [[ ! -f "\$PAL_CFG/PalWorldSettings.ini" ]]; then
-  sed "s/__ADMIN_PASSWORD__/$GAME_ADMIN_PW/" \
-    /opt/rallypoint-cmd/deploy/config/PalWorldSettings.default.ini > "\$PAL_CFG/PalWorldSettings.ini"
-  chown palworld:palworld "\$PAL_CFG/PalWorldSettings.ini"; chmod 0640 "\$PAL_CFG/PalWorldSettings.ini"
-fi
-
 echo ">>> systemd units + least-privilege sudoers"
-install -m 0644 deploy/systemd/palworld.service /etc/systemd/system/palworld.service
 install -m 0644 deploy/systemd/rallypoint-cmd.service /etc/systemd/system/rallypoint-cmd.service
-# Template unit for additional game servers (provision one with
-# `rallypoint-cmd-game add <slug>` after creating it in the panel).
+# Template unit for game servers. After adding a game in the panel,
+# provision its unit on the host with: rallypoint-cmd-game add SLUG
 install -m 0644 deploy/systemd/rallypoint-game@.service /etc/systemd/system/rallypoint-game@.service
 install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-apply-update /usr/local/bin/rallypoint-cmd-apply-update
 install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-playit /usr/local/bin/rallypoint-cmd-playit
 install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-game /usr/local/bin/rallypoint-cmd-game
-mkdir -p /opt/games && chown palworld:palworld /opt/games
+mkdir -p /opt/games && chown rallypoint:rallypoint /opt/games
 install -m 0440 -o root -g root deploy/sudoers/rallypoint-cmd /etc/sudoers.d/rallypoint-cmd
 visudo -cf /etc/sudoers.d/rallypoint-cmd >/dev/null
 
@@ -267,12 +244,10 @@ PANEL_MODE=live
 # for tunnel-only once cloudflared runs inside the CT.
 PANEL_HOST=$PANEL_BIND
 PANEL_PORT=$PANEL_PORT
-PAL_DIR=/opt/palworld
 GAMES_ROOT=/opt/games
 DATA_DIR=/var/lib/rallypoint-cmd
-BACKUP_DIR=/var/backups/palworld
+BACKUP_DIR=/var/backups/rallypoint-cmd
 STEAMCMD_BIN=/opt/steamcmd/steamcmd.sh
-PAL_REST_URL=http://127.0.0.1:8212
 WEB_DIST_DIR=/opt/rallypoint-cmd/apps/web/dist
 PANEL_PASSWORD_PEPPER=$PANEL_PEPPER
 PANEL_ADMIN_USERNAME=$PANEL_ADMIN_USER
@@ -283,13 +258,13 @@ PANEL_REPO_REF=$PANEL_REPO_REF
 COOKIE_SECURE=false
 TRUSTED_PROXY=true
 ENV
-chown root:palworld /etc/rallypoint-cmd/panel.env; chmod 0640 /etc/rallypoint-cmd/panel.env
+chown root:rallypoint /etc/rallypoint-cmd/panel.env; chmod 0640 /etc/rallypoint-cmd/panel.env
 
-echo ">>> lock down panel code (root:palworld, group-read-only) + start"
-chown -R root:palworld /opt/rallypoint-cmd; chmod -R g-w /opt/rallypoint-cmd
+echo ">>> lock down panel code (root:rallypoint, group-read-only) + start"
+chown -R root:rallypoint /opt/rallypoint-cmd; chmod -R g-w /opt/rallypoint-cmd
 systemctl daemon-reload
-systemctl enable -q palworld.service rallypoint-cmd.service
-systemctl start rallypoint-cmd.service palworld.service
+systemctl enable -q rallypoint-cmd.service
+systemctl start rallypoint-cmd.service
 EOF
 msg_ok "Installed"
 
@@ -301,10 +276,9 @@ cat <<SUMMARY
    CT id / root pw : ${CTID}  /  ${CT_PASSWORD}
    Panel (LAN)     : http://${IP:-<container-ip>}:${PANEL_PORT}
    Login           : ${PANEL_ADMIN_USER} / ${PANEL_ADMIN_PASSWORD}
-   Game (UDP)      : ${IP:-<container-ip>}:8211  (forward this to play)
-   REST API        : 127.0.0.1:8212  (LAN-only, never forward)
 
- Next: change the admin password, then add a Cloudflare Tunnel to
+ Next: log in and add a game server from the panel. Then change the admin
+ password, and add a Cloudflare Tunnel to
  http://127.0.0.1:${PANEL_PORT} and set COOKIE_SECURE=true.
  Update later: re-run this exact line inside the CT (pct enter ${CTID}).
 SUMMARY

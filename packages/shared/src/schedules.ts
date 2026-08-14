@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
-// Scheduled jobs: automatic restarts (Palworld's memory leak makes these
-// standard practice) and automatic backups with retention pruning.
+// Scheduled jobs: automatic restarts (nightly restarts are common hygiene
+// for long-running game servers) and automatic backups with retention pruning.
 
 export const scheduleKindSchema = z.enum(['restart', 'backup'])
 export type ScheduleKind = z.infer<typeof scheduleKindSchema>

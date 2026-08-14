@@ -7,7 +7,7 @@ import { createDb } from '../db/client.js'
 import { runMigrations } from '../db/migrate.js'
 import type { Env } from '../env.js'
 import { buildLogger } from '../logger.js'
-import { GAMES, DEFAULT_SERVER_ID } from '@rallypoint-cmd/shared'
+import { GAMES } from '@rallypoint-cmd/shared'
 import { createFakeInstanceServices } from './fake/index.js'
 import { servers } from '../db/schema/index.js'
 import { createSettingsService } from './settings-ini.js'
@@ -38,10 +38,8 @@ function makeEnv(root: string): Env {
     PANEL_PORT: 0,
     DATA_DIR: path.join(root, 'panel'),
     BACKUP_DIR: path.join(root, 'backups'),
-    PAL_DIR: path.join(root, 'palworld'),
     STEAMCMD_BIN: path.join(root, 'steamcmd.sh'),
     DB_PATH: path.join(root, 'panel', 'panel.sqlite'),
-    PAL_REST_URL: 'http://127.0.0.1:8212',
     PANEL_PASSWORD_PEPPER: 'test-pepper-0123456789abcdef',
     PANEL_PEPPER_VERSION: 1,
     PANEL_ADMIN_USERNAME: 'admin',
@@ -68,8 +66,10 @@ function bodyOf(filePath: string): ReadableStream<Uint8Array> {
   })
 }
 
+const SERVER_ID = 'palworld'
 let root: string
 let env: Env
+let installDir: string
 let service: BackupService
 let closeDb: () => void
 let fakes: ReturnType<typeof createFakeInstanceServices>
@@ -78,18 +78,19 @@ let deps: Parameters<typeof createBackupService>[0]
 beforeEach(async () => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'pal-backup-test-'))
   env = makeEnv(root)
+  installDir = path.join(root, 'palworld')
   const logger = buildLogger('error')
   const { db, sqlite } = createDb(env.DB_PATH)
   runMigrations(db)
   closeDb = () => sqlite.close()
-  fakes = createFakeInstanceServices(env, logger, env.PAL_DIR, GAMES['palworld']!)
+  fakes = createFakeInstanceServices(env, logger, installDir, GAMES['palworld']!)
   db.insert(servers)
     .values({
-      id: DEFAULT_SERVER_ID,
+      id: SERVER_ID,
       gameSlug: 'palworld',
       name: 'Palworld',
-      installDir: env.PAL_DIR,
-      unitName: 'palworld.service',
+      installDir,
+      unitName: 'rallypoint-game@palworld.service',
     })
     .run()
   // Install + boot the fake world so there's something to back up.
@@ -102,9 +103,9 @@ beforeEach(async () => {
     gameControl: fakes.gameControl,
     query: fakes.query,
     steamcmd: fakes.steamcmd,
-    settings: createSettingsService(env, db, { installDir: env.PAL_DIR, stateKey: 'pendingRestart' }),
-    serverId: DEFAULT_SERVER_ID,
-    installDir: env.PAL_DIR,
+    settings: createSettingsService(env, db, { installDir, stateKey: `pendingRestart:${SERVER_ID}`, restPort: 8212 }),
+    serverId: SERVER_ID,
+    installDir: installDir,
     backupDir: env.BACKUP_DIR,
   }
   service = createBackupService(deps)
@@ -196,7 +197,7 @@ describe('live-churn copy (the real-deploy backup fix)', () => {
 
   it('create() succeeds with a churning backup/ dir present and excludes it from the archive', async () => {
     // Simulate the live server: game-internal rotating backups inside the save dir.
-    const saveDir = path.join(env.PAL_DIR, 'Pal/Saved/SaveGames/0', WORLD)
+    const saveDir = path.join(installDir, 'Pal/Saved/SaveGames/0', WORLD)
     fs.mkdirSync(path.join(saveDir, 'backup', 'world'), { recursive: true })
     fs.writeFileSync(path.join(saveDir, 'backup', 'world', 'rotating.zip'), 'x'.repeat(5000))
 
@@ -343,7 +344,7 @@ describe('restore happy path + rollback', () => {
   it('stages and restores a valid backup, leaving a rollback snapshot', async () => {
     const backup = await service.create('manual', noopSink)
     // Mutate the live save so we can prove the restore replaced it.
-    const liveLevel = path.join(env.PAL_DIR, 'Pal/Saved/SaveGames/0', WORLD, 'Level.sav')
+    const liveLevel = path.join(installDir, 'Pal/Saved/SaveGames/0', WORLD, 'Level.sav')
     fs.writeFileSync(liveLevel, 'MUTATED-AFTER-BACKUP')
 
     const preview = await service.stageUpload(bodyOf(path.join(env.BACKUP_DIR, backup.filename)))
@@ -361,7 +362,7 @@ describe('restore happy path + rollback', () => {
   it('restore imports the archived server settings (backup ini wins over later edits)', async () => {
     const backup = await service.create('manual', noopSink)
     // Mutate the live settings AFTER the backup, as a user would.
-    const iniPath = path.join(env.PAL_DIR, 'Pal/Saved/Config/LinuxServer/PalWorldSettings.ini')
+    const iniPath = path.join(installDir, 'Pal/Saved/Config/LinuxServer/PalWorldSettings.ini')
     fs.writeFileSync(
       iniPath,
       fs.readFileSync(iniPath, 'utf8').replace('"Fake Palworld Server"', '"Mutated After Backup"'),
@@ -388,7 +389,7 @@ describe('restore happy path + rollback', () => {
     // case-sensitive fs makes Palworld create a fresh world instead of
     // loading the restored (uppercase) dir.
     const backup = await service.create('manual', noopSink)
-    const gusPath = path.join(env.PAL_DIR, 'Pal/Saved/Config/LinuxServer/GameUserSettings.ini')
+    const gusPath = path.join(installDir, 'Pal/Saved/Config/LinuxServer/GameUserSettings.ini')
     // Point the live ini at a DIFFERENT world id, lowercased, so restore
     // must rewrite it.
     fs.writeFileSync(gusPath, 'DedicatedServerName=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n')
@@ -402,7 +403,7 @@ describe('restore happy path + rollback', () => {
   it('restore warns about a case-mismatched sibling save dir', async () => {
     const backup = await service.create('manual', noopSink)
     // Simulate the stray world the game auto-created off a lowercased ini.
-    fs.mkdirSync(path.join(env.PAL_DIR, 'Pal/Saved/SaveGames/0', WORLD.toLowerCase()), {
+    fs.mkdirSync(path.join(installDir, 'Pal/Saved/SaveGames/0', WORLD.toLowerCase()), {
       recursive: true,
     })
     const preview = await service.stageUpload(bodyOf(path.join(env.BACKUP_DIR, backup.filename)))
@@ -436,13 +437,13 @@ describe('restore happy path + rollback', () => {
       message: expect.stringContaining('Cannot determine'),
     })
     // Nothing was swapped: live world untouched.
-    const liveLevel = path.join(env.PAL_DIR, 'Pal/Saved/SaveGames/0', WORLD, 'Level.sav')
+    const liveLevel = path.join(installDir, 'Pal/Saved/SaveGames/0', WORLD, 'Level.sav')
     expect(fs.existsSync(liveLevel)).toBe(true)
   })
 
   it('rolls back when the game exits right after the restore restart', async () => {
     const backup = await service.create('manual', noopSink)
-    const liveLevel = path.join(env.PAL_DIR, 'Pal/Saved/SaveGames/0', WORLD, 'Level.sav')
+    const liveLevel = path.join(installDir, 'Pal/Saved/SaveGames/0', WORLD, 'Level.sav')
     fs.writeFileSync(liveLevel, 'MUTATED-AFTER-BACKUP')
 
     const preview = await service.stageUpload(bodyOf(path.join(env.BACKUP_DIR, backup.filename)))

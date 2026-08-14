@@ -11,7 +11,7 @@ import { createModsService, groupMods, ModError, modStem, type ModsService } fro
 
 // Adversarial coverage for the mod-install surface: everything a user
 // uploads is untrusted, so the filename allowlist and the zip flattening
-// are what stand between an archive and arbitrary writes under PAL_DIR.
+// are what stand between an archive and arbitrary writes under the install dir.
 
 function makeEnv(root: string): Env {
   return {
@@ -21,10 +21,8 @@ function makeEnv(root: string): Env {
     PANEL_PORT: 0,
     DATA_DIR: path.join(root, 'panel'),
     BACKUP_DIR: path.join(root, 'backups'),
-    PAL_DIR: path.join(root, 'palworld'),
     STEAMCMD_BIN: path.join(root, 'steamcmd.sh'),
     DB_PATH: path.join(root, 'panel', 'panel.sqlite'),
-    PAL_REST_URL: 'http://127.0.0.1:8212',
     PANEL_PASSWORD_PEPPER: 'test-pepper-0123456789abcdef',
     PANEL_PEPPER_VERSION: 1,
     PANEL_ADMIN_USERNAME: 'admin',
@@ -55,15 +53,17 @@ const bytes = (s: string): Uint8Array => new TextEncoder().encode(s)
 let root: string
 let env: Env
 let service: ModsService
+let installDir: string
 let modsDir: string
 let disabledDir: string
 
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'pal-mods-test-'))
   env = makeEnv(root)
-  modsDir = path.join(env.PAL_DIR, PAL_MODS_DIR)
-  disabledDir = path.join(env.PAL_DIR, PAL_MODS_DISABLED_DIR)
-  service = createModsService(env, buildLogger('error'), env.PAL_DIR)
+  installDir = path.join(root, 'palworld')
+  modsDir = path.join(installDir, PAL_MODS_DIR)
+  disabledDir = path.join(installDir, PAL_MODS_DISABLED_DIR)
+  service = createModsService(env, buildLogger('error'), installDir)
 })
 
 afterEach(() => {

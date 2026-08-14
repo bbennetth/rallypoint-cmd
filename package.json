@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.2.0",
   "type": "module",
-  "description": "Palworld server management panel — AMP-style web console for a SteamCMD-powered dedicated server in a Proxmox LXC.",
+  "description": "Game-server management panel — AMP-style web console for SteamCMD-powered dedicated servers in a Proxmox LXC.",
   "engines": {
     "node": ">=22.0.0",
     "npm": ">=11.0.0"

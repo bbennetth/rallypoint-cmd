@@ -72,12 +72,13 @@ export function useSseUpdates(url: string, enabled: boolean) {
   } }
 }
 
-// Follow a running long-op over the shared /api/updates/stream SSE:
-// progress pct, latest log line, and — crucially — the op's final status
-// and error (the `done` event carries the full LongOp as JSON). This is
-// what surfaces server-side backup/restore failures in the UI instead of
-// letting them die silently.
-export function useLongOp(enabled: boolean): {
+// Follow a running long-op over an SSE stream: progress pct, latest log
+// line, and — crucially — the op's final status and error (the `done`
+// event carries the full LongOp as JSON). This is what surfaces
+// server-side backup/restore failures in the UI instead of letting them
+// die silently. Defaults to the current server's updates stream; pass a
+// url for a panel-scoped op stream (e.g. /api/panel/stream).
+export function useLongOp(enabled: boolean, url?: string): {
   progress: number | null
   lastLine: string | null
   doneOp: LongOp | null
@@ -90,7 +91,7 @@ export function useLongOp(enabled: boolean): {
   useEffect(() => {
     if (!enabled) return
     setDoneOp(null)
-    const es = new EventSource(`${apiScope()}/updates/stream`, { withCredentials: true })
+    const es = new EventSource(url ?? `${apiScope()}/updates/stream`, { withCredentials: true })
     const finish = (ev: Event): void => {
       try {
         const op = longOpSchema.parse(JSON.parse((ev as MessageEvent).data as string))
@@ -108,7 +109,7 @@ export function useLongOp(enabled: boolean): {
     es.addEventListener('done', finish)
     es.addEventListener('op', finish)
     return () => es.close()
-  }, [enabled])
+  }, [enabled, url])
 
   return {
     progress,
