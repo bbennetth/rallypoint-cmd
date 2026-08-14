@@ -81,13 +81,13 @@ serverRoutes.get('/api/servers', requireSession, async (c) => {
   return c.json(body)
 })
 
-// Create a server: registers the row + instance. The actual game files
-// arrive via the install long-op (POST .../updates/run kind=install);
-// on a live host the systemd unit must be provisioned with
-// `rallypoint-cmd-game add <slug>` (deploy/bin) before it can start.
+// Create a server: provisions the systemd unit (start.sh + drop-in via
+// the sudoers-pinned rallypoint-cmd-game helper), then registers the
+// row + instance. The actual game files arrive via the install long-op
+// (POST .../updates/run kind=install).
 serverRoutes.post('/api/servers', requireSession, async (c) => {
   const env = c.get('env')
-  const { instances } = c.get('composed')
+  const { instances, unitProvisioner } = c.get('composed')
   const db = c.get('db')
   const body = createServerRequestSchema.safeParse(await c.req.json().catch(() => null))
   if (!body.success) throw errors.validation({ issues: body.error.issues })
@@ -99,6 +99,16 @@ serverRoutes.post('/api/servers', requireSession, async (c) => {
   // derived from the slug and unique-constrained.
   if (instances.list().some((i) => i.game.slug === game.slug)) {
     throw errors.conflict('server_exists', `A ${game.name} server already exists.`)
+  }
+
+  // Provision before inserting the row — a server that exists in the DB
+  // but has no unit would crash-loop 203/EXEC on start.
+  try {
+    await unitProvisioner.provision(game.slug)
+  } catch (err) {
+    throw errors.upstreamUnavailable(
+      `Provisioning the systemd unit failed: ${err instanceof Error ? err.message : String(err)}`,
+    )
   }
 
   const row = {
@@ -129,10 +139,11 @@ serverRoutes.post('/api/servers', requireSession, async (c) => {
   )
 })
 
-// Delete a server row. Game files and backups on disk are left untouched
-// — removal is an unregistration, not an uninstall.
-serverRoutes.delete('/api/servers/:serverId', requireSession, (c) => {
-  const { instances } = c.get('composed')
+// Delete a server row and deprovision its systemd unit (stops/disables
+// it, removes start.sh + drop-in). Game files and backups on disk are
+// left untouched — removal is an unregistration, not an uninstall.
+serverRoutes.delete('/api/servers/:serverId', requireSession, async (c) => {
+  const { instances, unitProvisioner } = c.get('composed')
   const id = c.req.param('serverId')
   const inst = instances.get(id)
   if (!inst) throw errors.notFound('Server')
@@ -142,6 +153,14 @@ serverRoutes.delete('/api/servers/:serverId', requireSession, (c) => {
   }
   try {
     instances.remove(id)
+    // Row is gone either way; a deprovision failure just leaves an inert
+    // unit behind — the helper is idempotent, so recreate/rerun fixes it.
+    await unitProvisioner.deprovision(inst.game.slug).catch((err) => {
+      c.get('logger').warn('deprovision failed', {
+        slug: inst.game.slug,
+        err: err instanceof Error ? err.message : String(err),
+      })
+    })
   } finally {
     release()
   }

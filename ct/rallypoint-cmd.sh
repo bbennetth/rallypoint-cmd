@@ -226,8 +226,8 @@ npm run build
 
 echo ">>> systemd units + least-privilege sudoers"
 install -m 0644 deploy/systemd/rallypoint-cmd.service /etc/systemd/system/rallypoint-cmd.service
-# Template unit for game servers. After adding a game in the panel,
-# provision its unit on the host with: rallypoint-cmd-game add SLUG
+# Template unit for game servers. The panel provisions instances
+# automatically on server create (sudoers-pinned rallypoint-cmd-game).
 install -m 0644 deploy/systemd/rallypoint-game@.service /etc/systemd/system/rallypoint-game@.service
 install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-apply-update /usr/local/bin/rallypoint-cmd-apply-update
 install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-playit /usr/local/bin/rallypoint-cmd-playit

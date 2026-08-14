@@ -165,8 +165,6 @@ function AddServerDialog({
             ~{game.diskEstimateGb} GB disk · {game.supportLevel === 'full'
               ? 'full support (settings, players, backups)'
               : 'basic support (install, start/stop, console, updates)'}
-            {game.supportLevel === 'basic' &&
-              ' — provision its unit on the host with: rallypoint-cmd-game add ' + game.slug}
           </p>
         )}
         <Field label="Name">

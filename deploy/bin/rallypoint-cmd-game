@@ -2,10 +2,12 @@
 # rallypoint-cmd-game — pinned root helper that provisions the systemd
 # side of a game-server instance (template unit drop-in + start script).
 #
-# Installed at /usr/local/bin/rallypoint-cmd-game (root:root 0755). Run
-# by an operator (or the provisioner) — NOT whitelisted in sudoers for
-# the panel: unit provisioning is a deploy-time act, and keeping it out
-# of the panel's reach preserves the wildcard-free sudoers model.
+# Installed at /usr/local/bin/rallypoint-cmd-game (root:root 0755).
+# Whitelisted in sudoers per fixed `<verb> <slug>` argv line (no
+# wildcards) so the panel can provision/deprovision units on server
+# create/delete; the slug is re-validated below against the baked-in
+# game table, preserving the wildcard-free sudoers model. Operators can
+# also run it directly.
 #
 # Usage: rallypoint-cmd-game add <slug>
 #        rallypoint-cmd-game remove <slug>

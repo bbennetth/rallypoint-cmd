@@ -32,8 +32,8 @@ Common overrides: `CTID HN CORES RAM DISK STORAGE BRIDGE NET_IP NET_GW`
 ct/rallypoint-cmd.sh              # the single installer (host create + in-CT provision + update mode)
 deploy/systemd/rallypoint-cmd.service      # the panel service
 deploy/systemd/rallypoint-game@.service    # template unit for game servers (rallypoint-game@<slug>)
-deploy/bin/rallypoint-cmd-game             # root helper: provision a game unit (add|remove <slug>)
-deploy/sudoers/rallypoint-cmd     # only systemctl {start,stop,restart} + journal tail (wildcard-free)
+deploy/bin/rallypoint-cmd-game             # root helper: provision a game unit (add|remove <slug>); run by the panel on server create/delete
+deploy/sudoers/rallypoint-cmd     # systemctl {start,stop,restart} + journal tail + per-slug unit provisioning (wildcard-free)
 deploy/update-panel.sh            # optional: workstation -> CT push for local dev (no git remote)
 ```
 
