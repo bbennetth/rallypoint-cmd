@@ -73,11 +73,11 @@ Tars the working tree, ships it through the Proxmox host into the CT, rebuilds, 
 **Updating a game itself** is separate — do it from that server's panel page (Updates tab), which
 stops the server, runs the appropriate SteamCMD `app_update … validate`, and restarts it.
 
-## Remote access
+## Access
 
 The panel binds `0.0.0.0:8080` by default so `http://<ct-ip>:8080` works on the LAN
-(override at install time with `PANEL_BIND=127.0.0.1` for tunnel-only). For remote access add a
-Cloudflare Tunnel ingress → `http://127.0.0.1:8080`, then set `COOKIE_SECURE=true` — and, if you
-no longer need LAN access, `PANEL_HOST=127.0.0.1` — in `/etc/rallypoint-cmd/panel.env` and restart
-`rallypoint-cmd`. A game's own admin API (e.g. Palworld's REST on `127.0.0.1:8212`) stays on
-loopback and is never exposed.
+(override at install time with `PANEL_BIND=127.0.0.1` to bind loopback only). If you put it behind
+an HTTPS reverse proxy, set `COOKIE_SECURE=true` (and `TRUSTED_PROXY=true` for correct rate-limit
+keying) — and, if you no longer need LAN access, `PANEL_HOST=127.0.0.1` — in
+`/etc/rallypoint-cmd/panel.env`, then restart `rallypoint-cmd`. A game's own admin API (e.g.
+Palworld's REST on `127.0.0.1:8212`) stays on loopback and is never exposed.
