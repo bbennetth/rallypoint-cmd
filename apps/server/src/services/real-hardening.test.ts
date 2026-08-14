@@ -1,4 +1,15 @@
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { GAMES } from '@rallypoint-cmd/shared'
+import {
+  ALLOWED_UNITS,
+  JOURNALCTL_BIN,
+  SYSTEMCTL_BIN,
+  SYSTEMCTL_VERBS,
+  journalctlTailArgs,
+} from './constants.js'
 import { parseSystemdTimestamp } from './game-control.real.js'
 import { decideSteamcmdOutcome } from './steamcmd.real.js'
 import { isNewerVersion } from './panel-update.js'
@@ -139,5 +150,48 @@ describe('PlayitTrace (public-access console buffer)', () => {
     expect(list).toHaveLength(100)
     expect(list[0]!.line).toBe('line 50')
     expect(list[99]!.line).toBe('line 149')
+  })
+})
+
+describe('sudoers drift (deploy/sudoers/rallypoint-cmd vs code)', () => {
+  // The panel only ever runs `sudo systemctl <verb> <unit>` and
+  // `sudo journalctl -u <unit> -n 500 -o cat -f` for units in
+  // ALLOWED_UNITS. The sudoers file must pin exactly those argv lines.
+  const here = path.dirname(fileURLToPath(import.meta.url))
+  const sudoersPath = path.resolve(here, '../../../../deploy/sudoers/rallypoint-cmd')
+  const content = fs.readFileSync(sudoersPath, 'utf8')
+
+  it('pins every allowed unit for all three systemctl verbs + journalctl tail', () => {
+    for (const unit of ALLOWED_UNITS) {
+      for (const verb of SYSTEMCTL_VERBS) {
+        expect(content).toContain(
+          `palworld ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} ${verb} ${unit}`,
+        )
+      }
+      expect(content).toContain(
+        `palworld ALL=(root) NOPASSWD: ${JOURNALCTL_BIN} ${journalctlTailArgs(unit).join(' ')}`,
+      )
+    }
+  })
+
+  it('grants no unit lines beyond the allowed set (wildcard-free)', () => {
+    const unitLines = content
+      .split('\n')
+      .filter((l) => l.includes(SYSTEMCTL_BIN) || l.includes(JOURNALCTL_BIN))
+    expect(unitLines.length).toBe(ALLOWED_UNITS.length * (SYSTEMCTL_VERBS.length + 1))
+    for (const line of unitLines) {
+      expect(line).not.toContain('*')
+      expect(ALLOWED_UNITS.some((u) => line.includes(` ${u}`))).toBe(true)
+    }
+  })
+
+  it('helper script knows every registry slug', () => {
+    const helper = fs.readFileSync(
+      path.resolve(here, '../../../../deploy/bin/rallypoint-cmd-game'),
+      'utf8',
+    )
+    for (const slug of Object.keys(GAMES)) {
+      expect(helper).toContain(`${slug})`)
+    }
   })
 })

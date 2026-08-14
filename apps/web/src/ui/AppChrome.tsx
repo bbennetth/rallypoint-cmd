@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { GAMES, type GameDef } from '@rallypoint-cmd/shared'
 import { AppChrome as InkAppChrome, type AppChromeNavItem } from './ink/AppChrome.js'
 import { AppBrandLockup } from './ink/icons.js'
 import { UserMenu } from './UserMenu.js'
@@ -20,28 +21,50 @@ import { useAuth } from '../lib/auth.js'
 // mobile pill sizes tabs to their content and scrolls horizontally rather
 // than squeezing eight unreadable slivers into one screen width.
 
-function navItems(updateAvailable: boolean): readonly AppChromeNavItem[] {
+function navItems(
+  updateAvailable: boolean,
+  serverId: string | null,
+  game: GameDef | undefined,
+): readonly AppChromeNavItem[] {
   // `aria-hidden` and no text: a badge visible to assistive tech would join
   // the link's accessible name and break `getByRole('link', {name:'Updates'})`.
   const dot: ReactNode = updateAvailable ? (
     <span className="pl-navdot" aria-hidden="true" />
   ) : null
 
+  // Outside a server (the server-list home) the nav is just Servers.
+  if (!serverId) {
+    return [{ to: '/', label: 'Servers', icon: 'grid', end: true }]
+  }
+
+  // Inside a server: capability-gated per the game registry entry.
+  const base = `/servers/${serverId}`
+  const caps = game?.capabilities
   return [
-    { to: '/', label: 'Dashboard', icon: 'grid', end: true },
-    { to: '/console', label: 'Console', icon: 'terminal' },
-    { to: '/players', label: 'Players', icon: 'users' },
-    { to: '/settings', label: 'Settings', icon: 'sliders' },
-    { to: '/updates', label: 'Updates', icon: 'download', ...(dot ? { badge: dot } : {}) },
-    { to: '/mods', label: 'Mods', icon: 'puzzle' },
-    { to: '/backups', label: 'Backups', icon: 'file' },
-    { to: '/schedules', label: 'Schedules', icon: 'clock' },
+    { to: '/', label: 'Servers', icon: 'grid', end: true },
+    { to: base, label: 'Dashboard', icon: 'grid', end: true },
+    { to: `${base}/console`, label: 'Console', icon: 'terminal' },
+    ...(caps && caps.query !== 'none'
+      ? [{ to: `${base}/players`, label: 'Players', icon: 'users' } as const]
+      : []),
+    ...(game && game.settingsAdapter !== 'none'
+      ? [{ to: `${base}/settings`, label: 'Settings', icon: 'sliders' } as const]
+      : []),
+    { to: `${base}/updates`, label: 'Updates', icon: 'download', ...(dot ? { badge: dot } : {}) },
+    ...(caps && caps.mods !== 'none'
+      ? [{ to: `${base}/mods`, label: 'Mods', icon: 'puzzle' } as const]
+      : []),
+    ...(caps?.world
+      ? [{ to: `${base}/backups`, label: 'Backups', icon: 'file' } as const]
+      : []),
+    { to: `${base}/schedules`, label: 'Schedules', icon: 'clock' },
   ]
 }
 
 export function AppChrome({ children }: { children: ReactNode }) {
   const { session, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   // Daily update check (server-side cached): dots the Updates nav item when a
   // newer release exists. Best-effort only.
   const [updateAvailable, setUpdateAvailable] = useState(false)
@@ -52,9 +75,21 @@ export function AppChrome({ children }: { children: ReactNode }) {
       .catch(() => {})
   }, [])
 
+  // Current server (from the URL) + its game slug (fetched once) drive
+  // the capability-gated nav.
+  const serverId = location.pathname.match(/^\/servers\/([a-z0-9-]+)/)?.[1] ?? null
+  const [slugById, setSlugById] = useState<Record<string, string>>({})
+  useEffect(() => {
+    api
+      .servers()
+      .then((r) => setSlugById(Object.fromEntries(r.servers.map((s) => [s.id, s.gameSlug]))))
+      .catch(() => {})
+  }, [serverId])
+  const game = serverId ? GAMES[slugById[serverId] ?? ''] : undefined
+
   return (
     <InkAppChrome
-      nav={navItems(updateAvailable)}
+      nav={navItems(updateAvailable, serverId, game)}
       brand={({ size }) => (
         // AppBrandLockup is a bare fragment (compass span + wordmark span)
         // that relies on its parent laying it out — upstream only ever

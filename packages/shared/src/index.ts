@@ -1,8 +1,10 @@
 export * from './api.js'
 export * from './backups.js'
+export * from './games.js'
 export * from './mods.js'
 export * from './schedules.js'
 export * from './server-status.js'
+export * from './servers.js'
 export * from './settings.js'
 
 // Palworld dedicated server's Steam app id (steamcmd +app_update target).

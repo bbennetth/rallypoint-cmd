@@ -9,12 +9,12 @@ import { LongOpConflictError } from '../services/long-op.js'
 import { assertDiskFloor } from '../services/disk.js'
 
 const HEARTBEAT_MS = 15_000
-// A Palworld update can pull multiple GiB; be conservative.
+// A game update can pull multiple GiB; be conservative.
 const PROJECTED_UPDATE_BYTES = 4 * 1024 ** 3
 
 export const updateRoutes = new Hono<HonoApp>()
 
-updateRoutes.get('/api/updates', requireSession, async (c) => {
+updateRoutes.get('/updates', requireSession, async (c) => {
   const { longOps, steamcmd } = c.get('services')
   const state: UpdateState = {
     op: longOps.current(),
@@ -26,10 +26,10 @@ updateRoutes.get('/api/updates', requireSession, async (c) => {
 // Kick off a SteamCMD run. The op holds the world lock for its whole
 // lifetime; updating under a live server corrupts files, so the game is
 // stopped first and restarted after iff it was running.
-updateRoutes.post('/api/updates/run', requireSession, async (c) => {
+updateRoutes.post('/updates/run', requireSession, async (c) => {
   const env = c.get('env')
   const logger = c.get('logger')
-  const { gameControl, steamcmd, longOps, worldLock, settings } = c.get('services')
+  const { instance, gameControl, steamcmd, longOps, worldLock, settings } = c.get('services')
 
   const body = updateRunRequestSchema.safeParse(await c.req.json().catch(() => null))
   if (!body.success) throw errors.validation({ issues: body.error.issues })
@@ -44,7 +44,7 @@ updateRoutes.post('/api/updates/run', requireSession, async (c) => {
   }
 
   try {
-    await assertDiskFloor(env.PAL_DIR, PROJECTED_UPDATE_BYTES, env.DISK_FLOOR_BYTES)
+    await assertDiskFloor(instance.installDir, PROJECTED_UPDATE_BYTES, env.DISK_FLOOR_BYTES)
   } catch (err) {
     release()
     throw errors.conflict('disk_full', err instanceof Error ? err.message : 'Disk floor check failed')
@@ -57,7 +57,7 @@ updateRoutes.post('/api/updates/run', requireSession, async (c) => {
         const status = await gameControl.status()
         const wasActive = status.activeState === 'active' || status.activeState === 'activating'
         if (wasActive) {
-          sink.line('[panel] Stopping palworld.service before SteamCMD run...')
+          sink.line(`[panel] Stopping ${instance.unitName} before SteamCMD run...`)
           await gameControl.stop()
           const stopped = await gameControl.waitFor('inactive', 120_000)
           if (!stopped) throw new Error('game did not stop within 120s; aborting update')
@@ -72,11 +72,11 @@ updateRoutes.post('/api/updates/run', requireSession, async (c) => {
           )
         }
         if (wasActive) {
-          sink.line('[panel] SteamCMD finished — starting palworld.service...')
+          sink.line(`[panel] SteamCMD finished — starting ${instance.unitName}...`)
           await gameControl.start()
           settings.clearPendingRestart()
         }
-        logger.info('steamcmd op finished', { kind })
+        logger.info('steamcmd op finished', { kind, server: instance.id })
       } finally {
         release()
       }
@@ -93,7 +93,7 @@ updateRoutes.post('/api/updates/run', requireSession, async (c) => {
 
 // SSE progress stream: replays the op's line buffer then live lines,
 // progress percentages, and the final done event.
-updateRoutes.get('/api/updates/stream', requireSession, (c) => {
+updateRoutes.get('/updates/stream', requireSession, (c) => {
   c.header('X-Accel-Buffering', 'no')
   return streamSSE(c, async (stream) => {
     const { longOps } = c.get('services')

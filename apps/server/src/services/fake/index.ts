@@ -1,13 +1,14 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { EventEmitter } from 'node:events'
-import type { PalServerInfo, PalServerMetrics, Player } from '@rallypoint-cmd/shared'
+import type { GameDef, PalServerInfo, PalServerMetrics, Player } from '@rallypoint-cmd/shared'
 import type { Env } from '../../env.js'
 import type { Logger } from '../../logger.js'
-import type { GameControl, Journal, OpSink, PalRest, SteamCmd, SystemdStatus } from '../types.js'
+import type { GameControl, GameQuery, Journal, OpSink, SteamCmd, SystemdStatus } from '../types.js'
+import { createNullQuery } from '../stubs.js'
 
 // Fake implementations of every game-facing service, driven by one
-// shared in-memory world. Lets the entire panel run (and be
+// in-memory world per server instance. Lets the entire panel run (and be
 // Playwright-tested) on a laptop: the game "boots", players show up,
 // steamcmd streams progress, the journal ticks — all against a temp-dir
 // sandbox under ./data.
@@ -34,39 +35,52 @@ class FakeWorld {
   private emitter = new EventEmitter()
   private journalLines: string[] = []
   private tick: ReturnType<typeof setInterval> | null = null
-  private env: Env
+  private installDir: string
+  private game: GameDef
 
-  constructor(env: Env) {
-    this.env = env
+  constructor(installDir: string, game: GameDef) {
+    this.installDir = installDir
+    this.game = game
     this.emitter.setMaxListeners(100)
-    this.installed = fs.existsSync(path.join(env.PAL_DIR, 'PalServer.sh'))
+    this.installed = fs.existsSync(path.join(installDir, game.installedProbe))
     if (this.installed) this.buildId = FAKE_BUILD_ID
   }
 
   // --- sandbox filesystem -------------------------------------------------
 
   install(): void {
-    const pal = this.env.PAL_DIR
-    const cfgDir = path.join(pal, 'Pal/Saved/Config/LinuxServer')
-    const saveDir = path.join(pal, 'Pal/Saved/SaveGames/0', FAKE_WORLD_ID)
-    fs.mkdirSync(cfgDir, { recursive: true })
-    fs.mkdirSync(saveDir, { recursive: true })
-    fs.mkdirSync(path.join(pal, 'steamapps'), { recursive: true })
-    fs.writeFileSync(path.join(pal, 'PalServer.sh'), '#!/bin/sh\necho fake\n')
-    fs.writeFileSync(path.join(pal, 'DefaultPalWorldSettings.ini'), DEFAULT_INI)
-    const ini = path.join(cfgDir, 'PalWorldSettings.ini')
-    if (!fs.existsSync(ini)) fs.writeFileSync(ini, DEFAULT_INI)
-    const gus = path.join(cfgDir, 'GameUserSettings.ini')
-    if (!fs.existsSync(gus)) fs.writeFileSync(gus, GAME_USER_SETTINGS)
-    const level = path.join(saveDir, 'Level.sav')
-    if (!fs.existsSync(level)) fs.writeFileSync(level, Buffer.from('fake-level-data'))
-    fs.writeFileSync(path.join(saveDir, 'LevelMeta.sav'), Buffer.from('fake-level-meta'))
-    fs.mkdirSync(path.join(saveDir, 'Players'), { recursive: true })
-    fs.writeFileSync(path.join(saveDir, 'Players', 'fake-player.sav'), Buffer.from('fake-player'))
+    const root = this.installDir
+    // Every game gets its install probe + a fake app manifest; Palworld
+    // additionally gets the config/save layout its full-support services
+    // (settings ini, world resolve, backups, mods) expect.
+    const probePath = path.join(root, this.game.installedProbe)
+    fs.mkdirSync(path.dirname(probePath), { recursive: true })
+    fs.writeFileSync(probePath, '#!/bin/sh\necho fake\n')
+    fs.mkdirSync(path.join(root, 'steamapps'), { recursive: true })
     fs.writeFileSync(
-      path.join(pal, 'steamapps', 'appmanifest_2394010.acf'),
-      `"AppState"\n{\n\t"appid"\t\t"2394010"\n\t"buildid"\t\t"${FAKE_BUILD_ID}"\n}\n`,
+      path.join(root, 'steamapps', `appmanifest_${this.game.steamAppId}.acf`),
+      `"AppState"\n{\n\t"appid"\t\t"${this.game.steamAppId}"\n\t"buildid"\t\t"${FAKE_BUILD_ID}"\n}\n`,
     )
+    if (this.game.slug === 'palworld') {
+      const cfgDir = path.join(root, 'Pal/Saved/Config/LinuxServer')
+      const saveDir = path.join(root, 'Pal/Saved/SaveGames/0', FAKE_WORLD_ID)
+      fs.mkdirSync(cfgDir, { recursive: true })
+      fs.mkdirSync(saveDir, { recursive: true })
+      fs.writeFileSync(path.join(root, 'DefaultPalWorldSettings.ini'), DEFAULT_INI)
+      const ini = path.join(cfgDir, 'PalWorldSettings.ini')
+      if (!fs.existsSync(ini)) fs.writeFileSync(ini, DEFAULT_INI)
+      const gus = path.join(cfgDir, 'GameUserSettings.ini')
+      if (!fs.existsSync(gus)) fs.writeFileSync(gus, GAME_USER_SETTINGS)
+      const level = path.join(saveDir, 'Level.sav')
+      if (!fs.existsSync(level)) fs.writeFileSync(level, Buffer.from('fake-level-data'))
+      fs.writeFileSync(path.join(saveDir, 'LevelMeta.sav'), Buffer.from('fake-level-meta'))
+      fs.mkdirSync(path.join(saveDir, 'Players'), { recursive: true })
+      fs.writeFileSync(path.join(saveDir, 'Players', 'fake-player.sav'), Buffer.from('fake-player'))
+    } else {
+      for (const savePath of this.game.savePaths) {
+        fs.mkdirSync(path.join(root, savePath), { recursive: true })
+      }
+    }
     this.installed = true
     this.buildId = FAKE_BUILD_ID
   }
@@ -74,10 +88,9 @@ class FakeWorld {
   // --- journal ------------------------------------------------------------
 
   log(line: string): void {
-    const stamped = line
-    this.journalLines.push(stamped)
+    this.journalLines.push(line)
     if (this.journalLines.length > 500) this.journalLines.shift()
-    this.emitter.emit('line', stamped)
+    this.emitter.emit('line', line)
   }
 
   journalBuffer(): readonly string[] {
@@ -93,33 +106,43 @@ class FakeWorld {
 
   async start(): Promise<void> {
     if (this.state === 'active' || this.state === 'activating') return
+    const unit = this.unitLabel()
     if (!this.installed) {
       this.state = 'failed'
-      this.log('[systemd] palworld.service: Failed — PalServer.sh not found')
+      this.log(`[systemd] ${unit}: Failed — ${this.game.installedProbe} not found`)
       return
     }
     this.state = 'activating'
-    this.log('[systemd] Starting palworld.service...')
+    this.log(`[systemd] Starting ${unit}...`)
     await sleep(1200)
     this.state = 'active'
     this.activeEnterAtMs = Date.now()
-    this.log('[PalServer] Rcon disabled, REST API listening on 127.0.0.1:8212')
-    this.log('[PalServer] World loaded: ' + FAKE_WORLD_ID)
+    if (this.game.slug === 'palworld') {
+      this.log('[PalServer] Rcon disabled, REST API listening on 127.0.0.1:8212')
+      this.log('[PalServer] World loaded: ' + FAKE_WORLD_ID)
+    } else {
+      this.log(`[${this.game.name}] Server started on port ${this.game.ports[0]?.port ?? 0}`)
+    }
     this.tick = setInterval(() => {
-      if (this.state === 'active') this.log(`[PalServer] tick players=2 fps=59.8`)
+      if (this.state === 'active') this.log(`[${this.game.name}] tick players=2 fps=59.8`)
     }, 5000)
   }
 
   async stop(): Promise<void> {
     if (this.state === 'inactive') return
+    const unit = this.unitLabel()
     this.state = 'deactivating'
-    this.log('[systemd] Stopping palworld.service...')
+    this.log(`[systemd] Stopping ${unit}...`)
     if (this.tick) clearInterval(this.tick)
     this.tick = null
     await sleep(800)
     this.state = 'inactive'
     this.activeEnterAtMs = null
-    this.log('[systemd] palworld.service: Deactivated successfully.')
+    this.log(`[systemd] ${unit}: Deactivated successfully.`)
+  }
+
+  private unitLabel(): string {
+    return this.game.slug === 'palworld' ? 'palworld.service' : `rallypoint-game@${this.game.slug}.service`
   }
 
   dispose(): void {
@@ -158,16 +181,21 @@ const FAKE_PLAYERS: Player[] = [
   },
 ]
 
-export interface FakeServices {
+export interface FakeInstanceServices {
   gameControl: GameControl
-  palRest: PalRest
+  query: GameQuery
   journal: Journal
   steamcmd: SteamCmd
   dispose(): void
 }
 
-export function createFakeServices(env: Env, logger: Logger): FakeServices {
-  const world = new FakeWorld(env)
+export function createFakeInstanceServices(
+  _env: Env,
+  logger: Logger,
+  installDir: string,
+  game: GameDef,
+): FakeInstanceServices {
+  const world = new FakeWorld(installDir, game)
   const banned = new Set<string>()
 
   const gameControl: GameControl = {
@@ -197,10 +225,10 @@ export function createFakeServices(env: Env, logger: Logger): FakeServices {
   }
 
   const requireUp = (): void => {
-    if (world.state !== 'active') throw new Error('Palworld REST API is unreachable (game down)')
+    if (world.state !== 'active') throw new Error(`${game.name} admin API is unreachable (game down)`)
   }
 
-  const palRest: PalRest = {
+  const palQuery: GameQuery = {
     reachable: () => Promise.resolve(world.state === 'active'),
     info: (): Promise<PalServerInfo> => {
       requireUp()
@@ -264,7 +292,7 @@ export function createFakeServices(env: Env, logger: Logger): FakeServices {
 
   const steamcmd: SteamCmd = {
     run: async (kind, sink: OpSink) => {
-      sink.line(`steamcmd +login anonymous +app_update 2394010 validate (${kind})`)
+      sink.line(`steamcmd +login anonymous +app_update ${game.steamAppId} validate (${kind})`)
       sink.line('Steam Console Client (c) Valve Corporation - version 1734112433')
       for (let pct = 0; pct <= 100; pct += 10) {
         sink.progress(pct)
@@ -272,11 +300,17 @@ export function createFakeServices(env: Env, logger: Logger): FakeServices {
         await sleep(400)
       }
       world.install()
-      sink.line(`Success! App '2394010' fully installed.`)
-      logger.info('fake steamcmd finished', { kind })
+      sink.line(`Success! App '${game.steamAppId}' fully installed.`)
+      logger.info('fake steamcmd finished', { kind, game: game.slug })
     },
     installedBuildId: () => Promise.resolve(world.buildId),
   }
 
-  return { gameControl, palRest, journal, steamcmd, dispose: () => world.dispose() }
+  return {
+    gameControl,
+    query: game.capabilities.query === 'pal-rest' ? palQuery : createNullQuery(game),
+    journal,
+    steamcmd,
+    dispose: () => world.dispose(),
+  }
 }

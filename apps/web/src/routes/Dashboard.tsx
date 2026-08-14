@@ -75,7 +75,7 @@ export function DashboardPage() {
             <p className="cmd-empty">
               No dedicated server found on disk. Install it via SteamCMD to get started.
             </p>
-            <Link to="/updates">
+            <Link to="updates">
               <Button variant="primary">Install server</Button>
             </Link>
           </div>

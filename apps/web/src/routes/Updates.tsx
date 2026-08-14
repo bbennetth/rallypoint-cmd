@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { LongOp, PanelUpdateInfo } from '@rallypoint-cmd/shared'
-import { api, ApiError } from '../lib/api.js'
+import { api, ApiError, apiScope } from '../lib/api.js'
 import { useSseUpdates } from '../lib/useEventSource.js'
 import { formatDateTime } from '../lib/format.js'
 import { Badge, Button, Card, Spinner } from '../ui/primitives.js'
@@ -13,7 +13,7 @@ export function UpdatesPage() {
   const [op, setOp] = useState<LongOp | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const running = op?.status === 'running'
-  const { log, progress, done, reset } = useSseUpdates('/api/updates/stream', running)
+  const { log, progress, done, reset } = useSseUpdates(`${apiScope()}/updates/stream`, running)
 
   async function refresh() {
     const s = await api.updateState()
@@ -73,7 +73,7 @@ export function UpdatesPage() {
           <p className="mono cmd-danger mt-3 text-sm">{op.error}</p>
         )}
         <p className="cmd-note mt-3">
-          Updates stop the server first, run <span className="mono">app_update 2394010 validate</span>,
+          Updates stop the server first, run <span className="mono">steamcmd app_update validate</span>,
           then restart it.
         </p>
       </Card>

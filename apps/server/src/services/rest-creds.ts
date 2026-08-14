@@ -18,12 +18,15 @@ interface Cache {
   creds: RestCreds
 }
 
-let cache: Cache | null = null
+// Keyed by install dir — multiple Palworld instances each get their own
+// cached creds.
+const cache = new Map<string, Cache>()
 
 export function readRestCreds(palDir: string): RestCreds {
   const iniPath = path.join(palDir, PAL_SETTINGS_INI)
   const stat = fs.statSync(iniPath)
-  if (cache && cache.mtimeMs === stat.mtimeMs) return cache.creds
+  const hit = cache.get(palDir)
+  if (hit && hit.mtimeMs === stat.mtimeMs) return hit.creds
 
   const content = fs.readFileSync(iniPath, 'utf8')
   const pwMatch = content.match(/AdminPassword\s*=\s*"((?:[^"\\]|\\.)*)"/)
@@ -32,10 +35,10 @@ export function readRestCreds(palDir: string): RestCreds {
     password: pwMatch?.[1] ?? '',
     port: portMatch ? Number(portMatch[1]) : 8212,
   }
-  cache = { mtimeMs: stat.mtimeMs, creds }
+  cache.set(palDir, { mtimeMs: stat.mtimeMs, creds })
   return creds
 }
 
 export function invalidateRestCredsCache(): void {
-  cache = null
+  cache.clear()
 }

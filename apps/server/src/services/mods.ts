@@ -91,9 +91,9 @@ export function groupMods(files: ScannedFile[]): Mod[] {
   return mods.sort((a, b) => a.id.localeCompare(b.id))
 }
 
-export function createModsService(env: Env, logger: Logger): ModsService {
-  const modsDir = path.join(env.PAL_DIR, PAL_MODS_DIR)
-  const disabledDir = path.join(env.PAL_DIR, PAL_MODS_DISABLED_DIR)
+export function createModsService(env: Env, logger: Logger, installDir: string): ModsService {
+  const modsDir = path.join(installDir, PAL_MODS_DIR)
+  const disabledDir = path.join(installDir, PAL_MODS_DISABLED_DIR)
   const stagingRoot = path.join(env.DATA_DIR, 'staging')
 
   // Names come ONLY from readdir — never from user input.
@@ -164,7 +164,7 @@ export function createModsService(env: Env, logger: Logger): ModsService {
 
       // Refuse outright when disk is already at the floor; the projected
       // sizes are re-checked below once the upload's real size is known.
-      await assertDiskFloor(env.PAL_DIR, 0, env.DISK_FLOOR_BYTES)
+      await assertDiskFloor(installDir, 0, env.DISK_FLOOR_BYTES)
 
       const stageDir = path.join(stagingRoot, `mod-${ulid()}`)
       fs.mkdirSync(stageDir, { recursive: true, mode: 0o700 })
@@ -239,10 +239,10 @@ export function createModsService(env: Env, logger: Logger): ModsService {
           if (![...staged.keys()].some((n) => n.endsWith('.pak'))) {
             throw new ModError('Archive contains no .pak files.', 'no_paks')
           }
-          await assertDiskFloor(env.PAL_DIR, totalUncompressed, env.DISK_FLOOR_BYTES)
+          await assertDiskFloor(installDir, totalUncompressed, env.DISK_FLOOR_BYTES)
         } else {
           staged.set(uploadFilename, uploadPath)
-          await assertDiskFloor(env.PAL_DIR, received, env.DISK_FLOOR_BYTES)
+          await assertDiskFloor(installDir, received, env.DISK_FLOOR_BYTES)
         }
 
         // No silent overwrite — a name collision (either dir) is a 409.

@@ -8,7 +8,7 @@ export const powerRoutes = new Hono<HonoApp>()
 
 // start/stop/restart the game unit. Takes the world lock non-blocking:
 // a backup/update/restore in flight answers 409 instead of interleaving.
-powerRoutes.post('/api/power', requireSession, async (c) => {
+powerRoutes.post('/power', requireSession, async (c) => {
   const { gameControl, worldLock } = c.get('services')
   const body = powerRequestSchema.safeParse(await c.req.json().catch(() => null))
   if (!body.success) throw errors.validation({ issues: body.error.issues })
@@ -23,7 +23,8 @@ powerRoutes.post('/api/power', requireSession, async (c) => {
   try {
     const status = await gameControl.status()
     if (!status.installed) {
-      throw errors.conflict('not_installed', 'Palworld is not installed yet — run an install first.')
+      const { game } = c.get('services').instance
+      throw errors.conflict('not_installed', `${game.name} is not installed yet — run an install first.`)
     }
     c.get('logger').info('power action', { action: body.data.action })
     switch (body.data.action) {

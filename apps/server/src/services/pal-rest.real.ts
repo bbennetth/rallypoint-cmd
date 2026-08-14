@@ -2,7 +2,7 @@ import { palServerInfoSchema, palServerMetricsSchema, playersResponseSchema } fr
 import type { Player } from '@rallypoint-cmd/shared'
 import type { Env } from '../env.js'
 import type { Logger } from '../logger.js'
-import type { PalRest } from './types.js'
+import type { GameQuery } from './types.js'
 import { readRestCreds } from './rest-creds.js'
 
 const TIMEOUT_MS = 5000
@@ -12,17 +12,17 @@ const TIMEOUT_MS = 5000
 // AdminPassword read from the ini. The browser never talks to this —
 // every call is proxied through panel routes.
 
-export function createRealPalRest(env: Env, logger: Logger): PalRest {
+export function createRealPalRest(env: Env, logger: Logger, installDir: string): GameQuery {
   function baseUrl(): string {
     // PAL_REST_URL wins; its port is authoritative unless the ini moved it.
     const url = new URL(env.PAL_REST_URL)
-    const { port } = readRestCreds(env.PAL_DIR)
+    const { port } = readRestCreds(installDir)
     if (port && Number(url.port || '8212') !== port) url.port = String(port)
     return url.origin
   }
 
   async function call(method: 'GET' | 'POST', apiPath: string, body?: unknown): Promise<unknown> {
-    const { password } = readRestCreds(env.PAL_DIR)
+    const { password } = readRestCreds(installDir)
     const auth = Buffer.from(`admin:${password}`).toString('base64')
     let res: Response
     try {

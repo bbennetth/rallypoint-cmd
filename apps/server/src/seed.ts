@@ -4,8 +4,9 @@ import type { Db } from './db/client.js'
 import type { Env } from './env.js'
 import type { Logger } from './logger.js'
 import type { PasswordHasher } from './auth/password.js'
-import { admins, schedules } from './db/schema/index.js'
+import { admins, schedules, servers } from './db/schema/index.js'
 import type { BackupPayload, RestartPayload } from '@rallypoint-cmd/shared'
+import { DEFAULT_SERVER_ID, LEGACY_PALWORLD_UNIT } from '@rallypoint-cmd/shared'
 
 // First-boot admin seeding: only when the admins table is empty. The
 // provisioner passes PANEL_ADMIN_PASSWORD; dev prints a generated one.
@@ -34,6 +35,26 @@ export async function seedAdmin(
       password,
     })
   }
+}
+
+// Migration seed: every install gets a 'default' Palworld server row
+// pointing at the legacy single-server layout (PAL_DIR +
+// palworld.service). Pre-multigame backup/schedule rows carry
+// server_id='default' via the column default, so this row adopting that
+// id IS the whole data migration.
+export function seedDefaultServer(db: Db, env: Env, logger: Logger): void {
+  const existing = db.select({ id: servers.id }).from(servers).limit(1).all()
+  if (existing.length > 0) return
+  db.insert(servers)
+    .values({
+      id: DEFAULT_SERVER_ID,
+      gameSlug: 'palworld',
+      name: 'Palworld',
+      installDir: env.PAL_DIR,
+      unitName: LEGACY_PALWORLD_UNIT,
+    })
+    .run()
+  logger.info('seeded default Palworld server row', { installDir: env.PAL_DIR })
 }
 
 // Default schedules seeded once, on first boot: a nightly restart (the

@@ -4,17 +4,18 @@ import { EventEmitter } from 'node:events'
 import type { Readable } from 'node:stream'
 import type { Logger } from '../logger.js'
 import type { Journal } from './types.js'
-import { JOURNALCTL_BIN, JOURNALCTL_TAIL_ARGS } from './constants.js'
+import { JOURNALCTL_BIN, assertAllowedUnit, journalctlTailArgs } from './constants.js'
 
 const BUFFER_MAX = 500
 const RESPAWN_DELAY_MS = 3000
 
-// Singleton journald tailer: ONE `sudo journalctl -f` no matter how many
-// SSE viewers are connected. Subscribers replay the ring buffer, then
-// get live lines. The child is respawned with backoff if it dies and
-// killed on panel shutdown.
+// Per-unit journald tailer: ONE `sudo journalctl -f` per game server no
+// matter how many SSE viewers are connected. Subscribers replay the ring
+// buffer, then get live lines. The child is respawned with backoff if it
+// dies and killed on panel shutdown.
 
-export function createRealJournal(logger: Logger): Journal {
+export function createRealJournal(logger: Logger, unitName: string): Journal {
+  assertAllowedUnit(unitName)
   const emitter = new EventEmitter()
   emitter.setMaxListeners(100)
   const buffer: string[] = []
@@ -42,7 +43,7 @@ export function createRealJournal(logger: Logger): Journal {
   function spawnTailer(): void {
     if (stopped || child) return
     // Frozen argv — must match deploy/sudoers/rallypoint-cmd exactly.
-    child = spawn('sudo', ['-n', JOURNALCTL_BIN, ...JOURNALCTL_TAIL_ARGS], {
+    child = spawn('sudo', ['-n', JOURNALCTL_BIN, ...journalctlTailArgs(unitName)], {
       stdio: ['ignore', 'pipe', 'ignore'],
     })
     const rl = createInterface({ input: child.stdout })

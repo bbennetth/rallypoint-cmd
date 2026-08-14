@@ -1,14 +1,22 @@
 import { expect, test } from '@playwright/test'
 
 // End-to-end against the real built panel in mock mode. Mirrors the
-// operator's core loop: log in, install, start, edit a setting, back up.
+// operator's core loop: log in, open the (seeded) Palworld server,
+// install, start, back up.
 
-test('operator can log in and drive the server lifecycle', async ({ page }) => {
-  // Login
+// Log in and land on the server list, then open the default server.
+async function loginAndOpenServer(page: import('@playwright/test').Page): Promise<void> {
   await page.goto('/login')
   await page.getByLabel('Username').fill('admin')
   await page.getByLabel('Password').fill('e2e-password-1234')
   await page.getByRole('button', { name: 'Sign in' }).click()
+  await expect(page.getByRole('button', { name: 'Open' })).toBeVisible()
+  await page.getByRole('button', { name: 'Open' }).click()
+  await expect(page).toHaveURL(/\/servers\/default$/)
+}
+
+test('operator can log in and drive the server lifecycle', async ({ page }) => {
+  await loginAndOpenServer(page)
 
   // Dashboard: fresh mock world starts uninstalled.
   await expect(page.getByText('Palworld is not installed')).toBeVisible()
@@ -30,10 +38,7 @@ test('operator can log in and drive the server lifecycle', async ({ page }) => {
 })
 
 test('backups: create then list', async ({ page }) => {
-  await page.goto('/login')
-  await page.getByLabel('Username').fill('admin')
-  await page.getByLabel('Password').fill('e2e-password-1234')
-  await page.getByRole('button', { name: 'Sign in' }).click()
+  await loginAndOpenServer(page)
 
   await page.getByRole('link', { name: 'Backups' }).click()
   await page.getByRole('button', { name: /Create backup/ }).click()
@@ -44,10 +49,7 @@ test('backups: create then list', async ({ page }) => {
 })
 
 test('default schedules are seeded', async ({ page }) => {
-  await page.goto('/login')
-  await page.getByLabel('Username').fill('admin')
-  await page.getByLabel('Password').fill('e2e-password-1234')
-  await page.getByRole('button', { name: 'Sign in' }).click()
+  await loginAndOpenServer(page)
 
   await page.getByRole('link', { name: 'Schedules' }).click()
   await expect(page.getByText('restart').first()).toBeVisible()

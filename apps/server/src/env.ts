@@ -39,6 +39,9 @@ const EnvSchema = z.object({
   DATA_DIR: z.string().optional(),
   BACKUP_DIR: z.string().optional(),
   PAL_DIR: z.string().optional(),
+  // Parent dir for NEW game-server installs (each server gets
+  // GAMES_ROOT/<slug>). The legacy Palworld install stays at PAL_DIR.
+  GAMES_ROOT: z.string().optional(),
   STEAMCMD_BIN: z.string().optional(),
   // When set, the panel serves the built React SPA from here (production).
   // Unset in dev — Vite serves the SPA and proxies /api to this server.
@@ -80,6 +83,7 @@ export interface Env {
   DATA_DIR: string
   BACKUP_DIR: string
   PAL_DIR: string
+  GAMES_ROOT: string
   STEAMCMD_BIN: string
   WEB_DIST_DIR: string | undefined
   DB_PATH: string
@@ -117,6 +121,7 @@ export function parseEnv(raw: NodeJS.ProcessEnv): Env {
   const backupDir =
     parsed.BACKUP_DIR ?? (mock ? path.join(sandboxRoot, 'backups') : '/var/backups/palworld')
   const palDir = parsed.PAL_DIR ?? (mock ? path.join(sandboxRoot, 'palworld') : '/opt/palworld')
+  const gamesRoot = parsed.GAMES_ROOT ?? (mock ? path.join(sandboxRoot, 'games') : '/opt/games')
   const steamcmdBin =
     parsed.STEAMCMD_BIN ??
     (mock ? path.join(sandboxRoot, 'steamcmd.sh') : '/opt/palworld/steamcmd/steamcmd.sh')
@@ -127,6 +132,7 @@ export function parseEnv(raw: NodeJS.ProcessEnv): Env {
     DATA_DIR: dataDir,
     BACKUP_DIR: backupDir,
     PAL_DIR: palDir,
+    GAMES_ROOT: gamesRoot,
     STEAMCMD_BIN: steamcmdBin,
     DB_PATH: path.join(dataDir, 'panel.sqlite'),
     WEB_DIST_DIR: parsed.WEB_DIST_DIR,

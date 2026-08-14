@@ -23,19 +23,20 @@ function toLifecycle(installed: boolean, activeState: string): ServerLifecycle {
   }
 }
 
-statusRoutes.get('/api/status', requireSession, async (c) => {
+statusRoutes.get('/status', requireSession, async (c) => {
   const env = c.get('env')
-  const { gameControl, palRest, steamcmd, settings } = c.get('services')
+  const { instance, gameControl, query, steamcmd, settings } = c.get('services')
 
   const [systemd, buildId] = await Promise.all([gameControl.status(), steamcmd.installedBuildId()])
 
   const lifecycle = toLifecycle(systemd.installed, systemd.activeState)
 
-  // REST is only worth probing while the unit is up.
+  // The admin API is only worth probing while the unit is up — and only
+  // for games that have one.
   let rest: ServerStatus['rest'] = { reachable: false }
-  if (lifecycle === 'active') {
+  if (lifecycle === 'active' && instance.game.capabilities.query !== 'none') {
     try {
-      const [info, metrics] = await Promise.all([palRest.info(), palRest.metrics()])
+      const [info, metrics] = await Promise.all([query.info(), query.metrics()])
       rest = { reachable: true, info, metrics }
     } catch {
       rest = { reachable: false }
@@ -43,7 +44,7 @@ statusRoutes.get('/api/status', requireSession, async (c) => {
   }
 
   const disks = (
-    await Promise.all([diskUsage('game', env.PAL_DIR), diskUsage('backups', env.BACKUP_DIR)])
+    await Promise.all([diskUsage('game', instance.installDir), diskUsage('backups', env.BACKUP_DIR)])
   ).filter((d): d is NonNullable<typeof d> => d !== null)
   // Collapse duplicates when both dirs share one filesystem.
   const dedupedDisks = disks.filter(
@@ -54,7 +55,12 @@ statusRoutes.get('/api/status', requireSession, async (c) => {
     lifecycle,
     pendingRestart: settings.getPendingRestart(),
     buildId,
-    world: { id: systemd.installed ? resolveWorldId(env.PAL_DIR) : null },
+    world: {
+      id:
+        systemd.installed && instance.game.capabilities.world
+          ? resolveWorldId(instance.installDir)
+          : null,
+    },
     systemd: {
       activeState: systemd.activeState,
       subState: systemd.subState,
