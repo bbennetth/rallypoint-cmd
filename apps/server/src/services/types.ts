@@ -1,4 +1,4 @@
-import type { LongOpKind, PalServerInfo, PalServerMetrics, Player } from '@rallypoint-cmd/shared'
+import type { GameDef, LongOpKind, PalServerInfo, PalServerMetrics, Player } from '@rallypoint-cmd/shared'
 import type { WorldLock } from './world-lock.js'
 import type { LongOpRunner } from './long-op.js'
 import type { SettingsService } from './settings-ini.js'
@@ -10,9 +10,12 @@ import type { PublicAccessService } from './public-access.js'
 
 // Every game-facing integration is an interface with a real (LXC) and a
 // fake (laptop/e2e) implementation, chosen by PANEL_MODE in compose.ts.
+// One set of instance services exists per managed server row; panel
+// services (scheduler, self-update, public access) are singletons.
 
 export interface SystemdStatus {
-  // PalServer.sh present on disk — false renders as `not_installed`.
+  // Install probe (e.g. PalServer.sh) present on disk — false renders as
+  // `not_installed`.
   installed: boolean
   activeState: string // active | inactive | activating | deactivating | failed
   subState: string
@@ -30,7 +33,11 @@ export interface GameControl {
   waitFor(state: 'active' | 'inactive', timeoutMs: number): Promise<boolean>
 }
 
-export interface PalRest {
+// Admin/query channel into the running game. Palworld's REST API is the
+// rich implementation; games without an admin API get a stub whose
+// reachable() is always false and whose other methods throw (routes are
+// capability-gated before they get here).
+export interface GameQuery {
   reachable(): Promise<boolean>
   info(): Promise<PalServerInfo>
   players(): Promise<Player[]>
@@ -42,7 +49,7 @@ export interface PalRest {
   save(): Promise<void>
 }
 
-// Singleton journald tailer. SSE handlers subscribe — they never spawn.
+// Per-instance journald tailer. SSE handlers subscribe — they never spawn.
 export interface Journal {
   buffer(): readonly string[]
   subscribe(cb: (line: string) => void): () => void
@@ -62,9 +69,33 @@ export interface SteamCmd {
   installedBuildId(): Promise<string | null>
 }
 
-export interface Services {
+// One managed game-server instance: the DB row's identity plus its own
+// set of service implementations and coordination primitives.
+export interface ServerInstance {
+  id: string
+  name: string
+  installDir: string
+  unitName: string
+  game: GameDef
   gameControl: GameControl
-  palRest: PalRest
+  query: GameQuery
+  journal: Journal
+  steamcmd: SteamCmd
+  settings: SettingsService
+  backup: BackupService
+  mods: ModsService
+  longOps: LongOpRunner
+  worldLock: WorldLock
+  dispose(): void
+}
+
+// Request-scoped service bag: the resolved instance's services flattened
+// together with the panel singletons, so handlers keep one access
+// pattern (`c.get('services').gameControl` …).
+export interface Services {
+  instance: ServerInstance
+  gameControl: GameControl
+  query: GameQuery
   journal: Journal
   steamcmd: SteamCmd
   longOps: LongOpRunner

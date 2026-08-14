@@ -1,16 +1,21 @@
 import { useState } from 'react'
 import { api, ApiError } from '../lib/api.js'
 import { useSseLines } from '../lib/useEventSource.js'
+import { apiScope } from '../lib/api.js'
+import { useCurrentGame } from '../lib/useCurrentGame.js'
 import { Badge, Button, inputClass } from '../ui/primitives.js'
 import { Banner } from '../ui/Banner.js'
 import { LogPane } from '../ui/LogPane.js'
 
 export function ConsolePage() {
-  const { lines, connected, clear } = useSseLines('/api/console/stream', 'log', { max: 2000 })
+  const { lines, connected, clear } = useSseLines(`${apiScope()}/console/stream`, 'log', { max: 2000 })
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [autoscroll, setAutoscroll] = useState(true)
+  // Broadcast needs an admin/query API; hide it for games without one.
+  const game = useCurrentGame()
+  const canAnnounce = game ? game.capabilities.query !== 'none' : false
 
   async function announce(e: React.FormEvent) {
     e.preventDefault()
@@ -57,6 +62,7 @@ export function ConsolePage() {
         empty="Waiting for journal output…"
       />
 
+      {canAnnounce && (
       <form onSubmit={announce} className="flex gap-2">
         <input
           className={inputClass}
@@ -68,6 +74,7 @@ export function ConsolePage() {
           Broadcast
         </Button>
       </form>
+      )}
       {err && <Banner tone="bad">{err}</Banner>}
     </div>
   )

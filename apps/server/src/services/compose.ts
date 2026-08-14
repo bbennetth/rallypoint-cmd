@@ -1,10 +1,16 @@
+import { eq } from 'drizzle-orm'
+import { DEFAULT_SERVER_ID, gameBySlug } from '@rallypoint-cmd/shared'
 import type { Env } from '../env.js'
 import type { Logger } from '../logger.js'
 import type { Db } from '../db/client.js'
-import type { Services } from './types.js'
+import { backups, schedules, servers, type ServerRow } from '../db/schema/index.js'
+import type { SchedulerService } from './scheduler.js'
+import type { PanelUpdateService } from './panel-update.js'
+import type { PublicAccessService } from './public-access.js'
+import type { ServerInstance, Services } from './types.js'
 import { LongOpRunner } from './long-op.js'
 import { WorldLock } from './world-lock.js'
-import { createFakeServices } from './fake/index.js'
+import { createFakeInstanceServices } from './fake/index.js'
 import { createRealGameControl } from './game-control.real.js'
 import { createRealJournal } from './journal.real.js'
 import { createRealPalRest } from './pal-rest.real.js'
@@ -15,86 +21,175 @@ import { createModsService } from './mods.js'
 import { createScheduler } from './scheduler.js'
 import { createFakePanelUpdate, createRealPanelUpdate } from './panel-update.js'
 import { createFakePublicAccess, createRealPublicAccess } from './public-access.js'
+import { createNullBackup, createNullMods, createNullQuery, createNullSettings } from './stubs.js'
+import path from 'node:path'
 
-// Composition root: picks real vs fake game integrations by PANEL_MODE.
-// LongOpRunner and WorldLock are always real — they're pure in-process
-// coordination.
+// Composition root: one set of instance services per managed server row
+// (real vs fake picked by PANEL_MODE), plus panel-level singletons.
+// LongOpRunner and WorldLock are always real, per instance — they're
+// pure in-process coordination.
 
-export interface ComposedServices extends Services {
+export interface InstanceManager {
+  list(): ServerInstance[]
+  get(id: string): ServerInstance | undefined
+  getDefault(): ServerInstance
+  // Register a freshly-inserted server row.
+  add(row: ServerRow): ServerInstance
+  remove(id: string): void
+}
+
+export interface ComposedServices {
+  instances: InstanceManager
+  scheduler: SchedulerService
+  panelUpdate: PanelUpdateService
+  publicAccess: PublicAccessService
+  // Request-scoped bag for handlers, built around one resolved instance.
+  servicesFor(instance: ServerInstance): Services
   dispose(): void
 }
 
 export function composeServices(env: Env, logger: Logger, db: Db): ComposedServices {
-  const longOps = new LongOpRunner()
-  const worldLock = new WorldLock()
-  // The settings service is always the real implementation — in mock
-  // mode it just operates on the sandbox ini files.
-  const settings = createSettingsService(env, db)
-  // Same for mods: pure fs work under PAL_DIR, which mock mode sandboxes.
-  const mods = createModsService(env, logger)
+  function createInstance(row: ServerRow): ServerInstance {
+    const game = gameBySlug(row.gameSlug)
+    if (!game) throw new Error(`server ${row.id} references unknown game slug ${row.gameSlug}`)
+    const longOps = new LongOpRunner()
+    const worldLock = new WorldLock()
 
-  if (env.PANEL_MODE === 'mock') {
-    const fakes = createFakeServices(env, logger)
-    const backup = createBackupService({
-      env,
-      db,
-      logger,
-      gameControl: fakes.gameControl,
-      palRest: fakes.palRest,
-      steamcmd: fakes.steamcmd,
-      settings,
-    })
+    // The seeded default server keeps its historical panel_state key and
+    // flat BACKUP_DIR layout; later servers get namespaced ones.
+    const stateKey = row.id === DEFAULT_SERVER_ID ? 'pendingRestart' : `pendingRestart:${row.id}`
+    const backupDir =
+      row.id === DEFAULT_SERVER_ID ? env.BACKUP_DIR : path.join(env.BACKUP_DIR, row.id)
+
+    // Settings/mods are always the real fs implementations — in mock
+    // mode they just operate on the sandbox dirs.
+    const settings =
+      game.settingsAdapter === 'palworld-ini'
+        ? createSettingsService(env, db, { installDir: row.installDir, stateKey })
+        : createNullSettings(db, game, stateKey)
+    const mods =
+      game.capabilities.mods === 'ue-paks'
+        ? createModsService(env, logger, row.installDir)
+        : createNullMods(game)
+
+    const base =
+      env.PANEL_MODE === 'mock'
+        ? createFakeInstanceServices(env, logger, row.installDir, game)
+        : (() => {
+            const journal = createRealJournal(logger, row.unitName)
+            journal.start()
+            return {
+              gameControl: createRealGameControl(env, logger, {
+                unitName: row.unitName,
+                installDir: row.installDir,
+                installedProbe: game.installedProbe,
+              }),
+              query:
+                game.capabilities.query === 'pal-rest'
+                  ? createRealPalRest(env, logger, row.installDir)
+                  : createNullQuery(game),
+              journal,
+              steamcmd: createRealSteamCmd(env, logger, {
+                steamAppId: game.steamAppId,
+                installDir: row.installDir,
+              }),
+              dispose: () => journal.stop(),
+            }
+          })()
+
+    const backup = game.capabilities.world
+      ? createBackupService({
+          env,
+          db,
+          logger,
+          gameControl: base.gameControl,
+          query: base.query,
+          steamcmd: base.steamcmd,
+          settings,
+          serverId: row.id,
+          installDir: row.installDir,
+          backupDir,
+        })
+      : createNullBackup(game)
     backup.pruneStaging()
-    const scheduler = createScheduler({
-      env,
-      db,
-      logger,
-      gameControl: fakes.gameControl,
-      palRest: fakes.palRest,
-      backup,
-      worldLock,
-    })
+
     return {
-      ...fakes,
-      longOps,
-      worldLock,
+      id: row.id,
+      name: row.name,
+      installDir: row.installDir,
+      unitName: row.unitName,
+      game,
+      gameControl: base.gameControl,
+      query: base.query,
+      journal: base.journal,
+      steamcmd: base.steamcmd,
       settings,
       backup,
       mods,
-      scheduler,
-      panelUpdate: createFakePanelUpdate(env),
-      publicAccess: createFakePublicAccess(),
-      dispose: () => {
-        scheduler.stop()
-        fakes.dispose()
-      },
+      longOps,
+      worldLock,
+      dispose: () => base.dispose(),
     }
   }
 
-  const journal = createRealJournal(logger)
-  journal.start()
-  const gameControl = createRealGameControl(env, logger)
-  const palRest = createRealPalRest(env, logger)
-  const steamcmd = createRealSteamCmd(env, logger)
-  const backup = createBackupService({ env, db, logger, gameControl, palRest, steamcmd, settings })
-  backup.pruneStaging()
-  const scheduler = createScheduler({ env, db, logger, gameControl, palRest, backup, worldLock })
+  const instanceMap = new Map<string, ServerInstance>()
+  for (const row of db.select().from(servers).all()) {
+    instanceMap.set(row.id, createInstance(row))
+  }
+
+  const instances: InstanceManager = {
+    list: () => [...instanceMap.values()],
+    get: (id) => instanceMap.get(id),
+    getDefault: () => {
+      const def = instanceMap.get(DEFAULT_SERVER_ID) ?? [...instanceMap.values()][0]
+      if (!def) throw new Error('no server instances configured (seed missing?)')
+      return def
+    },
+    add: (row) => {
+      const inst = createInstance(row)
+      instanceMap.set(row.id, inst)
+      return inst
+    },
+    remove: (id) => {
+      const inst = instanceMap.get(id)
+      if (!inst) return
+      inst.dispose()
+      instanceMap.delete(id)
+      // Drop dependent rows first (schedule_runs cascade off schedules);
+      // any still-registered cron job no-ops once its row is gone.
+      db.delete(schedules).where(eq(schedules.serverId, id)).run()
+      db.delete(backups).where(eq(backups.serverId, id)).run()
+      db.delete(servers).where(eq(servers.id, id)).run()
+    },
+  }
+
+  const scheduler = createScheduler({ env, db, logger, getInstance: (id) => instanceMap.get(id) })
+  const panelUpdate = env.PANEL_MODE === 'mock' ? createFakePanelUpdate(env) : createRealPanelUpdate({ env, db, logger })
+  const publicAccess = env.PANEL_MODE === 'mock' ? createFakePublicAccess() : createRealPublicAccess({ env, db, logger })
+
   return {
-    gameControl,
-    palRest,
-    journal,
-    steamcmd,
-    longOps,
-    worldLock,
-    settings,
-    backup,
-    mods,
+    instances,
     scheduler,
-    panelUpdate: createRealPanelUpdate({ env, db, logger }),
-    publicAccess: createRealPublicAccess({ env, db, logger }),
+    panelUpdate,
+    publicAccess,
+    servicesFor: (instance) => ({
+      instance,
+      gameControl: instance.gameControl,
+      query: instance.query,
+      journal: instance.journal,
+      steamcmd: instance.steamcmd,
+      longOps: instance.longOps,
+      worldLock: instance.worldLock,
+      settings: instance.settings,
+      backup: instance.backup,
+      mods: instance.mods,
+      scheduler,
+      panelUpdate,
+      publicAccess,
+    }),
     dispose: () => {
       scheduler.stop()
-      journal.stop()
+      for (const inst of instanceMap.values()) inst.dispose()
     },
   }
 }

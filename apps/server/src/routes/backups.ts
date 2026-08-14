@@ -7,8 +7,13 @@ import { ApiError, errors } from '../errors.js'
 import { requireSession } from '../middleware/session.js'
 import { BackupError } from '../services/backup.js'
 import { LongOpConflictError } from '../services/long-op.js'
+import { requireCapability } from '../middleware/capability.js'
 
 export const backupRoutes = new Hono<HonoApp>()
+
+const backupsGate = requireCapability((g) => g.capabilities.world, 'backups')
+backupRoutes.use('/backups', backupsGate)
+backupRoutes.use('/backups/*', backupsGate)
 
 function mapBackupError(err: unknown): never {
   if (err instanceof BackupError) {
@@ -27,14 +32,14 @@ function mapBackupError(err: unknown): never {
   throw err
 }
 
-backupRoutes.get('/api/backups', requireSession, (c) => {
+backupRoutes.get('/backups', requireSession, (c) => {
   const { backup } = c.get('services')
   return c.json({ backups: backup.list() })
 })
 
 // Manual backup — runs as a long-op (a large world can take a while to
 // compress); progress streams over /api/updates/stream.
-backupRoutes.post('/api/backups', requireSession, (c) => {
+backupRoutes.post('/backups', requireSession, (c) => {
   const { backup, longOps, worldLock } = c.get('services')
   const release = worldLock.tryAcquire('backup:manual')
   if (!release) {
@@ -61,7 +66,7 @@ backupRoutes.post('/api/backups', requireSession, (c) => {
   }
 })
 
-backupRoutes.get('/api/backups/:id/download', requireSession, (c) => {
+backupRoutes.get('/backups/:id/download', requireSession, (c) => {
   const { backup } = c.get('services')
   try {
     const { filePath, filename, sizeBytes } = backup.filePathFor(c.req.param('id'))
@@ -76,7 +81,7 @@ backupRoutes.get('/api/backups/:id/download', requireSession, (c) => {
   }
 })
 
-backupRoutes.delete('/api/backups/:id', requireSession, (c) => {
+backupRoutes.delete('/backups/:id', requireSession, (c) => {
   const { backup } = c.get('services')
   try {
     backup.delete(c.req.param('id'))
@@ -88,7 +93,7 @@ backupRoutes.delete('/api/backups/:id', requireSession, (c) => {
 
 // Raw streamed upload (application/gzip body, NOT multipart) — staged +
 // validated, never applied here. Returns a RestorePreview.
-backupRoutes.post('/api/backups/upload', requireSession, async (c) => {
+backupRoutes.post('/backups/upload', requireSession, async (c) => {
   const { backup } = c.get('services')
   const body = c.req.raw.body
   if (!body) throw errors.validation({ reason: 'request body required' })
@@ -102,7 +107,7 @@ backupRoutes.post('/api/backups/upload', requireSession, async (c) => {
 
 // Apply a staged upload. Long-op with the world lock held; the typed
 // confirmation is re-checked server-side.
-backupRoutes.post('/api/backups/restore', requireSession, async (c) => {
+backupRoutes.post('/backups/restore', requireSession, async (c) => {
   const { backup, longOps, worldLock } = c.get('services')
   const body = restoreRequestSchema.safeParse(await c.req.json().catch(() => null))
   if (!body.success) throw errors.validation({ issues: body.error.issues })

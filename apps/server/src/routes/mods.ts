@@ -4,8 +4,13 @@ import type { HonoApp } from '../context.js'
 import { ApiError, errors } from '../errors.js'
 import { requireSession } from '../middleware/session.js'
 import { ModError } from '../services/mods.js'
+import { requireCapability } from '../middleware/capability.js'
 
 export const modRoutes = new Hono<HonoApp>()
+
+const modsGate = requireCapability((g) => g.capabilities.mods !== 'none', 'mods')
+modRoutes.use('/mods', modsGate)
+modRoutes.use('/mods/*', modsGate)
 
 function mapModError(err: unknown): never {
   if (err instanceof ModError) {
@@ -22,7 +27,7 @@ function mapModError(err: unknown): never {
   throw err
 }
 
-modRoutes.get('/api/mods', requireSession, (c) => {
+modRoutes.get('/mods', requireSession, (c) => {
   const { mods } = c.get('services')
   return c.json({ mods: mods.list() })
 })
@@ -30,7 +35,7 @@ modRoutes.get('/api/mods', requireSession, (c) => {
 // Raw streamed upload (application/octet-stream body, NOT multipart) —
 // the original filename rides in the query so the streaming byte-cap
 // pattern stays identical to the backup upload. Fast fs work; no long-op.
-modRoutes.post('/api/mods/upload', requireSession, async (c) => {
+modRoutes.post('/mods/upload', requireSession, async (c) => {
   const { mods } = c.get('services')
   const filename = c.req.query('filename') ?? ''
   if (!/\.(pak|zip)$/i.test(filename) || /[/\\]/.test(filename) || filename.length > 220) {
@@ -50,7 +55,7 @@ modRoutes.post('/api/mods/upload', requireSession, async (c) => {
   }
 })
 
-modRoutes.post('/api/mods/:id/toggle', requireSession, async (c) => {
+modRoutes.post('/mods/:id/toggle', requireSession, async (c) => {
   const { mods } = c.get('services')
   const body = modToggleRequestSchema.safeParse(await c.req.json().catch(() => null))
   if (!body.success) throw errors.validation({ issues: body.error.issues })
@@ -62,7 +67,7 @@ modRoutes.post('/api/mods/:id/toggle', requireSession, async (c) => {
   }
 })
 
-modRoutes.delete('/api/mods/:id', requireSession, (c) => {
+modRoutes.delete('/mods/:id', requireSession, (c) => {
   const { mods } = c.get('services')
   try {
     mods.delete(c.req.param('id'))

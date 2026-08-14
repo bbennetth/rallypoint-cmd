@@ -12,7 +12,7 @@ import type { Db } from '../db/client.js'
 import type { Env } from '../env.js'
 import type { Logger } from '../logger.js'
 import { backups } from '../db/schema/index.js'
-import type { GameControl, OpSink, PalRest, SteamCmd } from './types.js'
+import type { GameControl, GameQuery, OpSink, SteamCmd } from './types.js'
 import type { SettingsService } from './settings-ini.js'
 import { PAL_GAME_USER_SETTINGS_INI, PAL_SAVE_ROOT, PAL_SETTINGS_INI } from './constants.js'
 import { assertDiskFloor } from './disk.js'
@@ -137,9 +137,13 @@ interface BackupDeps {
   db: Db
   logger: Logger
   gameControl: GameControl
-  palRest: PalRest
+  query: GameQuery
   steamcmd: SteamCmd
   settings: SettingsService
+  // Instance scoping: which server's saves/rows this engine owns.
+  serverId: string
+  installDir: string
+  backupDir: string
 }
 
 // Walk a directory tree, tolerating live-server churn (vanished dirs and
@@ -207,7 +211,7 @@ export function copySaveTree(
 }
 
 export function createBackupService(deps: BackupDeps): BackupService {
-  const { env, db, logger } = deps
+  const { env, db, logger, serverId, installDir, backupDir } = deps
   const stagingRoot = path.join(env.DATA_DIR, 'staging')
   const rollbackRoot = path.join(env.DATA_DIR, 'rollback')
 
@@ -239,22 +243,22 @@ export function createBackupService(deps: BackupDeps): BackupService {
     async create(kind, sink): Promise<Backup> {
       const say = (line: string): void => sink?.line(line)
       const pct = (n: number): void => sink?.progress(n)
-      const worldId = resolveWorldId(env.PAL_DIR)
+      const worldId = resolveWorldId(installDir)
       if (!worldId) throw new BackupError('No world found to back up.', 'no_world')
-      const saveDir = saveDirFor(env.PAL_DIR, worldId)
+      const saveDir = saveDirFor(installDir, worldId)
 
       // Disk floor: project roughly the save dir size (compressed will be
       // smaller; copy + archive both live on disk briefly). Excludes the
       // game's internal backup/ dir — we don't archive it.
       const saveFiles = walkFiles(saveDir, '', PAL_INTERNAL_BACKUP_DIRS)
       const saveBytes = saveFiles.reduce((a, f) => a + f.size, 0)
-      await assertDiskFloor(env.BACKUP_DIR, saveBytes * 2, env.DISK_FLOOR_BYTES)
+      await assertDiskFloor(backupDir, saveBytes * 2, env.DISK_FLOOR_BYTES)
       pct(2)
 
       // Best-effort flush; a cold backup (game down) is fine too.
       say('[backup] Requesting world save via REST...')
       try {
-        await deps.palRest.save()
+        await deps.query.save()
         // Palworld flushes asynchronously; give it a moment.
         await new Promise((r) => setTimeout(r, 2000))
       } catch {
@@ -278,7 +282,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
           say(`[backup] Skipped ${skipped.length} file(s) that changed mid-copy (server is live).`)
         }
         for (const ini of [PAL_SETTINGS_INI, PAL_GAME_USER_SETTINGS_INI]) {
-          const src = path.join(env.PAL_DIR, ini)
+          const src = path.join(installDir, ini)
           if (fs.existsSync(src)) fs.copyFileSync(src, path.join(archiveRoot, path.basename(ini)))
         }
         pct(40)
@@ -311,15 +315,15 @@ export function createBackupService(deps: BackupDeps): BackupService {
         // (progress: 75 → 95 on completion; tar has no per-byte callback).
         const stamp = new Date().toISOString().replace(/[:]/g, '-').replace(/\.\d+Z$/, 'Z')
         const filename = `palworld-${worldId.slice(0, 8)}-${stamp}.tar.gz`
-        fs.mkdirSync(env.BACKUP_DIR, { recursive: true })
-        const tmpFile = path.join(env.BACKUP_DIR, `.tmp-${stageId}.tar.gz`)
+        fs.mkdirSync(backupDir, { recursive: true })
+        const tmpFile = path.join(backupDir, `.tmp-${stageId}.tar.gz`)
         say('[backup] Compressing archive...')
         await tar.create(
           { gzip: true, cwd: archiveRoot, file: tmpFile, portable: true },
           fs.readdirSync(archiveRoot),
         )
         pct(95)
-        const finalPath = path.join(env.BACKUP_DIR, filename)
+        const finalPath = path.join(backupDir, filename)
         fs.renameSync(tmpFile, finalPath)
 
         const stat = fs.statSync(finalPath)
@@ -329,6 +333,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
         db.insert(backups)
           .values({
             id,
+            serverId,
             filename,
             sizeBytes: stat.size,
             sha256: digest,
@@ -348,22 +353,28 @@ export function createBackupService(deps: BackupDeps): BackupService {
     },
 
     list(): Backup[] {
-      return db.select().from(backups).orderBy(desc(backups.createdAt)).all().map(rowToBackup)
+      return db
+        .select()
+        .from(backups)
+        .where(eq(backups.serverId, serverId))
+        .orderBy(desc(backups.createdAt))
+        .all()
+        .map(rowToBackup)
     },
 
     filePathFor(id) {
       const row = db.select().from(backups).where(eq(backups.id, id)).get()
-      if (!row) throw new BackupError('Backup not found.', 'not_found')
+      if (!row || row.serverId !== serverId) throw new BackupError('Backup not found.', 'not_found')
       // Path comes from the DB row only — never from user input.
-      const filePath = path.join(env.BACKUP_DIR, row.filename)
+      const filePath = path.join(backupDir, row.filename)
       if (!fs.existsSync(filePath)) throw new BackupError('Backup file missing on disk.', 'not_found')
       return { filePath, filename: row.filename, sizeBytes: row.sizeBytes }
     },
 
     delete(id) {
       const row = db.select().from(backups).where(eq(backups.id, id)).get()
-      if (!row) throw new BackupError('Backup not found.', 'not_found')
-      const filePath = path.join(env.BACKUP_DIR, row.filename)
+      if (!row || row.serverId !== serverId) throw new BackupError('Backup not found.', 'not_found')
+      const filePath = path.join(backupDir, row.filename)
       fs.rmSync(filePath, { force: true })
       db.delete(backups).where(eq(backups.id, id)).run()
       logger.info('backup deleted', { id, filename: row.filename })
@@ -452,7 +463,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
           throw new BackupError('Archive save dir has no Level.sav — not a Palworld world.', 'archive_invalid')
         }
 
-        const currentWorldId = resolveWorldId(env.PAL_DIR)
+        const currentWorldId = resolveWorldId(installDir)
         logger.info('restore staged', { stagingId, worldId: manifest.worldId })
         return {
           stagingId,
@@ -496,7 +507,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
         throw new BackupError('Confirmation text did not match.', 'confirm_mismatch')
       }
 
-      const saveRoot = path.join(env.PAL_DIR, PAL_SAVE_ROOT)
+      const saveRoot = path.join(installDir, PAL_SAVE_ROOT)
       // Preflight: root-owned save dirs (e.g. from a manual `pct push`
       // import) make every fs op below fail with EACCES. Fail up front
       // with an actionable message instead of a bare errno.
@@ -507,7 +518,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
         const code = (err as NodeJS.ErrnoException).code
         if (code === 'EACCES' || code === 'EPERM') {
           throw new BackupError(
-            `The panel user cannot write ${saveRoot} (some files are probably root-owned from a manual copy). Fix inside the container with: chown -R palworld:palworld ${env.PAL_DIR}/Pal/Saved`,
+            `The panel user cannot write ${saveRoot} (some files are probably root-owned from a manual copy). Fix inside the container with: chown -R palworld:palworld ${installDir}/Pal/Saved`,
             'restore_failed',
           )
         }
@@ -580,7 +591,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
         // silently create a FRESH world under the lowercase name (fresh
         // world, fresh characters) while the panel keeps showing and
         // backing up the restored dir. Write the dir's exact name.
-        const gusPath = path.join(env.PAL_DIR, PAL_GAME_USER_SETTINGS_INI)
+        const gusPath = path.join(installDir, PAL_GAME_USER_SETTINGS_INI)
         if (fs.existsSync(gusPath)) {
           const gus = fs.readFileSync(gusPath, 'utf8')
           const updated = gus.replace(
@@ -625,7 +636,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
 
         // 4c. Sanity: the panel must now resolve the restored world as
         // the active one, or the game would boot something else entirely.
-        const resolved = resolveWorldId(env.PAL_DIR)
+        const resolved = resolveWorldId(installDir)
         if (resolved?.toLowerCase() !== targetWorldId.toLowerCase()) {
           throw new BackupError(
             `World swap did not take: the active world resolves to ${resolved ?? 'none'} instead of ${targetWorldId}.`,

@@ -7,7 +7,9 @@ import { createDb } from '../db/client.js'
 import { runMigrations } from '../db/migrate.js'
 import type { Env } from '../env.js'
 import { buildLogger } from '../logger.js'
-import { createFakeServices } from './fake/index.js'
+import { GAMES, DEFAULT_SERVER_ID } from '@rallypoint-cmd/shared'
+import { createFakeInstanceServices } from './fake/index.js'
+import { servers } from '../db/schema/index.js'
 import { createSettingsService } from './settings-ini.js'
 import {
   classifyEntry,
@@ -70,7 +72,7 @@ let root: string
 let env: Env
 let service: BackupService
 let closeDb: () => void
-let fakes: ReturnType<typeof createFakeServices>
+let fakes: ReturnType<typeof createFakeInstanceServices>
 let deps: Parameters<typeof createBackupService>[0]
 
 beforeEach(async () => {
@@ -80,7 +82,16 @@ beforeEach(async () => {
   const { db, sqlite } = createDb(env.DB_PATH)
   runMigrations(db)
   closeDb = () => sqlite.close()
-  fakes = createFakeServices(env, logger)
+  fakes = createFakeInstanceServices(env, logger, env.PAL_DIR, GAMES['palworld']!)
+  db.insert(servers)
+    .values({
+      id: DEFAULT_SERVER_ID,
+      gameSlug: 'palworld',
+      name: 'Palworld',
+      installDir: env.PAL_DIR,
+      unitName: 'palworld.service',
+    })
+    .run()
   // Install + boot the fake world so there's something to back up.
   await fakes.steamcmd.run('install', noopSink)
   await fakes.gameControl.start()
@@ -89,9 +100,12 @@ beforeEach(async () => {
     db,
     logger,
     gameControl: fakes.gameControl,
-    palRest: fakes.palRest,
+    query: fakes.query,
     steamcmd: fakes.steamcmd,
-    settings: createSettingsService(env, db),
+    settings: createSettingsService(env, db, { installDir: env.PAL_DIR, stateKey: 'pendingRestart' }),
+    serverId: DEFAULT_SERVER_ID,
+    installDir: env.PAL_DIR,
+    backupDir: env.BACKUP_DIR,
   }
   service = createBackupService(deps)
 })

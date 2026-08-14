@@ -1,3 +1,4 @@
+import { apiScope } from './api.js'
 import { useEffect, useRef, useState } from 'react'
 import { longOpSchema, type LongOp } from '@rallypoint-cmd/shared'
 
@@ -89,7 +90,7 @@ export function useLongOp(enabled: boolean): {
   useEffect(() => {
     if (!enabled) return
     setDoneOp(null)
-    const es = new EventSource('/api/updates/stream', { withCredentials: true })
+    const es = new EventSource(`${apiScope()}/updates/stream`, { withCredentials: true })
     const finish = (ev: Event): void => {
       try {
         const op = longOpSchema.parse(JSON.parse((ev as MessageEvent).data as string))

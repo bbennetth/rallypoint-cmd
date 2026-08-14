@@ -5,7 +5,14 @@ import path from 'node:path'
 import type { Env } from '../env.js'
 import type { Logger } from '../logger.js'
 import type { GameControl, SystemdStatus } from './types.js'
-import { PAL_SERVER_SH, PAL_SERVICE, SYSTEMCTL_BIN, type SystemctlVerb } from './constants.js'
+import { SYSTEMCTL_BIN, assertAllowedUnit, type SystemctlVerb } from './constants.js'
+
+export interface GameControlTarget {
+  unitName: string
+  installDir: string
+  // Relative path whose presence means "installed" (from the registry).
+  installedProbe: string
+}
 
 const execFileAsync = promisify(execFile)
 
@@ -29,26 +36,29 @@ export function parseSystemdTimestamp(raw: string | undefined): number | null {
   return Number.isFinite(ms) ? ms : null
 }
 
-// Real systemd control. The panel runs as the `palworld` user; only
-// start/stop/restart go through sudo (pinned in sudoers). Status reads
-// are unprivileged D-Bus queries.
+// Real systemd control. The panel runs as an unprivileged user; only
+// start/stop/restart go through sudo (unit names pinned in sudoers).
+// Status reads are unprivileged D-Bus queries.
 
-export function createRealGameControl(env: Env, logger: Logger): GameControl {
+export function createRealGameControl(_env: Env, logger: Logger, target: GameControlTarget): GameControl {
+  assertAllowedUnit(target.unitName)
+  const unit = target.unitName
+
   async function sudoSystemctl(verb: SystemctlVerb): Promise<void> {
     try {
-      // `restart` blocks until the unit is down+up again; Palworld can take
+      // `restart` blocks until the unit is down+up again; a game can take
       // ~90s to flush its save on stop, so give the job room.
-      await execFileAsync('sudo', ['-n', SYSTEMCTL_BIN, verb, PAL_SERVICE], { timeout: 180_000 })
-      logger.info('systemctl ok', { verb })
+      await execFileAsync('sudo', ['-n', SYSTEMCTL_BIN, verb, unit], { timeout: 180_000 })
+      logger.info('systemctl ok', { verb, unit })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      logger.error('systemctl failed', { verb, err: msg })
-      throw new Error(`systemctl ${verb} ${PAL_SERVICE} failed: ${msg}`)
+      logger.error('systemctl failed', { verb, unit, err: msg })
+      throw new Error(`systemctl ${verb} ${unit} failed: ${msg}`)
     }
   }
 
   async function status(): Promise<SystemdStatus> {
-    const installed = fs.existsSync(path.join(env.PAL_DIR, PAL_SERVER_SH))
+    const installed = fs.existsSync(path.join(target.installDir, target.installedProbe))
     try {
       const { stdout } = await execFileAsync(
         SYSTEMCTL_BIN,
@@ -56,7 +66,7 @@ export function createRealGameControl(env: Env, logger: Logger): GameControl {
           // Emit timestamps as `@<epoch>` so we don't parse locale/tz text.
           '--timestamp=unix',
           'show',
-          PAL_SERVICE,
+          unit,
           '-p',
           'ActiveState',
           '-p',

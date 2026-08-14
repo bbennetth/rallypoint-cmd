@@ -67,8 +67,11 @@ if [[ -f /etc/rallypoint-cmd/panel.env ]]; then
   command -v rsync >/dev/null || apt-get -qq -y install rsync >/dev/null 2>&1 || true
   install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-apply-update /usr/local/bin/rallypoint-cmd-apply-update
 install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-playit /usr/local/bin/rallypoint-cmd-playit
+  install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-game /usr/local/bin/rallypoint-cmd-game
+  install -m 0644 deploy/systemd/rallypoint-game@.service /etc/systemd/system/rallypoint-game@.service
   install -m 0440 -o root -g root deploy/sudoers/rallypoint-cmd /etc/sudoers.d/rallypoint-cmd
   visudo -cf /etc/sudoers.d/rallypoint-cmd >/dev/null
+  systemctl daemon-reload
   chown -R root:palworld /opt/rallypoint-cmd && chmod -R g-w /opt/rallypoint-cmd
   systemctl restart rallypoint-cmd.service
   msg_ok "Panel updated"
@@ -235,8 +238,13 @@ fi
 echo ">>> systemd units + least-privilege sudoers"
 install -m 0644 deploy/systemd/palworld.service /etc/systemd/system/palworld.service
 install -m 0644 deploy/systemd/rallypoint-cmd.service /etc/systemd/system/rallypoint-cmd.service
+# Template unit for additional game servers (provision one with
+# `rallypoint-cmd-game add <slug>` after creating it in the panel).
+install -m 0644 deploy/systemd/rallypoint-game@.service /etc/systemd/system/rallypoint-game@.service
 install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-apply-update /usr/local/bin/rallypoint-cmd-apply-update
 install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-playit /usr/local/bin/rallypoint-cmd-playit
+install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-game /usr/local/bin/rallypoint-cmd-game
+mkdir -p /opt/games && chown palworld:palworld /opt/games
 install -m 0440 -o root -g root deploy/sudoers/rallypoint-cmd /etc/sudoers.d/rallypoint-cmd
 visudo -cf /etc/sudoers.d/rallypoint-cmd >/dev/null
 
@@ -249,6 +257,7 @@ PANEL_MODE=live
 PANEL_HOST=$PANEL_BIND
 PANEL_PORT=$PANEL_PORT
 PAL_DIR=/opt/palworld
+GAMES_ROOT=/opt/games
 DATA_DIR=/var/lib/rallypoint-cmd
 BACKUP_DIR=/var/backups/palworld
 STEAMCMD_BIN=/opt/palworld/steamcmd/steamcmd.sh

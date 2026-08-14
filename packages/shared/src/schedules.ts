@@ -34,6 +34,7 @@ export type ScheduleRunStatus = z.infer<typeof scheduleRunStatusSchema>
 
 export const scheduleSchema = z.object({
   id: z.string(),
+  serverId: z.string(),
   kind: scheduleKindSchema,
   // Five-field cron expression, e.g. "0 5 * * *".
   cron: z.string().min(1).max(100),

@@ -13,6 +13,8 @@ import {
   schedulesResponseSchema,
   scheduleRunsResponseSchema,
   serverStatusSchema,
+  serversResponseSchema,
+  gameServerSchema,
   sessionInfoSchema,
   settingsResponseSchema,
   updateStateSchema,
@@ -29,6 +31,8 @@ import {
   type Schedule,
   type ScheduleRun,
   type ServerStatus,
+  type ServersResponse,
+  type GameServer,
   type SessionInfo,
   type SettingsResponse,
   type SettingValue,
@@ -40,6 +44,16 @@ import { z } from 'zod'
 // Typed fetch client. Same-origin, cookie session; state-changing calls
 // carry the double-submit CSRF header. Responses are parsed against the
 // shared Zod schemas so the UI and server can't drift.
+//
+// Game-scoped endpoints are server-relative: inside /servers/:serverId/*
+// routes they hit /api/servers/:serverId/..., elsewhere they fall back
+// to the legacy /api/... alias (the default server). Deriving the scope
+// from the URL at call time avoids any provider-ordering races.
+
+export function apiScope(): string {
+  const m = window.location.pathname.match(/^\/servers\/([a-z0-9-]+)/)
+  return m ? `/api/servers/${m[1]}` : '/api'
+}
 
 export class ApiError extends Error {
   constructor(
@@ -112,35 +126,35 @@ export const api = {
     request('POST', '/api/auth/change-password', okSchema, { currentPassword, newPassword }),
 
   // status + power
-  status: (): Promise<ServerStatus> => request('GET', '/api/status', serverStatusSchema),
+  status: (): Promise<ServerStatus> => request('GET', `${apiScope()}/status`, serverStatusSchema),
   power: (action: 'start' | 'stop' | 'restart'): Promise<unknown> =>
-    request('POST', '/api/power', okSchema, { action }),
+    request('POST', `${apiScope()}/power`, okSchema, { action }),
 
   // players
-  players: (): Promise<PlayersResponse> => request('GET', '/api/players', playersResponseSchema),
+  players: (): Promise<PlayersResponse> => request('GET', `${apiScope()}/players`, playersResponseSchema),
   announce: (message: string): Promise<unknown> =>
-    request('POST', '/api/players/announce', okSchema, { message }),
+    request('POST', `${apiScope()}/players/announce`, okSchema, { message }),
   kick: (userId: string, message?: string): Promise<unknown> =>
-    request('POST', '/api/players/kick', okSchema, { userId, message }),
+    request('POST', `${apiScope()}/players/kick`, okSchema, { userId, message }),
   ban: (userId: string, message?: string): Promise<unknown> =>
-    request('POST', '/api/players/ban', okSchema, { userId, message }),
+    request('POST', `${apiScope()}/players/ban`, okSchema, { userId, message }),
   unban: (userId: string): Promise<unknown> =>
-    request('POST', '/api/players/unban', okSchema, { userId }),
-  save: (): Promise<unknown> => request('POST', '/api/save', okSchema),
+    request('POST', `${apiScope()}/players/unban`, okSchema, { userId }),
+  save: (): Promise<unknown> => request('POST', `${apiScope()}/save`, okSchema),
 
   // settings
-  settings: (): Promise<SettingsResponse> => request('GET', '/api/settings', settingsResponseSchema),
+  settings: (): Promise<SettingsResponse> => request('GET', `${apiScope()}/settings`, settingsResponseSchema),
   updateSettings: (values: Record<string, SettingValue>): Promise<unknown> =>
-    request('PUT', '/api/settings', okSchema, { values }),
+    request('PUT', `${apiScope()}/settings`, okSchema, { values }),
   rawSettings: (): Promise<{ content: string }> =>
-    request('GET', '/api/settings/raw', z.object({ content: z.string() })),
+    request('GET', `${apiScope()}/settings/raw`, z.object({ content: z.string() })),
   updateRawSettings: (content: string): Promise<unknown> =>
-    request('PUT', '/api/settings/raw', okSchema, { content }),
+    request('PUT', `${apiScope()}/settings/raw`, okSchema, { content }),
 
   // updates / steamcmd
-  updateState: (): Promise<UpdateState> => request('GET', '/api/updates', updateStateSchema),
+  updateState: (): Promise<UpdateState> => request('GET', `${apiScope()}/updates`, updateStateSchema),
   runUpdate: (kind: 'install' | 'update' | 'validate'): Promise<LongOp> =>
-    request('POST', '/api/updates/run', longOpSchema, { kind }),
+    request('POST', `${apiScope()}/updates/run`, longOpSchema, { kind }),
 
   // public access (playit.gg)
   publicAccess: (): Promise<PublicAccessStatus> =>
@@ -166,13 +180,13 @@ export const api = {
 
   // backups
   backups: (): Promise<{ backups: Backup[] }> =>
-    request('GET', '/api/backups', backupsResponseSchema),
-  createBackup: (): Promise<LongOp> => request('POST', '/api/backups', longOpSchema),
+    request('GET', `${apiScope()}/backups`, backupsResponseSchema),
+  createBackup: (): Promise<LongOp> => request('POST', `${apiScope()}/backups`, longOpSchema),
   deleteBackup: (id: string): Promise<unknown> =>
-    request('DELETE', `/api/backups/${id}`, okSchema),
+    request('DELETE', `${apiScope()}/backups/${id}`, okSchema),
   uploadBackup: async (file: File): Promise<RestorePreview> => {
     const csrf = await ensureCsrf()
-    const res = await fetch('/api/backups/upload', {
+    const res = await fetch(`${apiScope()}/backups/upload`, {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'content-type': 'application/gzip', 'x-csrf-token': csrf },
@@ -189,14 +203,14 @@ export const api = {
     return restorePreviewSchema.parse(await res.json())
   },
   restoreBackup: (stagingId: string, confirm: string): Promise<LongOp> =>
-    request('POST', '/api/backups/restore', longOpSchema, { stagingId, confirm }),
-  downloadBackupUrl: (id: string): string => `/api/backups/${id}/download`,
+    request('POST', `${apiScope()}/backups/restore`, longOpSchema, { stagingId, confirm }),
+  downloadBackupUrl: (id: string): string => `${apiScope()}/backups/${id}/download`,
 
   // mods
-  mods: (): Promise<ModsResponse> => request('GET', '/api/mods', modsResponseSchema),
+  mods: (): Promise<ModsResponse> => request('GET', `${apiScope()}/mods`, modsResponseSchema),
   uploadMod: async (file: File): Promise<ModUploadResult> => {
     const csrf = await ensureCsrf()
-    const res = await fetch(`/api/mods/upload?filename=${encodeURIComponent(file.name)}`, {
+    const res = await fetch(`${apiScope()}/mods/upload?filename=${encodeURIComponent(file.name)}`, {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'content-type': 'application/octet-stream', 'x-csrf-token': csrf },
@@ -213,19 +227,26 @@ export const api = {
     return modUploadResultSchema.parse(await res.json())
   },
   toggleMod: (id: string, enabled: boolean): Promise<ModsResponse> =>
-    request('POST', `/api/mods/${encodeURIComponent(id)}/toggle`, modsResponseSchema, { enabled }),
+    request('POST', `${apiScope()}/mods/${encodeURIComponent(id)}/toggle`, modsResponseSchema, { enabled }),
   deleteMod: (id: string): Promise<unknown> =>
-    request('DELETE', `/api/mods/${encodeURIComponent(id)}`, okSchema),
+    request('DELETE', `${apiScope()}/mods/${encodeURIComponent(id)}`, okSchema),
+
+  // servers
+  servers: (): Promise<ServersResponse> => request('GET', '/api/servers', serversResponseSchema),
+  createServer: (gameSlug: string, name: string): Promise<GameServer> =>
+    request('POST', '/api/servers', gameServerSchema, { gameSlug, name }),
+  deleteServer: (id: string): Promise<unknown> =>
+    request('DELETE', `/api/servers/${id}`, okSchema),
 
   // schedules
   schedules: (): Promise<{ schedules: Schedule[] }> =>
-    request('GET', '/api/schedules', schedulesResponseSchema),
+    request('GET', `${apiScope()}/schedules`, schedulesResponseSchema),
   createSchedule: (req: CreateScheduleRequest): Promise<Schedule> =>
-    request('POST', '/api/schedules', scheduleSchema, req),
+    request('POST', `${apiScope()}/schedules`, scheduleSchema, req),
   updateSchedule: (id: string, req: UpdateScheduleRequest): Promise<Schedule> =>
-    request('PATCH', `/api/schedules/${id}`, scheduleSchema, req),
+    request('PATCH', `${apiScope()}/schedules/${id}`, scheduleSchema, req),
   deleteSchedule: (id: string): Promise<unknown> =>
-    request('DELETE', `/api/schedules/${id}`, okSchema),
+    request('DELETE', `${apiScope()}/schedules/${id}`, okSchema),
   scheduleRuns: (id: string): Promise<{ runs: ScheduleRun[] }> =>
-    request('GET', `/api/schedules/${id}/runs`, scheduleRunsResponseSchema),
+    request('GET', `${apiScope()}/schedules/${id}/runs`, scheduleRunsResponseSchema),
 }

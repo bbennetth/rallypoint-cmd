@@ -3,6 +3,11 @@ import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
 export const schedules = sqliteTable('schedules', {
   id: text('id').primaryKey(), // ulid
+  // Pre-multigame rows are backfilled to the seeded 'default' server.
+  // No SQL-level FK: SQLite cannot ADD a REFERENCES column with a
+  // non-null default; integrity is app-enforced (compose remove()
+  // deletes dependents first).
+  serverId: text('server_id').notNull().default('default'),
   kind: text('kind', { enum: ['restart', 'backup'] }).notNull(),
   cron: text('cron').notNull(), // "0 5 * * *"
   timezone: text('timezone').notNull().default('UTC'),

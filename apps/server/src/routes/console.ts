@@ -10,7 +10,7 @@ export const consoleRoutes = new Hono<HonoApp>()
 // Live console: replay the journal ring buffer, then stream lines as
 // they arrive. Subscribe-only — the singleton tailer is shared across
 // every viewer. Heartbeats keep Cloudflare's ~100s idle timeout at bay.
-consoleRoutes.get('/api/console/stream', requireSession, (c) => {
+consoleRoutes.get('/console/stream', requireSession, (c) => {
   c.header('X-Accel-Buffering', 'no')
   return streamSSE(c, async (stream) => {
     const { journal } = c.get('services')

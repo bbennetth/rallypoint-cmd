@@ -63,7 +63,7 @@ beforeEach(() => {
   env = makeEnv(root)
   modsDir = path.join(env.PAL_DIR, PAL_MODS_DIR)
   disabledDir = path.join(env.PAL_DIR, PAL_MODS_DISABLED_DIR)
-  service = createModsService(env, buildLogger('error'))
+  service = createModsService(env, buildLogger('error'), env.PAL_DIR)
 })
 
 afterEach(() => {

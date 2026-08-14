@@ -2,11 +2,15 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { createInterface } from 'node:readline'
-import { PALWORLD_APP_ID } from '@rallypoint-cmd/shared'
+import { appManifestFor } from '@rallypoint-cmd/shared'
 import type { Env } from '../env.js'
 import type { Logger } from '../logger.js'
 import type { OpSink, SteamCmd } from './types.js'
-import { PAL_APP_MANIFEST } from './constants.js'
+
+export interface SteamCmdTarget {
+  steamAppId: number
+  installDir: string
+}
 
 // Real SteamCMD driver. Progress lines look like:
 //   Update state (0x61) downloading, progress: 42.17 (8842919 of 20971520)
@@ -34,17 +38,17 @@ export function decideSteamcmdOutcome(o: {
   return { ok: false, message: `SteamCMD exited with code ${o.code} without reporting success` }
 }
 
-export function createRealSteamCmd(env: Env, logger: Logger): SteamCmd {
+export function createRealSteamCmd(env: Env, logger: Logger, target: SteamCmdTarget): SteamCmd {
   return {
     run(kind, sink: OpSink): Promise<void> {
       return new Promise((resolve, reject) => {
         const args = [
           `+force_install_dir`,
-          env.PAL_DIR,
+          target.installDir,
           '+login',
           'anonymous',
           '+app_update',
-          String(PALWORLD_APP_ID),
+          String(target.steamAppId),
           ...(kind === 'validate' || kind === 'install' ? ['validate'] : []),
           '+quit',
         ]
@@ -89,7 +93,10 @@ export function createRealSteamCmd(env: Env, logger: Logger): SteamCmd {
 
     installedBuildId(): Promise<string | null> {
       try {
-        const acf = fs.readFileSync(path.join(env.PAL_DIR, PAL_APP_MANIFEST), 'utf8')
+        const acf = fs.readFileSync(
+          path.join(target.installDir, appManifestFor(target.steamAppId)),
+          'utf8',
+        )
         const m = acf.match(/"buildid"\s+"(\d+)"/)
         return Promise.resolve(m?.[1] ?? null)
       } catch {

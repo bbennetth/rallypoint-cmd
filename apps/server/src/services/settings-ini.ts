@@ -212,8 +212,15 @@ export interface SettingsService {
   clearPendingRestart(): void
 }
 
-export function createSettingsService(env: Env, db: Db): SettingsService {
-  const iniPath = path.join(env.PAL_DIR, PAL_SETTINGS_INI)
+export interface SettingsTarget {
+  installDir: string
+  // panel_state key tracking this instance's pending-restart flag. The
+  // seeded default server keeps the historical bare 'pendingRestart' key.
+  stateKey: string
+}
+
+export function createSettingsService(env: Env, db: Db, target: SettingsTarget): SettingsService {
+  const iniPath = path.join(target.installDir, PAL_SETTINGS_INI)
   const restPort = Number(new URL(env.PAL_REST_URL).port || '8212')
 
   function readContent(): string {
@@ -225,7 +232,7 @@ export function createSettingsService(env: Env, db: Db): SettingsService {
 
   function writeContent(content: string): void {
     // Keep an undo copy, then temp-file + rename (atomic on same fs).
-    const historyDir = path.join(env.DATA_DIR, 'ini-history')
+    const historyDir = path.join(env.DATA_DIR, 'ini-history', target.stateKey.replace(/[^a-zA-Z0-9_-]/g, '_'))
     fs.mkdirSync(historyDir, { recursive: true })
     if (fs.existsSync(iniPath)) {
       const stamp = new Date().toISOString().replace(/[:.]/g, '-')
@@ -241,7 +248,7 @@ export function createSettingsService(env: Env, db: Db): SettingsService {
 
   function setPending(value: boolean): void {
     db.insert(panelState)
-      .values({ key: 'pendingRestart', value: value ? '1' : '0', updatedAt: new Date() })
+      .values({ key: target.stateKey, value: value ? '1' : '0', updatedAt: new Date() })
       .onConflictDoUpdate({
         target: panelState.key,
         set: { value: value ? '1' : '0', updatedAt: new Date() },
@@ -307,7 +314,7 @@ export function createSettingsService(env: Env, db: Db): SettingsService {
       const row = db
         .select({ value: panelState.value })
         .from(panelState)
-        .where(eq(panelState.key, 'pendingRestart'))
+        .where(eq(panelState.key, target.stateKey))
         .get()
       return row?.value === '1'
     },

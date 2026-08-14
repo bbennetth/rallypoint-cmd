@@ -6,6 +6,11 @@ import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 // the filesystem.
 export const backups = sqliteTable('backups', {
   id: text('id').primaryKey(), // ulid
+  // Pre-multigame rows are backfilled to the seeded 'default' server.
+  // No SQL-level FK: SQLite cannot ADD a REFERENCES column with a
+  // non-null default; integrity is app-enforced (compose remove()
+  // deletes dependents first).
+  serverId: text('server_id').notNull().default('default'),
   filename: text('filename').notNull().unique(),
   sizeBytes: integer('size_bytes').notNull(),
   sha256: text('sha256').notNull(),

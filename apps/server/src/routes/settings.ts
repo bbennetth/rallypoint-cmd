@@ -4,8 +4,13 @@ import type { HonoApp } from '../context.js'
 import { ApiError, errors } from '../errors.js'
 import { requireSession } from '../middleware/session.js'
 import { IniParseError } from '../services/settings-ini.js'
+import { requireCapability } from '../middleware/capability.js'
 
 export const settingsRoutes = new Hono<HonoApp>()
+
+const settingsGate = requireCapability((g) => g.settingsAdapter !== 'none', 'panel-managed settings')
+settingsRoutes.use('/settings', settingsGate)
+settingsRoutes.use('/settings/*', settingsGate)
 
 function mapIniError(err: unknown): never {
   if (err instanceof IniParseError) {
@@ -14,7 +19,7 @@ function mapIniError(err: unknown): never {
   throw err
 }
 
-settingsRoutes.get('/api/settings', requireSession, (c) => {
+settingsRoutes.get('/settings', requireSession, (c) => {
   const { settings } = c.get('services')
   try {
     const { entries } = settings.read()
@@ -24,7 +29,7 @@ settingsRoutes.get('/api/settings', requireSession, (c) => {
   }
 })
 
-settingsRoutes.put('/api/settings', requireSession, async (c) => {
+settingsRoutes.put('/settings', requireSession, async (c) => {
   const { settings } = c.get('services')
   const body = settingsPatchSchema.safeParse(await c.req.json().catch(() => null))
   if (!body.success) throw errors.validation({ issues: body.error.issues })
@@ -37,7 +42,7 @@ settingsRoutes.put('/api/settings', requireSession, async (c) => {
   return c.json({ ok: true as const, pendingRestart: true })
 })
 
-settingsRoutes.get('/api/settings/raw', requireSession, (c) => {
+settingsRoutes.get('/settings/raw', requireSession, (c) => {
   const { settings } = c.get('services')
   try {
     return c.json({ content: settings.readRaw() })
@@ -46,7 +51,7 @@ settingsRoutes.get('/api/settings/raw', requireSession, (c) => {
   }
 })
 
-settingsRoutes.put('/api/settings/raw', requireSession, async (c) => {
+settingsRoutes.put('/settings/raw', requireSession, async (c) => {
   const { settings } = c.get('services')
   const body = rawSettingsSchema.safeParse(await c.req.json().catch(() => null))
   if (!body.success) throw errors.validation({ issues: body.error.issues })
