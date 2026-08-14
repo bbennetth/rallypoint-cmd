@@ -9,7 +9,7 @@
 # Override any default with an env var, e.g. CTID=210 RAM=24576 DISK=80 bash -c "$(...)".
 # Preview only (creates nothing): DRYRUN=1 bash -c "$(curl -fsSL .../ct/rallypoint-cmd.sh)".
 # See raw command output while it runs: VERBOSE=1 bash -c "$(...)".
-# Tunnel-only (no LAN exposure): PANEL_BIND=127.0.0.1 bash -c "$(...)".
+# Loopback only (no LAN exposure): PANEL_BIND=127.0.0.1 bash -c "$(...)".
 
 set -euo pipefail
 
@@ -28,7 +28,7 @@ NET_GW="${NET_GW:-}"                     # required if NET_IP is static
 CT_PASSWORD="${CT_PASSWORD:-}"           # CT root pw; empty = random
 TZ_REGION="${TZ_REGION:-Etc/UTC}"
 PANEL_PORT="${PANEL_PORT:-8080}"
-PANEL_BIND="${PANEL_BIND:-0.0.0.0}"      # LAN by default; 127.0.0.1 = tunnel-only
+PANEL_BIND="${PANEL_BIND:-0.0.0.0}"      # LAN by default; 127.0.0.1 = loopback only
 PANEL_ADMIN_USER="${PANEL_ADMIN_USER:-admin}"
 PANEL_ADMIN_PASSWORD="${PANEL_ADMIN_PASSWORD:-}"  # empty = random (printed once)
 PANEL_REPO_URL="${PANEL_REPO_URL:-https://github.com/bbennetth/rallypoint-cmd.git}"
@@ -241,7 +241,7 @@ cat > /etc/rallypoint-cmd/panel.env <<ENV
 NODE_ENV=production
 PANEL_MODE=live
 # Bind address: 0.0.0.0 = reachable on the LAN (default). Set to 127.0.0.1
-# for tunnel-only once cloudflared runs inside the CT.
+# to bind loopback only (e.g. when a reverse proxy on the host fronts it).
 PANEL_HOST=$PANEL_BIND
 PANEL_PORT=$PANEL_PORT
 GAMES_ROOT=/opt/games
@@ -253,10 +253,10 @@ PANEL_PASSWORD_PEPPER=$PANEL_PEPPER
 PANEL_ADMIN_USERNAME=$PANEL_ADMIN_USER
 PANEL_ADMIN_PASSWORD=$PANEL_ADMIN_PASSWORD
 PANEL_REPO_REF=$PANEL_REPO_REF
-# LAN is plain http, so secure cookies stay OFF. After the Cloudflare Tunnel
-# is up and you stop using http://<ct-ip>, set COOKIE_SECURE=true.
+# LAN is plain http, so secure cookies stay OFF and no proxy is trusted.
+# Behind an HTTPS reverse proxy, set COOKIE_SECURE=true and TRUSTED_PROXY=true.
 COOKIE_SECURE=false
-TRUSTED_PROXY=true
+TRUSTED_PROXY=false
 ENV
 chown root:rallypoint /etc/rallypoint-cmd/panel.env; chmod 0640 /etc/rallypoint-cmd/panel.env
 
@@ -277,8 +277,8 @@ cat <<SUMMARY
    Panel (LAN)     : http://${IP:-<container-ip>}:${PANEL_PORT}
    Login           : ${PANEL_ADMIN_USER} / ${PANEL_ADMIN_PASSWORD}
 
- Next: log in and add a game server from the panel. Then change the admin
- password, and add a Cloudflare Tunnel to
- http://127.0.0.1:${PANEL_PORT} and set COOKIE_SECURE=true.
+ Next: log in and add a game server from the panel, and change the admin
+ password. To reach it from outside the LAN, put it behind an HTTPS reverse
+ proxy (then set COOKIE_SECURE=true, TRUSTED_PROXY=true) — see deploy/README.md.
  Update later: re-run this exact line inside the CT (pct enter ${CTID}).
 SUMMARY

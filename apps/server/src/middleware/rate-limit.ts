@@ -12,6 +12,11 @@ import { rateLimits } from '../db/schema/index.js'
 export function clientIp(c: Context<HonoApp>): string {
   const env = c.get('env')
   if (env.TRUSTED_PROXY) {
+    // Behind a trusted reverse proxy: use the forwarded client IP.
+    // X-Forwarded-For (first entry = original client) is the de-facto
+    // standard; cf-connecting-ip is accepted as a fallback.
+    const fwd = c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
+    if (fwd) return fwd
     const cf = c.req.header('cf-connecting-ip')
     if (cf) return cf
   }
