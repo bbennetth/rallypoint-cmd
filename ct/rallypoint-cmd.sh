@@ -73,6 +73,15 @@ install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-playit /usr/local/bin/
   visudo -cf /etc/sudoers.d/rallypoint-cmd >/dev/null
   systemctl daemon-reload
   chown -R root:palworld /opt/rallypoint-cmd && chmod -R g-w /opt/rallypoint-cmd
+  # Migrate SteamCMD to its game-neutral home (idempotent): the multi-game
+  # panel shares one SteamCMD across games, so it no longer lives under
+  # /opt/palworld. Ownership travels with the move.
+  if [[ -d /opt/palworld/steamcmd && ! -e /opt/steamcmd ]]; then
+    mv /opt/palworld/steamcmd /opt/steamcmd
+  fi
+  if [[ -d /opt/steamcmd ]]; then
+    sed -i 's|^STEAMCMD_BIN=/opt/palworld/steamcmd/steamcmd.sh$|STEAMCMD_BIN=/opt/steamcmd/steamcmd.sh|' /etc/rallypoint-cmd/panel.env
+  fi
   systemctl restart rallypoint-cmd.service
   msg_ok "Panel updated"
   exit 0
@@ -204,8 +213,10 @@ install -d -o palworld -g palworld -m 0750 /var/lib/rallypoint-cmd /var/backups/
 install -d -o root -g palworld -m 0750 /etc/rallypoint-cmd
 
 echo ">>> SteamCMD + Palworld dedicated server (pulls several GiB)"
-install -d -o palworld -g palworld /opt/palworld/steamcmd
-sudo -u palworld -H bash -c 'cd /opt/palworld/steamcmd && curl -sqL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz | tar zxf -'
+# SteamCMD is a panel-wide tool shared by every game — it lives at the
+# game-neutral /opt/steamcmd (its Steam/ state and logs land next to it).
+install -d -o palworld -g palworld /opt/steamcmd
+sudo -u palworld -H bash -c 'cd /opt/steamcmd && curl -sqL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz | tar zxf -'
 # SteamCMD's first run on a fresh box commonly fails the app install with
 # "ERROR! Failed to install app '2394010' (Missing configuration)" — the
 # appinfo cache isn't populated yet. Retrying is the documented fix; treat
@@ -213,7 +224,7 @@ sudo -u palworld -H bash -c 'cd /opt/palworld/steamcmd && curl -sqL https://stea
 sc_ok=0
 for attempt in 1 2 3; do
   echo ">>>   SteamCMD attempt \$attempt/3"
-  sudo -u palworld -H bash -c 'cd /opt/palworld/steamcmd && ./steamcmd.sh +force_install_dir /opt/palworld +login anonymous +app_update $PAL_APP_ID validate +quit' || true
+  sudo -u palworld -H bash -c 'cd /opt/steamcmd && ./steamcmd.sh +force_install_dir /opt/palworld +login anonymous +app_update $PAL_APP_ID validate +quit' || true
   [[ -f /opt/palworld/PalServer.sh ]] && { sc_ok=1; break; }
   echo ">>>   attempt \$attempt did not complete the install — retrying in 5s"
   sleep 5
@@ -260,7 +271,7 @@ PAL_DIR=/opt/palworld
 GAMES_ROOT=/opt/games
 DATA_DIR=/var/lib/rallypoint-cmd
 BACKUP_DIR=/var/backups/palworld
-STEAMCMD_BIN=/opt/palworld/steamcmd/steamcmd.sh
+STEAMCMD_BIN=/opt/steamcmd/steamcmd.sh
 PAL_REST_URL=http://127.0.0.1:8212
 WEB_DIST_DIR=/opt/rallypoint-cmd/apps/web/dist
 PANEL_PASSWORD_PEPPER=$PANEL_PEPPER
