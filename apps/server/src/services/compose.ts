@@ -21,6 +21,7 @@ import { createModsService } from './mods.js'
 import { createScheduler } from './scheduler.js'
 import { createFakePanelUpdate, createRealPanelUpdate } from './panel-update.js'
 import { createFakePublicAccess, createRealPublicAccess } from './public-access.js'
+import { createFakeUnitProvisioner, createRealUnitProvisioner, type UnitProvisioner } from './unit-provision.js'
 import { createNullBackup, createNullMods, createNullQuery, createNullSettings } from './stubs.js'
 import path from 'node:path'
 
@@ -42,6 +43,9 @@ export interface ComposedServices {
   scheduler: SchedulerService
   panelUpdate: PanelUpdateService
   publicAccess: PublicAccessService
+  // Provisions/deprovisions the systemd unit (start.sh + drop-in) for a
+  // game slug via the sudoers-pinned root helper.
+  unitProvisioner: UnitProvisioner
   // Panel-level coordination for panel-scoped long-ops (self-update,
   // public access) — independent of any game server, so these keep
   // working when zero servers exist. Progress streams over /api/panel/stream.
@@ -168,6 +172,8 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
   const panelUpdate = env.PANEL_MODE === 'mock' ? createFakePanelUpdate(env) : createRealPanelUpdate({ env, db, logger })
   const publicAccess =
     env.PANEL_MODE === 'mock' ? createFakePublicAccess() : createRealPublicAccess({ db, logger, instances })
+  const unitProvisioner =
+    env.PANEL_MODE === 'mock' ? createFakeUnitProvisioner(logger) : createRealUnitProvisioner(logger)
   // Panel-scoped coordination (self-update + public access), independent
   // of any game server.
   const panelLongOps = new LongOpRunner()
@@ -178,6 +184,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
     scheduler,
     panelUpdate,
     publicAccess,
+    unitProvisioner,
     longOps: panelLongOps,
     worldLock: panelWorldLock,
     servicesFor: (instance) => ({

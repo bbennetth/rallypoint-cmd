@@ -24,6 +24,21 @@ export function assertAllowedUnit(unit: string): void {
   }
 }
 
+// `sudo -n rallypoint-cmd-game <verb> <slug>` — unit provisioning. The
+// sudoers file pins one line per (verb, slug) pair; the helper
+// re-validates the slug against its baked-in game table.
+export const GAME_HELPER_BIN = '/usr/local/bin/rallypoint-cmd-game'
+export const GAME_HELPER_VERBS = ['add', 'remove'] as const
+export type GameHelperVerb = (typeof GAME_HELPER_VERBS)[number]
+
+export const ALLOWED_SLUGS: readonly string[] = Object.keys(GAMES)
+
+export function assertAllowedSlug(slug: string): void {
+  if (!ALLOWED_SLUGS.includes(slug)) {
+    throw new Error(`slug ${slug} is not in the sudoers-pinned allow list`)
+  }
+}
+
 // `sudo -n journalctl -u <unit> -n 500 -o cat -f`
 export function journalctlTailArgs(unit: string): readonly string[] {
   return ['-u', unit, '-n', '500', '-o', 'cat', '-f']

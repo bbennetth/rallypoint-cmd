@@ -1,8 +1,10 @@
 # /etc/sudoers.d/rallypoint-cmd   (install root:root 0440; verify: visudo -cf <file>)
 #
-# The panel runs as the `rallypoint` user and needs exactly two privileged
-# capabilities per game unit: bounce it, and tail its journal. Everything
-# else (files, saves, config, steamcmd, backups) it owns directly.
+# The panel runs as the `rallypoint` user and needs exactly three privileged
+# capabilities per game unit: bounce it, tail its journal, and provision/
+# deprovision its unit (start.sh + drop-in) via the pinned rallypoint-cmd-game
+# helper. Everything else (files, saves, config, steamcmd, backups) it owns
+# directly.
 #
 # Wildcard-free on purpose — a `systemctl *` sudoers wildcard is a classic
 # privilege-escalation footgun. These argv strings must match the frozen
@@ -51,6 +53,28 @@ rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl start rallypoint-game@unturne
 rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl stop rallypoint-game@unturned.service
 rallypoint ALL=(root) NOPASSWD: /usr/bin/systemctl restart rallypoint-game@unturned.service
 rallypoint ALL=(root) NOPASSWD: /usr/bin/journalctl -u rallypoint-game@unturned.service -n 500 -o cat -f
+# Unit provisioning: pinned root helper, fixed verb + slug per line (the
+# slug is re-validated in-script against its baked-in game table).
+rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-game add palworld
+rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-game remove palworld
+rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-game add valheim
+rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-game remove valheim
+rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-game add rust
+rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-game remove rust
+rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-game add ark-survival-evolved
+rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-game remove ark-survival-evolved
+rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-game add 7-days-to-die
+rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-game remove 7-days-to-die
+rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-game add project-zomboid
+rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-game remove project-zomboid
+rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-game add satisfactory
+rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-game remove satisfactory
+rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-game add team-fortress-2
+rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-game remove team-fortress-2
+rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-game add counter-strike-2
+rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-game remove counter-strike-2
+rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-game add unturned
+rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-game remove unturned
 # Panel self-update: pinned root helper (validates its argument is inside
 # /var/lib/rallypoint-cmd before touching anything).
 rallypoint ALL=(root) NOPASSWD: /usr/local/bin/rallypoint-cmd-apply-update *

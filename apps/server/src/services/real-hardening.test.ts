@@ -4,7 +4,10 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { GAMES } from '@rallypoint-cmd/shared'
 import {
+  ALLOWED_SLUGS,
   ALLOWED_UNITS,
+  GAME_HELPER_BIN,
+  GAME_HELPER_VERBS,
   JOURNALCTL_BIN,
   SYSTEMCTL_BIN,
   SYSTEMCTL_VERBS,
@@ -189,6 +192,21 @@ describe('sudoers drift (deploy/sudoers/rallypoint-cmd vs code)', () => {
       expect(line).not.toContain('*')
       expect(ALLOWED_UNITS.some((u) => line.includes(` ${u}`))).toBe(true)
     }
+  })
+
+  it('pins the unit-provisioning helper for every slug, both verbs, wildcard-free', () => {
+    for (const slug of ALLOWED_SLUGS) {
+      for (const verb of GAME_HELPER_VERBS) {
+        expect(content).toContain(
+          `rallypoint ALL=(root) NOPASSWD: ${GAME_HELPER_BIN} ${verb} ${slug}`,
+        )
+      }
+    }
+    const helperLines = content
+      .split('\n')
+      .filter((l) => l.includes(GAME_HELPER_BIN) && l.includes('ALL=(root)'))
+    expect(helperLines.length).toBe(ALLOWED_SLUGS.length * GAME_HELPER_VERBS.length)
+    for (const line of helperLines) expect(line).not.toContain('*')
   })
 
   it('helper script knows every registry slug', () => {
