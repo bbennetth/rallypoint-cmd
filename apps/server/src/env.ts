@@ -122,9 +122,11 @@ export function parseEnv(raw: NodeJS.ProcessEnv): Env {
     parsed.BACKUP_DIR ?? (mock ? path.join(sandboxRoot, 'backups') : '/var/backups/palworld')
   const palDir = parsed.PAL_DIR ?? (mock ? path.join(sandboxRoot, 'palworld') : '/opt/palworld')
   const gamesRoot = parsed.GAMES_ROOT ?? (mock ? path.join(sandboxRoot, 'games') : '/opt/games')
+  // SteamCMD is shared by every game, so it lives at the game-neutral
+  // /opt/steamcmd. Existing deploys pin STEAMCMD_BIN in panel.env; the
+  // provisioner's update path migrates them to this location.
   const steamcmdBin =
-    parsed.STEAMCMD_BIN ??
-    (mock ? path.join(sandboxRoot, 'steamcmd.sh') : '/opt/palworld/steamcmd/steamcmd.sh')
+    parsed.STEAMCMD_BIN ?? (mock ? path.join(sandboxRoot, 'steamcmd.sh') : '/opt/steamcmd/steamcmd.sh')
 
   const cookieSecure = parsed.COOKIE_SECURE
   return {
