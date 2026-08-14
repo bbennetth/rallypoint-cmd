@@ -57,12 +57,13 @@ const EnvSchema = z.object({
   PANEL_ADMIN_PASSWORD: z.string().min(8).max(256).optional(),
 
   SESSION_TTL_DAYS: z.coerce.number().min(1).max(365).default(30),
-  // Behind the Cloudflare Tunnel (TLS) set COOKIE_SECURE=true → the
-  // session cookie gets the __Host- prefix + Secure. Plain-http LAN
-  // access needs it false or login silently fails.
+  // Behind an HTTPS reverse proxy set COOKIE_SECURE=true → the session
+  // cookie gets the __Host- prefix + Secure. Plain-http LAN access needs
+  // it false or login silently fails.
   COOKIE_SECURE: boolFromString,
-  // When true (behind cloudflared) trust CF-Connecting-IP for rate-limit
-  // keying; otherwise use the socket address.
+  // When true (behind a trusted reverse proxy) trust the forwarded client
+  // IP (X-Forwarded-For / CF-Connecting-IP) for rate-limit keying;
+  // otherwise use the socket address.
   TRUSTED_PROXY: boolFromString,
 
   // Free-space floor for backups/uploads/steamcmd (bytes).
