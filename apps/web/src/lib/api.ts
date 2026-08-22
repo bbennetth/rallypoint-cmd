@@ -4,6 +4,8 @@ import {
   longOpSchema,
   modsResponseSchema,
   modUploadResultSchema,
+  panelOpStateSchema,
+  panelStorageSchema,
   panelUpdateInfoSchema,
   playersResponseSchema,
   publicAccessConsoleSchema,
@@ -23,6 +25,8 @@ import {
   type LongOp,
   type ModsResponse,
   type ModUploadResult,
+  type PanelOpState,
+  type PanelStorage,
   type PanelUpdateInfo,
   type PlayersResponse,
   type PublicAccessConsole,
@@ -186,6 +190,19 @@ export const api = {
       '/api/health',
       z.object({ ok: z.literal(true), version: z.string(), mode: z.string() }).passthrough(),
     ),
+
+  // management / storage
+  panelStorage: (): Promise<PanelStorage> =>
+    request('GET', '/api/panel/storage', panelStorageSchema),
+  panelOp: (): Promise<PanelOpState> => request('GET', '/api/panel/op', panelOpStateSchema),
+  deleteGameDir: (slug: string, confirm: string): Promise<LongOp> =>
+    request('POST', `/api/panel/storage/games/${encodeURIComponent(slug)}/delete`, longOpSchema, {
+      confirm,
+    }),
+  deleteBackupDir: (id: string, confirm: string): Promise<LongOp> =>
+    request('POST', `/api/panel/storage/backups/${encodeURIComponent(id)}/delete`, longOpSchema, {
+      confirm,
+    }),
 
   // backups
   backups: (): Promise<{ backups: Backup[] }> =>

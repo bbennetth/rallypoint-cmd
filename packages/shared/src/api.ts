@@ -94,7 +94,7 @@ export type UnbanRequest = z.infer<typeof unbanRequestSchema>
 // ---------------------------------------------------------------------------
 // Long-running operations (steamcmd install/update, restore)
 
-export const longOpKindSchema = z.enum(['install', 'update', 'validate', 'restore', 'backup', 'panel_update', 'public_access'])
+export const longOpKindSchema = z.enum(['install', 'update', 'validate', 'restore', 'backup', 'panel_update', 'public_access', 'delete_game_files', 'delete_backup_dir'])
 export type LongOpKind = z.infer<typeof longOpKindSchema>
 
 export const longOpStatusSchema = z.enum(['running', 'succeeded', 'failed'])

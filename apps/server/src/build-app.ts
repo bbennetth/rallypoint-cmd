@@ -24,6 +24,7 @@ import { modRoutes } from './routes/mods.js'
 import { scheduleRoutes } from './routes/schedules.js'
 import { panelUpdateRoutes } from './routes/panel-update.js'
 import { publicAccessRoutes } from './routes/public-access.js'
+import { managementRoutes } from './routes/management.js'
 import { createSpaRoutes } from './routes/spa.js'
 import fs from 'node:fs'
 
@@ -90,6 +91,7 @@ export function buildApp(deps: BuildAppDeps): Hono<HonoApp> {
   app.route('/', serverRoutes)
   app.route('/', panelUpdateRoutes)
   app.route('/', publicAccessRoutes)
+  app.route('/', managementRoutes)
 
   // Game-scoped routers, mounted under /api/servers/:serverId. The param
   // middleware resolves the instance and injects its `services` bag.
