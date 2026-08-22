@@ -64,6 +64,19 @@ if [[ -f /etc/rallypoint-cmd/panel.env ]]; then
   # Refresh the self-update helper + sudoers (new installs of both may
   # arrive via git updates; existing CTs pick them up here).
   command -v rsync >/dev/null || apt-get -qq -y install rsync >/dev/null 2>&1 || true
+  # Wine arrived with Windows-only server support; containers created before
+  # that predate it, so install it here (idempotent, best-effort).
+  if ! command -v wine64 >/dev/null 2>&1 && ! command -v wine >/dev/null 2>&1; then
+    msg_info "Installing Wine (Windows-only dedicated servers)"
+    dpkg --add-architecture i386 >/dev/null 2>&1 || true
+    apt-get -qq update >/dev/null 2>&1 || true
+    DEBIAN_FRONTEND=noninteractive apt-get -qq -y install wine wine64 wine32:i386 >/dev/null 2>&1 \
+      || DEBIAN_FRONTEND=noninteractive apt-get -qq -y install wine wine32:i386 >/dev/null 2>&1 \
+      || DEBIAN_FRONTEND=noninteractive apt-get -qq -y install wine >/dev/null 2>&1 || true
+    command -v wine64 >/dev/null 2>&1 || command -v wine >/dev/null 2>&1 \
+      && msg_ok "Wine installed" \
+      || echo -e " ${RD}✗ Wine install failed — Windows-only servers will not start.${CL}" >&2
+  fi
   install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-apply-update /usr/local/bin/rallypoint-cmd-apply-update
 install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-playit /usr/local/bin/rallypoint-cmd-playit
   install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-game /usr/local/bin/rallypoint-cmd-game
@@ -71,6 +84,14 @@ install -m 0755 -o root -g root deploy/bin/rallypoint-cmd-playit /usr/local/bin/
   install -m 0440 -o root -g root deploy/sudoers/rallypoint-cmd /etc/sudoers.d/rallypoint-cmd
   visudo -cf /etc/sudoers.d/rallypoint-cmd >/dev/null
   systemctl daemon-reload
+  # Regenerate the per-game start scripts from the refreshed helper so fixes
+  # to them (e.g. how the Wine loader is resolved) reach existing servers.
+  # `add` is idempotent and does not restart a running game.
+  for d in /etc/rallypoint-cmd/games/*/; do
+    [[ -d "$d" ]] || continue
+    slug="$(basename "$d")"
+    /usr/local/bin/rallypoint-cmd-game add "$slug" >/dev/null || true
+  done
   chown -R root:rallypoint /opt/rallypoint-cmd && chmod -R g-w /opt/rallypoint-cmd
   # Migrate SteamCMD to its game-neutral home (idempotent): the multi-game
   # panel shares one SteamCMD across games, so it no longer lives under
@@ -198,7 +219,16 @@ dpkg --add-architecture i386
   lib32gcc-s1 lib32stdc++6 python3 make g++ procps
 
 echo ">>> Wine (Windows-only dedicated servers, e.g. Enshrouded)"
-\$QT apt-get -qq -y install wine wine64 wine32:i386
+# Package names differ across Debian releases (bookworm splits wine64 /
+# wine32; later releases ship a single wine). Try the split set first, then
+# fall back to plain wine, and fail loudly if no loader ends up on PATH —
+# a silent miss here only surfaces later as "exec: wine: not found" when a
+# Windows-only server starts.
+\$QT apt-get -qq -y install wine wine64 wine32:i386 \
+  || \$QT apt-get -qq -y install wine wine32:i386 \
+  || \$QT apt-get -qq -y install wine
+command -v wine64 >/dev/null 2>&1 || command -v wine >/dev/null 2>&1 \
+  || { echo "!!! Wine did not install — Windows-only servers (Enshrouded) will not start." >&2; exit 1; }
 
 echo ">>> Node.js 22"
 if [[ -z "\$QT" ]]; then
