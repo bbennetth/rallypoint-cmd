@@ -4,10 +4,11 @@
 // change (plus deploy files: systemd drop-in + sudoers lines, generated
 // from this registry and drift-tested).
 //
-// Invariant: every entry is a NATIVE LINUX dedicated server installable
-// with `steamcmd +login anonymous` — no Wine, no Steam account.
+// Invariant: every entry is installable with `steamcmd +login anonymous`
+// (no Steam account) and is either a native Linux dedicated server or a
+// Windows-only one run under Wine (`platform: 'windows'`).
 
-export type SettingsAdapterKind = 'palworld-ini' | 'none'
+export type SettingsAdapterKind = 'palworld-ini' | 'enshrouded-json' | 'none'
 export type QueryKind = 'pal-rest' | 'none'
 export type ModsKind = 'ue-paks' | 'none'
 
@@ -21,6 +22,11 @@ export interface GameDef {
   slug: string
   name: string
   steamAppId: number
+  // 'windows' = the dedicated server ships a Windows-only binary:
+  // steamcmd installs the Windows depot (+@sSteamCmdForcePlatformType
+  // windows) and the generated start.sh runs it under Wine. Absent =
+  // native Linux.
+  platform?: 'windows'
   // Command line run from the install dir by the generated start.sh.
   startCommand: { bin: string; args: string[] }
   stopSignal: 'SIGINT' | 'SIGTERM'
@@ -216,6 +222,31 @@ export const GAMES: Record<string, GameDef> = {
     capabilities: BASIC_CAPS,
     diskEstimateGb: 35,
     supportLevel: 'basic',
+  },
+  enshrouded: {
+    slug: 'enshrouded',
+    name: 'Enshrouded',
+    steamAppId: 2278520,
+    // The dedicated server is Windows-only; installed via the Windows
+    // depot and run under Wine (see rallypoint-cmd-game).
+    platform: 'windows',
+    startCommand: { bin: './enshrouded_server.exe', args: [] },
+    stopSignal: 'SIGINT',
+    timeoutStopSec: 120,
+    memoryHigh: '12G',
+    memoryMax: '16G',
+    ports: [
+      { name: 'game', port: 15636, proto: 'udp' },
+      { name: 'query', port: 15637, proto: 'udp' },
+    ],
+    savePaths: ['savegame'],
+    installedProbe: 'enshrouded_server.exe',
+    settingsAdapter: 'enshrouded-json',
+    // No query/RCON/REST API and no official mod system — settings +
+    // world backups are the full feature set the game exposes.
+    capabilities: { query: 'none', players: false, mods: 'none', world: true },
+    diskEstimateGb: 8,
+    supportLevel: 'full',
   },
   unturned: {
     slug: 'unturned',

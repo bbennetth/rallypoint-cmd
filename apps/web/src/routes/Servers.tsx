@@ -79,7 +79,7 @@ export function ServersPage() {
                 </div>
                 <div className="flex gap-2 pt-1">
                   <Link to={`/servers/${s.id}`}>
-                    <Button>Open</Button>
+                    <Button aria-label={`Open ${s.name}`}>Open</Button>
                   </Link>
                   <Button variant="ghost" onClick={() => setRemoving(s)}>
                     Remove
@@ -162,8 +162,16 @@ function AddServerDialog({
         </Field>
         {game && (
           <p className="cmd-dim text-sm">
-            ~{game.diskEstimateGb} GB disk · {game.supportLevel === 'full'
-              ? 'full support (settings, players, backups)'
+            ~{game.diskEstimateGb} GB disk ·{' '}
+            {game.supportLevel === 'full'
+              ? `full support (${[
+                  game.settingsAdapter !== 'none' && 'settings',
+                  game.capabilities.players && 'players',
+                  game.capabilities.world && 'backups',
+                  game.capabilities.mods !== 'none' && 'mods',
+                ]
+                  .filter(Boolean)
+                  .join(', ')})`
               : 'basic support (install, start/stop, console, updates)'}
           </p>
         )}

@@ -197,6 +197,9 @@ dpkg --add-architecture i386
 \$QT apt-get -qq -y install curl ca-certificates tar xz-utils sudo git rsync \
   lib32gcc-s1 lib32stdc++6 python3 make g++ procps
 
+echo ">>> Wine (Windows-only dedicated servers, e.g. Enshrouded)"
+\$QT apt-get -qq -y install wine wine64 wine32:i386
+
 echo ">>> Node.js 22"
 if [[ -z "\$QT" ]]; then
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -

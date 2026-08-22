@@ -146,6 +146,137 @@ export const PAL_KEY_SPECS: Record<string, PalKeySpec> = {
   AutoResetGuildTimeNoOnlinePlayers: { kind: 'float', category: 'Guilds', label: 'Idle guild reset (h)' },
 }
 
+// --- Enshrouded (enshrouded_server.json) ------------------------------------
+// The file is nested JSON: top-level scalars, a `gameSettings` object of
+// tuning keys, and a `userGroups` array (roles + passwords). The panel
+// flattens scalars to dot-path keys (`gameSettings.playerHealthFactor`);
+// non-scalar values (userGroups) are raw-editor-only but preserved
+// verbatim on every structured write. Specs are advisory: keys the game
+// adds across patches fall into the read-only "preserved verbatim" pane.
+
+export const ENSHROUDED_SETTINGS_CATEGORIES = [
+  'Server & Network',
+  'Difficulty & Survival',
+  'Progression & Rates',
+  'Enemies & Bosses',
+  'World & Time',
+] as const
+export type EnshroudedSettingsCategory = (typeof ENSHROUDED_SETTINGS_CATEGORIES)[number]
+
+// Panel-enforced on every write so the file can never drift from the
+// registry's ports or move the save/log dirs out from under backups.
+// `gamePort` is only enforced when the key exists (newer builds dropped it).
+export const ENSHROUDED_MANAGED_KEYS = ['ip', 'queryPort', 'gamePort', 'saveDirectory', 'logDirectory'] as const
+
+export interface EnshroudedKeySpec {
+  kind: PalKeyKind
+  category: EnshroudedSettingsCategory
+  enumValues?: readonly string[]
+  managed?: boolean
+  label?: string
+}
+
+const eFloat = (category: EnshroudedSettingsCategory, label: string): EnshroudedKeySpec => ({
+  kind: 'float',
+  category,
+  label,
+})
+
+export const ENSHROUDED_KEY_SPECS: Record<string, EnshroudedKeySpec> = {
+  // Server & Network — identity, access, managed net/path keys
+  name: { kind: 'string', category: 'Server & Network', label: 'Server name' },
+  password: { kind: 'string', category: 'Server & Network', label: 'Join password (legacy)' },
+  slotCount: { kind: 'int', category: 'Server & Network', label: 'Max players' },
+  ip: { kind: 'string', category: 'Server & Network', managed: true, label: 'Bind IP (panel-managed)' },
+  queryPort: { kind: 'int', category: 'Server & Network', managed: true, label: 'Query port (panel-managed)' },
+  gamePort: { kind: 'int', category: 'Server & Network', managed: true, label: 'Game port (panel-managed)' },
+  saveDirectory: { kind: 'string', category: 'Server & Network', managed: true, label: 'Save dir (panel-managed)' },
+  logDirectory: { kind: 'string', category: 'Server & Network', managed: true, label: 'Log dir (panel-managed)' },
+  enableVoiceChat: { kind: 'bool', category: 'Server & Network', label: 'Voice chat' },
+  enableTextChat: { kind: 'bool', category: 'Server & Network', label: 'Text chat' },
+  gameSettingsPreset: {
+    kind: 'enum',
+    category: 'Difficulty & Survival',
+    enumValues: ['Default', 'Relaxed', 'Hard', 'Survival', 'Custom'],
+    label: 'Difficulty preset (gameSettings apply only when Custom)',
+  },
+
+  // Difficulty & Survival
+  'gameSettings.playerHealthFactor': eFloat('Difficulty & Survival', 'Player health'),
+  'gameSettings.playerManaFactor': eFloat('Difficulty & Survival', 'Player mana'),
+  'gameSettings.playerStaminaFactor': eFloat('Difficulty & Survival', 'Player stamina'),
+  'gameSettings.playerBodyHeatFactor': eFloat('Difficulty & Survival', 'Player body heat'),
+  'gameSettings.enableDurability': { kind: 'bool', category: 'Difficulty & Survival', label: 'Equipment durability' },
+  'gameSettings.enableStarvingDebuff': { kind: 'bool', category: 'Difficulty & Survival', label: 'Starving debuff' },
+  'gameSettings.foodBuffDurationFactor': eFloat('Difficulty & Survival', 'Food buff duration'),
+  'gameSettings.fromHungerToStarving': {
+    kind: 'int',
+    category: 'Difficulty & Survival',
+    label: 'Hunger → starving (ns)',
+  },
+  'gameSettings.shroudTimeFactor': eFloat('Difficulty & Survival', 'Shroud time'),
+  'gameSettings.tombstoneMode': {
+    kind: 'enum',
+    category: 'Difficulty & Survival',
+    enumValues: ['AddBackpackMaterials', 'Everything', 'NoTombstone'],
+    label: 'Tombstone mode',
+  },
+  'gameSettings.enableGliderTurbulences': {
+    kind: 'bool',
+    category: 'Difficulty & Survival',
+    label: 'Glider turbulences',
+  },
+
+  // Progression & Rates
+  'gameSettings.miningDamageFactor': eFloat('Progression & Rates', 'Mining damage'),
+  'gameSettings.plantGrowthSpeedFactor': eFloat('Progression & Rates', 'Plant growth speed'),
+  'gameSettings.resourceDropStackAmountFactor': eFloat('Progression & Rates', 'Resource drop stacks'),
+  'gameSettings.factoryProductionSpeedFactor': eFloat('Progression & Rates', 'Factory production speed'),
+  'gameSettings.perkUpgradeRecyclingFactor': eFloat('Progression & Rates', 'Perk upgrade recycling'),
+  'gameSettings.perkCostFactor': eFloat('Progression & Rates', 'Perk cost'),
+  'gameSettings.experienceCombatFactor': eFloat('Progression & Rates', 'Combat XP'),
+  'gameSettings.experienceMiningFactor': eFloat('Progression & Rates', 'Mining XP'),
+  'gameSettings.experienceExplorationQuestsFactor': eFloat('Progression & Rates', 'Exploration/quest XP'),
+
+  // Enemies & Bosses
+  'gameSettings.randomSpawnerAmount': {
+    kind: 'enum',
+    category: 'Enemies & Bosses',
+    enumValues: ['Few', 'Normal', 'Many', 'Extreme'],
+    label: 'Enemy spawn amount',
+  },
+  'gameSettings.aggroPoolAmount': {
+    kind: 'enum',
+    category: 'Enemies & Bosses',
+    enumValues: ['Few', 'Normal', 'Many', 'Extreme'],
+    label: 'Aggro pool',
+  },
+  'gameSettings.enemyDamageFactor': eFloat('Enemies & Bosses', 'Enemy damage'),
+  'gameSettings.enemyHealthFactor': eFloat('Enemies & Bosses', 'Enemy health'),
+  'gameSettings.enemyStaminaFactor': eFloat('Enemies & Bosses', 'Enemy stamina'),
+  'gameSettings.enemyPerceptionRangeFactor': eFloat('Enemies & Bosses', 'Enemy perception range'),
+  'gameSettings.bossDamageFactor': eFloat('Enemies & Bosses', 'Boss damage'),
+  'gameSettings.bossHealthFactor': eFloat('Enemies & Bosses', 'Boss health'),
+  'gameSettings.threatBonus': eFloat('Enemies & Bosses', 'Threat bonus'),
+  'gameSettings.pacifyAllEnemies': { kind: 'bool', category: 'Enemies & Bosses', label: 'Pacify all enemies' },
+  'gameSettings.tamingStartleRepercussion': {
+    kind: 'enum',
+    category: 'Enemies & Bosses',
+    enumValues: ['KeepProgress', 'LoseSomeProgress', 'LoseAllProgress'],
+    label: 'Taming startle repercussion',
+  },
+
+  // World & Time
+  'gameSettings.dayTimeDuration': { kind: 'int', category: 'World & Time', label: 'Day duration (ns)' },
+  'gameSettings.nightTimeDuration': { kind: 'int', category: 'World & Time', label: 'Night duration (ns)' },
+  'gameSettings.weatherFrequency': {
+    kind: 'enum',
+    category: 'World & Time',
+    enumValues: ['Disabled', 'Rare', 'Normal', 'Often'],
+    label: 'Weather frequency',
+  },
+}
+
 // A settings PATCH: known keys are typed values, everything else may be
 // passed as a raw string (kept verbatim in the tuple).
 export const settingValueSchema = z.union([z.string(), z.number(), z.boolean()])
@@ -166,11 +297,17 @@ export const settingsEntrySchema = z.object({
   enumValues: z.array(z.string()).nullable(),
   managed: z.boolean(),
   label: z.string().nullable(),
+  // Display section for the structured form (null → "Other" bucket). The
+  // server emits it from the game's spec table so the web UI stays
+  // game-agnostic.
+  category: z.string().nullable(),
 })
 export type SettingsEntry = z.infer<typeof settingsEntrySchema>
 
 export const settingsResponseSchema = z.object({
   entries: z.array(settingsEntrySchema),
+  // The game's section render order for the structured form.
+  categories: z.array(z.string()),
   pendingRestart: z.boolean(),
 })
 export type SettingsResponse = z.infer<typeof settingsResponseSchema>

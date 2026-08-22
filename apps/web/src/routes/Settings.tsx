@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { PAL_KEY_SPECS, SETTINGS_CATEGORIES } from '@rallypoint-cmd/shared'
 import type { SettingsEntry, SettingValue } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
 import { Badge, Button, Card, inputClass } from '../ui/primitives.js'
@@ -29,6 +28,7 @@ export function SettingsPage() {
 
 function StructuredEditor() {
   const [entries, setEntries] = useState<SettingsEntry[] | null>(null)
+  const [categories, setCategories] = useState<string[]>([])
   const [pendingRestart, setPendingRestart] = useState(false)
   const [dirty, setDirty] = useState<Record<string, SettingValue>>({})
   const [msg, setMsg] = useState<{ tone: 'good' | 'bad'; text: string } | null>(null)
@@ -37,6 +37,7 @@ function StructuredEditor() {
   async function load() {
     const res = await api.settings()
     setEntries(res.entries)
+    setCategories(res.categories)
     setPendingRestart(res.pendingRestart)
     setDirty({})
   }
@@ -47,17 +48,17 @@ function StructuredEditor() {
   const known = useMemo(() => (entries ?? []).filter((e) => e.kind !== null), [entries])
   const unknown = useMemo(() => (entries ?? []).filter((e) => e.kind === null), [entries])
 
-  // Bucket known entries into spec categories (file order preserved within
-  // each section). A known entry always has a spec; the last category is a
-  // safety net in case one ever lacks it.
+  // Bucket known entries into the server-sent categories (file order
+  // preserved within each section); entries without a category land in a
+  // trailing "Other" bucket.
   const sections = useMemo(() => {
-    const buckets = new Map<string, SettingsEntry[]>(SETTINGS_CATEGORIES.map((c) => [c, []]))
+    const buckets = new Map<string, SettingsEntry[]>([...categories, 'Other'].map((c) => [c, []]))
     for (const e of known) {
-      const category = PAL_KEY_SPECS[e.key]?.category ?? SETTINGS_CATEGORIES[SETTINGS_CATEGORIES.length - 1]!
+      const category = e.category && buckets.has(e.category) ? e.category : 'Other'
       buckets.get(category)!.push(e)
     }
     return [...buckets].filter(([, list]) => list.length > 0)
-  }, [known])
+  }, [known, categories])
 
   function setVal(key: string, v: SettingValue) {
     setDirty((d) => ({ ...d, [key]: v }))

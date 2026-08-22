@@ -14,7 +14,7 @@ import {
   journalctlTailArgs,
 } from './constants.js'
 import { parseSystemdTimestamp } from './game-control.real.js'
-import { decideSteamcmdOutcome } from './steamcmd.real.js'
+import { decideSteamcmdOutcome, steamcmdArgs } from './steamcmd.real.js'
 import { isNewerVersion } from './panel-update.js'
 import { extractTunnelAddress, PlayitTrace } from './public-access.js'
 
@@ -68,6 +68,26 @@ describe('decideSteamcmdOutcome', () => {
     expect(
       decideSteamcmdOutcome({ code: 1, sawSuccess: false, sawError: false, lastErrorLine: null }),
     ).toMatchObject({ ok: false })
+  })
+})
+
+describe('steamcmdArgs', () => {
+  it('omits the platform override for native Linux targets', () => {
+    const args = steamcmdArgs({ steamAppId: 2394010, installDir: '/opt/games/palworld' }, 'update')
+    expect(args.join(' ')).not.toContain('sSteamCmdForcePlatformType')
+    expect(args[0]).toBe('+force_install_dir')
+  })
+
+  it('forces the Windows depot BEFORE +login for platform: windows', () => {
+    const args = steamcmdArgs(
+      { steamAppId: 2278520, installDir: '/opt/games/enshrouded', platform: 'windows' },
+      'install',
+    )
+    const platformIdx = args.indexOf('+@sSteamCmdForcePlatformType')
+    expect(platformIdx).toBe(0)
+    expect(args[platformIdx + 1]).toBe('windows')
+    expect(platformIdx).toBeLessThan(args.indexOf('+login'))
+    expect(args).toContain('validate')
   })
 })
 
@@ -216,6 +236,31 @@ describe('sudoers drift (deploy/sudoers/rallypoint-cmd vs code)', () => {
     )
     for (const slug of Object.keys(GAMES)) {
       expect(helper).toContain(`${slug})`)
+    }
+  })
+
+  it('helper rows carry the 6-field format and match each game platform', () => {
+    const helper = fs.readFileSync(
+      path.resolve(here, '../../../../deploy/bin/rallypoint-cmd-game'),
+      'utf8',
+    )
+    for (const game of Object.values(GAMES)) {
+      const rowLine = helper.split('\n').find((l) => l.trim().startsWith(`${game.slug})`))
+      expect(rowLine, game.slug).toBeDefined()
+      const row = rowLine!.match(/echo "([^"]*)"/)?.[1]
+      expect(row, game.slug).toBeDefined()
+      // slug|start|signal|timeout|memhigh|memmax|platform → 5 pipes after
+      // the start command, i.e. 6 fields total.
+      const fields = row!.split('|')
+      expect(fields, game.slug).toHaveLength(6)
+      expect(fields[5], game.slug).toBe(game.platform === 'windows' ? 'windows' : '')
+      expect(fields[1], game.slug).toBe(game.stopSignal)
+      expect(fields[2], game.slug).toBe(String(game.timeoutStopSec))
+    }
+    // Wine wrapper present for windows games.
+    if (Object.values(GAMES).some((g) => g.platform === 'windows')) {
+      expect(helper).toContain('WINEPREFIX')
+      expect(helper).toContain('/usr/bin/wine64')
     }
   })
 })

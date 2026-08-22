@@ -153,7 +153,7 @@ export function BackupsPage() {
                 >
                   {b.kind}
                 </Badge>,
-                `${b.worldId.slice(0, 12)}…`,
+                b.worldId ? `${b.worldId.slice(0, 12)}…` : '—',
                 formatBytes(b.sizeBytes),
                 <div className="flex justify-end gap-2">
                   {/* Button inside the anchor, deliberately: the download is a
@@ -217,7 +217,7 @@ function RestoreDialog({
   const [confirmText, setConfirmText] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const required = preview.manifest.worldId
+  const required = preview.manifest.worldId ?? 'restore'
 
   async function restore() {
     setBusy(true)
@@ -250,11 +250,11 @@ function RestoreDialog({
         <p className="cmd-empty">
           This will <span className="cmd-danger">stop the server</span> and replace the current
           world with the uploaded backup. The current world is snapshotted first for rollback. If
-          the backup includes server settings (PalWorldSettings.ini) they are imported too —
-          panel-managed keys (REST API, RCON, admin password) stay under panel control.
+          the backup includes the game's server settings file it is imported too — panel-managed
+          keys stay under panel control.
         </p>
         <dl className="cmd-kv space-y-1">
-          <Row k="Backup world" v={preview.manifest.worldId} />
+          <Row k="Backup world" v={preview.manifest.worldId ?? '—'} />
           <Row k="Current world" v={preview.currentWorldId ?? '— (none)'} />
           <Row k="Created" v={preview.manifest.createdAt} />
           <Row k="Build" v={preview.manifest.buildId ?? '—'} />
@@ -268,7 +268,10 @@ function RestoreDialog({
         )}
         <label className="block">
           <span className="eyebrow mb-1.5 block">
-            Type the backup world ID to confirm: <span className="mono">{required}</span>
+            {preview.manifest.worldId
+              ? 'Type the backup world ID to confirm: '
+              : 'Type to confirm: '}
+            <span className="mono">{required}</span>
           </span>
           <input
             className={inputClass}

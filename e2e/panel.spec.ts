@@ -21,7 +21,7 @@ async function ensurePalworldOpen(page: Page): Promise<void> {
   // before that), so it's a reliable "list ready" signal.
   const addBtn = page.getByRole('button', { name: 'Add server' }).first()
   await expect(addBtn).toBeVisible()
-  const open = page.getByRole('button', { name: 'Open' })
+  const open = page.getByRole('button', { name: 'Open Palworld' })
   if ((await open.count()) > 0) {
     await open.first().click()
   } else {

@@ -21,6 +21,7 @@ installs into `/opt/games/<slug>` under its own `rallypoint-game@<slug>.service`
 | Satisfactory | 1690800 | Basic | 15 GB |
 | Team Fortress 2 | 232250 | Basic | 25 GB |
 | Counter-Strike 2 | 730 | Basic | 35 GB |
+| Enshrouded | 2278520 | **Full** — settings editor, world backups + restore (Windows build run under Wine) | 8 GB |
 | Unturned | 1110390 | Basic | 8 GB |
 
 **Basic** = install/update via SteamCMD, start/stop/restart, live console, restart schedules.

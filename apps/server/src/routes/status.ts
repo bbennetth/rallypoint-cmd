@@ -3,7 +3,7 @@ import type { ServerLifecycle, ServerStatus } from '@rallypoint-cmd/shared'
 import type { HonoApp } from '../context.js'
 import { requireSession } from '../middleware/session.js'
 import { diskUsage } from '../services/disk.js'
-import { resolveWorldId } from '../services/world.js'
+import { contractFor } from '../services/backup-contracts.js'
 
 export const statusRoutes = new Hono<HonoApp>()
 
@@ -58,7 +58,7 @@ statusRoutes.get('/status', requireSession, async (c) => {
     world: {
       id:
         systemd.installed && instance.game.capabilities.world
-          ? resolveWorldId(instance.installDir)
+          ? (contractFor(instance.game).resolveLive(instance.installDir)?.worldId ?? null)
           : null,
     },
     systemd: {
