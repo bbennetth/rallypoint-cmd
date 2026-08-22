@@ -42,14 +42,16 @@ export function decideSteamcmdOutcome(o: {
 }
 
 // Pure arg builder, exported for unit testing. The platform override
-// must precede +login — SteamCMD applies it at login time.
+// must sit AFTER +login and before +app_update: SteamCMD reloads its
+// config at login, so an override set earlier is reset and the install
+// fails with "Missing configuration".
 export function steamcmdArgs(target: SteamCmdTarget, kind: 'install' | 'update' | 'validate'): string[] {
   return [
-    ...(target.platform === 'windows' ? ['+@sSteamCmdForcePlatformType', 'windows'] : []),
     '+force_install_dir',
     target.installDir,
     '+login',
     'anonymous',
+    ...(target.platform === 'windows' ? ['+@sSteamCmdForcePlatformType', 'windows'] : []),
     '+app_update',
     String(target.steamAppId),
     ...(kind === 'validate' || kind === 'install' ? ['validate'] : []),
