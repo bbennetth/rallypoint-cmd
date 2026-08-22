@@ -78,15 +78,15 @@ describe('steamcmdArgs', () => {
     expect(args[0]).toBe('+force_install_dir')
   })
 
-  it('forces the Windows depot BEFORE +login for platform: windows', () => {
+  it('forces the Windows depot AFTER +login (login resets earlier overrides) for platform: windows', () => {
     const args = steamcmdArgs(
       { steamAppId: 2278520, installDir: '/opt/games/enshrouded', platform: 'windows' },
       'install',
     )
     const platformIdx = args.indexOf('+@sSteamCmdForcePlatformType')
-    expect(platformIdx).toBe(0)
+    expect(platformIdx).toBeGreaterThan(args.indexOf('+login'))
     expect(args[platformIdx + 1]).toBe('windows')
-    expect(platformIdx).toBeLessThan(args.indexOf('+login'))
+    expect(platformIdx).toBeLessThan(args.indexOf('+app_update'))
     expect(args).toContain('validate')
   })
 })
