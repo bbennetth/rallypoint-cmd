@@ -16,6 +16,9 @@ export interface GamePort {
   name: string
   port: number
   proto: 'udp' | 'tcp'
+  // The port players actually connect through, when it is not the one
+  // named 'game' (Enshrouded joins happen over its Steam query port).
+  join?: boolean
 }
 
 export interface GameDef {
@@ -237,7 +240,9 @@ export const GAMES: Record<string, GameDef> = {
     memoryMax: '16G',
     ports: [
       { name: 'game', port: 15636, proto: 'udp' },
-      { name: 'query', port: 15637, proto: 'udp' },
+      // Clients discover and join over the query port — this is the one
+      // to port-forward or tunnel, not the game port.
+      { name: 'query', port: 15637, proto: 'udp', join: true },
     ],
     savePaths: ['savegame'],
     installedProbe: 'enshrouded_server.exe',
@@ -269,6 +274,13 @@ export const GAME_SLUGS = Object.keys(GAMES) as [string, ...string[]]
 
 export function gameBySlug(slug: string): GameDef | undefined {
   return GAMES[slug]
+}
+
+// The UDP port players connect through — what a router forward or a
+// playit tunnel must target. Usually the 'game' port; a port flagged
+// join: true overrides it (Enshrouded joins over its query port).
+export function joinPort(ports: { name: string; port: number; join?: boolean }[]): number | null {
+  return (ports.find((p) => p.join) ?? ports.find((p) => p.name === 'game'))?.port ?? null
 }
 
 export function appManifestFor(steamAppId: number): string {

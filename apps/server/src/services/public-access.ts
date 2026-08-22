@@ -3,7 +3,7 @@ import { promisify } from 'node:util'
 import fs from 'node:fs'
 import path from 'node:path'
 import { eq } from 'drizzle-orm'
-import type { PublicAccessConsole, PublicAccessStatus } from '@rallypoint-cmd/shared'
+import { joinPort, type PublicAccessConsole, type PublicAccessStatus } from '@rallypoint-cmd/shared'
 import type { Db } from '../db/client.js'
 import type { Logger } from '../logger.js'
 import { panelState } from '../db/schema/index.js'
@@ -18,7 +18,7 @@ import { PAL_SETTINGS_INI } from './constants.js'
 interface ServerPortView {
   id: string
   installDir: string
-  game: { settingsAdapter: string; ports: { name: string; port: number }[] }
+  game: { settingsAdapter: string; ports: { name: string; port: number; join?: boolean }[] }
 }
 export interface InstancePortSource {
   list(): ServerPortView[]
@@ -120,8 +120,8 @@ export function extractTunnelAddress(payload: unknown, gamePort: number): string
 export function readGamePort(instances: InstancePortSource, serverId?: string): number | null {
   for (const inst of instances.list()) {
     if (serverId && inst.id !== serverId) continue
-    const port = inst.game.ports.find((p) => p.name === 'game')
-    if (!port) continue
+    const port = joinPort(inst.game.ports)
+    if (port === null) continue
     if (inst.game.settingsAdapter === 'palworld-ini') {
       try {
         const ini = fs.readFileSync(path.join(inst.installDir, PAL_SETTINGS_INI), 'utf8')
@@ -131,7 +131,7 @@ export function readGamePort(instances: InstancePortSource, serverId?: string): 
         // ini not present yet — fall through to the registry default
       }
     }
-    return port.port
+    return port
   }
   return null
 }
