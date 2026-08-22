@@ -10,6 +10,7 @@ import {
   createEnshroudedSettings,
   flattenScalars,
   JsonParseError,
+  validateEnshroudedUserGroups,
 } from './settings-json.js'
 import type { SettingsService } from './settings-ini.js'
 
@@ -177,6 +178,107 @@ describe('writeStructured()', () => {
       /scalar/,
     )
     expect(() => service.writeStructured({ neverExisted: 'x' })).toThrowError(/not present/)
+  })
+})
+
+describe('userGroups boot rules', () => {
+  // Enshrouded exits with status 255 at boot (and systemd crash-loops)
+  // when these rules are broken, so the panel must refuse the write.
+  const fullRights = {
+    canKickBan: true,
+    canAccessInventories: true,
+    canEditWorld: true,
+    canEditBase: true,
+    canExtendBase: true,
+    reservedSlots: 0,
+  }
+
+  it('rejects reusing another group password', () => {
+    expect(() => service.writeStructured({ 'userGroups.Guest.password': 'AdminXXXXXXXX' })).toThrowError(
+      /"Admin" and "Guest" share the same password/,
+    )
+    // Nothing written, no pending restart.
+    expect(fileObj()['userGroups']).toEqual(SAMPLE.userGroups)
+    expect(service.getPendingRestart()).toBe(false)
+  })
+
+  it('rejects clearing a password when it would leave two passwordless groups', () => {
+    fs.writeFileSync(
+      jsonPath,
+      JSON.stringify({
+        ...SAMPLE,
+        userGroups: [
+          { name: 'Default', password: '', ...fullRights },
+          { name: 'Admin', password: 'adminpass', ...fullRights },
+        ],
+      }),
+    )
+    expect(() => service.writeStructured({ 'userGroups.Admin.password': '' })).toThrowError(
+      /"Default" and "Admin" all have no password/,
+    )
+  })
+
+  it('rejects creating a role the legacy passwordless Default group out-ranks', () => {
+    // The reported crash loop: a pre-Update-2 file with a single
+    // full-rights passwordless "Default" group, plus panel-created
+    // graded roles → "Game role without password has more rights than
+    // a password protected one" and the server never boots.
+    fs.writeFileSync(
+      jsonPath,
+      JSON.stringify({ ...SAMPLE, userGroups: [{ name: 'Default', password: '', ...fullRights }] }),
+    )
+    expect(() =>
+      service.writeStructured({
+        'userGroups.Admin.password': 'adminpass',
+        'userGroups.Friend.password': 'friendpass',
+        'userGroups.Guest.password': 'guestpass',
+      }),
+    ).toThrowError(/passwordless group "Default" has rights .* "Friend" lacks/)
+    // Giving Default a password too makes the same edit valid.
+    service.writeStructured({
+      'userGroups.Default.password': 'defaultpass',
+      'userGroups.Admin.password': 'adminpass',
+      'userGroups.Friend.password': 'friendpass',
+      'userGroups.Guest.password': 'guestpass',
+    })
+    expect((fileObj()['userGroups'] as unknown[]).length).toBe(4)
+  })
+
+  it('applies the same rules to raw writes', () => {
+    expect(() =>
+      service.writeRaw(
+        JSON.stringify({
+          ...SAMPLE,
+          userGroups: [
+            { name: 'Admin', password: 'same', canKickBan: true },
+            { name: 'Guest', password: 'same', canKickBan: false },
+          ],
+        }),
+      ),
+    ).toThrowError(JsonParseError)
+  })
+
+  it('accepts an open-Guest setup (one passwordless group with the fewest rights)', () => {
+    service.writeRaw(
+      JSON.stringify({
+        ...SAMPLE,
+        userGroups: [
+          { name: 'Admin', password: 'adminpass', ...fullRights },
+          { name: 'Guest', password: '', ...fullRights, canKickBan: false, canEditWorld: false },
+        ],
+      }),
+    )
+    expect((fileObj()['userGroups'] as unknown[]).length).toBe(2)
+  })
+
+  it('validateEnshroudedUserGroups tolerates absent/odd shapes', () => {
+    expect(validateEnshroudedUserGroups({})).toEqual([])
+    expect(validateEnshroudedUserGroups({ userGroups: 'nope' })).toEqual([])
+    expect(validateEnshroudedUserGroups({ userGroups: [null, 'x', { name: 'A', password: 'p' }] })).toEqual([])
+    // A missing password counts as empty; unnamed groups get an index label.
+    expect(validateEnshroudedUserGroups({ userGroups: [{ name: 'A' }, {}] })[0]).toMatch(
+      /"A" and #2 all have no password/,
+    )
   })
 })
 
