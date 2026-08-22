@@ -92,6 +92,42 @@ export function flattenScalars(obj: JsonObject): { key: string; value: string | 
   return out
 }
 
+// Access control lives in the `userGroups` array (one password per
+// role: Admin / Friend / Guest). Arrays are excluded from the flat
+// editor, so group passwords are surfaced as virtual dot-path keys
+// (`userGroups.Admin.password`) that read/write the matching array
+// entry in place — everything else about the group is preserved.
+const USER_GROUP_PASSWORD_RE = /^userGroups\.(.+)\.password$/
+
+export function userGroupPasswordEntries(obj: JsonObject): { key: string; value: string; label: string }[] {
+  const groups = obj['userGroups']
+  if (!Array.isArray(groups)) return []
+  const out: { key: string; value: string; label: string }[] = []
+  for (const g of groups) {
+    if (!isPlainObject(g) || typeof g['name'] !== 'string' || !g['name']) continue
+    const pw = g['password']
+    out.push({
+      key: `userGroups.${g['name']}.password`,
+      value: typeof pw === 'string' ? pw : '',
+      label: `${g['name']} password`,
+    })
+  }
+  return out
+}
+
+function setUserGroupPassword(obj: JsonObject, groupName: string, value: string): void {
+  const groups = obj['userGroups']
+  const group = Array.isArray(groups)
+    ? groups.find((g): g is JsonObject => isPlainObject(g) && g['name'] === groupName)
+    : undefined
+  if (!group) {
+    throw new JsonParseError(
+      `userGroups has no group named "${groupName}" — edit userGroups via the raw editor.`,
+    )
+  }
+  group['password'] = value
+}
+
 // Panel invariants, enforced LAST on every write: the registry's ports
 // and the save/log dirs backups depend on. `gamePort` only when the key
 // exists — newer server builds dropped it.
@@ -172,6 +208,18 @@ export function createEnshroudedSettings(env: Env, db: Db, target: JsonSettingsT
           category: spec?.category ?? null,
         }
       })
+      for (const g of userGroupPasswordEntries(obj)) {
+        entries.push({
+          key: g.key,
+          raw: JSON.stringify(g.value),
+          value: g.value,
+          kind: 'string',
+          enumValues: null,
+          managed: false,
+          label: g.label,
+          category: 'Server & Network',
+        })
+      }
       return { entries, categories: [...ENSHROUDED_SETTINGS_CATEGORIES] }
     },
 
@@ -180,6 +228,11 @@ export function createEnshroudedSettings(env: Env, db: Db, target: JsonSettingsT
       for (const [key, value] of Object.entries(values)) {
         if ((ENSHROUDED_MANAGED_KEYS as readonly string[]).includes(key)) {
           throw new JsonParseError(`${key} is panel-managed and cannot be edited`)
+        }
+        const groupName = USER_GROUP_PASSWORD_RE.exec(key)?.[1]
+        if (groupName !== undefined) {
+          setUserGroupPassword(obj, groupName, String(value))
+          continue
         }
         const spec = ENSHROUDED_KEY_SPECS[key]
         if (spec) {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import type { PublicAccessConsole, PublicAccessStatus, ServerLifecycle } from '@rallypoint-cmd/shared'
+import { joinPort, type PublicAccessConsole, type PublicAccessStatus, type ServerLifecycle } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
 import { usePoll } from '../lib/usePoll.js'
 import { useLongOp } from '../lib/useEventSource.js'
@@ -196,7 +196,7 @@ function PublicAccessCard() {
   const game = useCurrentGame()
   // Fallback while status is in flight: the current game's declared port,
   // not a Palworld-specific 8211.
-  const declaredPort = game?.ports.find((p) => p.name === 'game')?.port
+  const declaredPort = game ? joinPort(game.ports) ?? undefined : undefined
   const [status, setStatus] = useState<PublicAccessStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)

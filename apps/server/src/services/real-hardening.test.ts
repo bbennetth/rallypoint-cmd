@@ -167,14 +167,23 @@ describe('readGamePort (per-server tunnel port)', () => {
       {
         id: 'srv-ensh',
         installDir: '/opt/games/enshrouded',
-        game: { settingsAdapter: 'none', ports: [{ name: 'game', port: 15636 }] },
+        game: {
+          settingsAdapter: 'none',
+          ports: [
+            { name: 'game', port: 15636 },
+            { name: 'query', port: 15637, join: true },
+          ],
+        },
       },
     ],
   }
 
   it('scopes to the requested server, not the first instance', () => {
-    expect(readGamePort(instances, 'srv-ensh')).toBe(15636)
     expect(readGamePort(instances, 'srv-pal')).toBe(8211)
+  })
+
+  it("prefers a join-flagged port — Enshrouded connects over its query port", () => {
+    expect(readGamePort(instances, 'srv-ensh')).toBe(15637)
   })
 
   it('falls back to the first server with a game port when unscoped', () => {
