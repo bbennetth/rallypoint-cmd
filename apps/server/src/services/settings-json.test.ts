@@ -86,6 +86,14 @@ describe('read()', () => {
     expect(categories).toContain('Difficulty & Survival')
   })
 
+  it('surfaces one password entry per user group', () => {
+    const { entries } = service.read()
+    const admin = entries.find((e) => e.key === 'userGroups.Admin.password')
+    const guest = entries.find((e) => e.key === 'userGroups.Guest.password')
+    expect(admin).toMatchObject({ value: 'AdminXXXXXXXX', kind: 'string', category: 'Server & Network', label: 'Admin password' })
+    expect(guest).toMatchObject({ value: 'GuestXXXXXXXX', label: 'Guest password' })
+  })
+
   it('throws a helpful JsonParseError when the file is missing', () => {
     fs.rmSync(jsonPath)
     expect(() => service.read()).toThrowError(/start it once/)
@@ -106,6 +114,19 @@ describe('writeStructured()', () => {
     expect(obj['userGroups']).toEqual(SAMPLE.userGroups)
     expect((obj['gameSettings'] as Record<string, unknown>)['someFutureKey']).toBe(2.5)
     expect(service.getPendingRestart()).toBe(true)
+  })
+
+  it('sets a user group password in place, preserving the rest of the group', () => {
+    service.writeStructured({ 'userGroups.Admin.password': 'hunter2secret' })
+    const obj = JSON.parse(fs.readFileSync(jsonPath, 'utf8'))
+    expect(obj.userGroups).toEqual([
+      { name: 'Admin', password: 'hunter2secret', canKickBan: true },
+      { name: 'Guest', password: 'GuestXXXXXXXX', canKickBan: false },
+    ])
+  })
+
+  it('rejects a password write for a group that does not exist', () => {
+    expect(() => service.writeStructured({ 'userGroups.Nope.password': 'x' })).toThrowError(/no group named "Nope"/)
   })
 
   it('rejects managed keys', () => {
