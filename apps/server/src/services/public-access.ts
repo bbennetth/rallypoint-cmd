@@ -11,10 +11,12 @@ import type { OpSink } from './types.js'
 import { PAL_SETTINGS_INI } from './constants.js'
 
 // Minimal view of the instance manager (a structural type, to avoid a
-// compose.ts import cycle). public-access is panel-scoped and exposes one
-// UDP tunnel, so it resolves the port from the first server that has a
-// game port.
+// compose.ts import cycle). The playit agent is panel-scoped, but each
+// server needs its own UDP tunnel, so the port is resolved for the server
+// the caller is looking at (falling back to the first server that has a
+// game port when no id is given).
 interface ServerPortView {
+  id: string
   installDir: string
   game: { settingsAdapter: string; ports: { name: string; port: number }[] }
 }
@@ -31,14 +33,20 @@ const execFileAsync = promisify(execFile)
 // game declares (PublicPort in the ini for Palworld).
 
 export const PLAYIT_HELPER = '/usr/local/bin/rallypoint-cmd-playit'
-const ADDRESS_CACHE_KEY = 'public_access_address'
+// Cached last-known address, keyed per game port — with several games
+// installed each has its own tunnel, so one shared cache row would leak
+// another game's address into the fallback.
+const addressCacheKey = (gamePort: number) => `public_access_address:${gamePort}`
 const API_BASE = 'https://api.playit.gg'
 
 export interface PublicAccessService {
-  status(): Promise<PublicAccessStatus>
+  // serverId scopes the port/address lookup to that server's game (the
+  // per-server dashboard passes it); omitted = first server with a game
+  // port, preserving the single-server behavior.
+  status(serverId?: string): Promise<PublicAccessStatus>
   // Long-op: install (if needed), generate a claim, surface the URL, wait
   // for approval, start the agent.
-  enable(sink: OpSink): Promise<void>
+  enable(sink: OpSink, serverId?: string): Promise<void>
   disable(): Promise<void>
   // Diagnostics: panel↔playit trace (helper calls + API exchanges) and
   // the agent's recent journal.
@@ -108,8 +116,10 @@ export function extractTunnelAddress(payload: unknown, gamePort: number): string
 // Resolve the game's UDP port from the first server that has one. For a
 // Palworld server the live PublicPort in its ini wins; otherwise the
 // registry default. Null when no server exposes a game port.
-function readGamePort(instances: InstancePortSource): number | null {
+// Exported for fixture tests.
+export function readGamePort(instances: InstancePortSource, serverId?: string): number | null {
   for (const inst of instances.list()) {
+    if (serverId && inst.id !== serverId) continue
     const port = inst.game.ports.find((p) => p.name === 'game')
     if (!port) continue
     if (inst.game.settingsAdapter === 'palworld-ini') {
@@ -204,7 +214,7 @@ export function createRealPublicAccess(deps: Deps): PublicAccessService {
       }
       if (address) {
         db.insert(panelState)
-          .values({ key: ADDRESS_CACHE_KEY, value: address, updatedAt: new Date() })
+          .values({ key: addressCacheKey(gamePort), value: address, updatedAt: new Date() })
           .onConflictDoUpdate({
             target: panelState.key,
             set: { value: address, updatedAt: new Date() },
@@ -220,18 +230,18 @@ export function createRealPublicAccess(deps: Deps): PublicAccessService {
     }
   }
 
-  function cachedAddress(): string | null {
-    const row = db.select().from(panelState).where(eq(panelState.key, ADDRESS_CACHE_KEY)).get()
+  function cachedAddress(gamePort: number): string | null {
+    const row = db.select().from(panelState).where(eq(panelState.key, addressCacheKey(gamePort))).get()
     return row?.value ?? null
   }
 
   return {
-    async status(): Promise<PublicAccessStatus> {
+    async status(serverId?: string): Promise<PublicAccessStatus> {
       const s = await helperStatus()
-      const gamePort = readGamePort(instances) ?? 8211
+      const gamePort = readGamePort(instances, serverId) ?? 8211
       let address: string | null = null
       if (s.claimed) {
-        address = (await fetchAddress(gamePort)) ?? cachedAddress()
+        address = (await fetchAddress(gamePort)) ?? cachedAddress(gamePort)
       }
       return {
         installed: s.installed,
@@ -243,7 +253,7 @@ export function createRealPublicAccess(deps: Deps): PublicAccessService {
       }
     },
 
-    async enable(sink): Promise<void> {
+    async enable(sink, serverId): Promise<void> {
       const s = await helperStatus()
       if (!fs.existsSync(PLAYIT_HELPER)) {
         throw new Error(
@@ -284,7 +294,7 @@ export function createRealPublicAccess(deps: Deps): PublicAccessService {
       }
       sink.progress(80)
 
-      const gamePort = readGamePort(instances) ?? 8211
+      const gamePort = readGamePort(instances, serverId) ?? 8211
       const address = await fetchAddress(gamePort)
       if (address) {
         sink.line(`[public-access] Public address: ${address}`)
@@ -314,7 +324,7 @@ export function createRealPublicAccess(deps: Deps): PublicAccessService {
 
 // Mock: walks the full enable flow (install → claim URL → claimed →
 // address) so the UI is fully drivable in PANEL_MODE=mock.
-export function createFakePublicAccess(): PublicAccessService {
+export function createFakePublicAccess(instances?: InstancePortSource): PublicAccessService {
   const state = {
     installed: false,
     claimed: false,
@@ -327,8 +337,9 @@ export function createFakePublicAccess(): PublicAccessService {
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
   return {
-    status() {
-      return Promise.resolve({ ...state, gamePort: 8211 })
+    status(serverId?: string) {
+      const gamePort = (instances && readGamePort(instances, serverId)) ?? 8211
+      return Promise.resolve({ ...state, gamePort })
     },
     async enable(sink) {
       if (!state.installed) {

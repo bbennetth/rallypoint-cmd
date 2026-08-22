@@ -9,7 +9,10 @@ export const publicAccessRoutes = new Hono<HonoApp>()
 
 publicAccessRoutes.get('/api/public-access', requireSession, async (c) => {
   const { publicAccess } = c.get('composed')
-  return c.json(publicAccessStatusSchema.parse(await publicAccess.status()))
+  // ?server=<id> scopes the port/address to that server's game — the
+  // per-server dashboard passes it so each game sees its own tunnel.
+  const serverId = c.req.query('server') || undefined
+  return c.json(publicAccessStatusSchema.parse(await publicAccess.status(serverId)))
 })
 
 // Enable = install (if needed) + claim + start, as a long-op streaming
@@ -18,8 +21,9 @@ publicAccessRoutes.get('/api/public-access', requireSession, async (c) => {
 // touches game files.
 publicAccessRoutes.post('/api/public-access/enable', requireSession, (c) => {
   const { publicAccess, longOps } = c.get('composed')
+  const serverId = c.req.query('server') || undefined
   try {
-    const op = longOps.start('public_access', (sink) => publicAccess.enable(sink))
+    const op = longOps.start('public_access', (sink) => publicAccess.enable(sink, serverId))
     return c.json(op, 202)
   } catch (err) {
     if (err instanceof LongOpConflictError) {
