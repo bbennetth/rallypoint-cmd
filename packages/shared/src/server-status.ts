@@ -29,14 +29,16 @@ export const palServerInfoSchema = z
   .passthrough()
 export type PalServerInfo = z.infer<typeof palServerInfoSchema>
 
-// Subset of `GET /v1/api/metrics`.
+// Subset of `GET /v1/api/metrics`. Player counts are the common core —
+// an A2S query (Enshrouded) supplies only those, so the REST-only
+// fields (fps, frametime, uptime) are optional.
 export const palServerMetricsSchema = z
   .object({
-    serverfps: z.number(),
+    serverfps: z.number().optional(),
     currentplayernum: z.number(),
-    serverframetime: z.number(),
+    serverframetime: z.number().optional(),
     maxplayernum: z.number(),
-    uptime: z.number(),
+    uptime: z.number().optional(),
     days: z.number().optional(),
   })
   .passthrough()

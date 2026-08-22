@@ -14,6 +14,7 @@ import { createFakeInstanceServices } from './fake/index.js'
 import { createRealGameControl } from './game-control.real.js'
 import { createRealJournal } from './journal.real.js'
 import { createRealPalRest } from './pal-rest.real.js'
+import { createA2sQuery } from './a2s.real.js'
 import { createRealSteamCmd } from './steamcmd.real.js'
 import { createSettingsService } from './settings-ini.js'
 import { createEnshroudedSettings } from './settings-json.js'
@@ -106,7 +107,9 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
               query:
                 game.capabilities.query === 'pal-rest'
                   ? createRealPalRest(logger, row.installDir)
-                  : createNullQuery(game),
+                  : game.capabilities.query === 'a2s'
+                    ? createA2sQuery(game.ports.find((p) => p.name === 'query')?.port ?? 0)
+                    : createNullQuery(game),
               journal,
               steamcmd: createRealSteamCmd(env, logger, {
                 steamAppId: game.steamAppId,

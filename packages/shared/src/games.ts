@@ -9,7 +9,7 @@
 // Windows-only one run under Wine (`platform: 'windows'`).
 
 export type SettingsAdapterKind = 'palworld-ini' | 'enshrouded-json' | 'none'
-export type QueryKind = 'pal-rest' | 'none'
+export type QueryKind = 'pal-rest' | 'a2s' | 'none'
 export type ModsKind = 'ue-paks' | 'none'
 
 export interface GamePort {
@@ -247,9 +247,9 @@ export const GAMES: Record<string, GameDef> = {
     savePaths: ['savegame'],
     installedProbe: 'enshrouded_server.exe',
     settingsAdapter: 'enshrouded-json',
-    // No query/RCON/REST API and no official mod system — settings +
-    // world backups are the full feature set the game exposes.
-    capabilities: { query: 'none', players: false, mods: 'none', world: true },
+    // No admin API and no official mod system, but the Steam query port
+    // answers A2S_INFO — read-only name/version/player counts.
+    capabilities: { query: 'a2s', players: false, mods: 'none', world: true },
     diskEstimateGb: 8,
     supportLevel: 'full',
   },
