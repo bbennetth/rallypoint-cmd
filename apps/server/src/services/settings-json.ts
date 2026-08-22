@@ -229,9 +229,9 @@ export function createEnshroudedSettings(env: Env, db: Db, target: JsonSettingsT
         if ((ENSHROUDED_MANAGED_KEYS as readonly string[]).includes(key)) {
           throw new JsonParseError(`${key} is panel-managed and cannot be edited`)
         }
-        const groupMatch = key.match(USER_GROUP_PASSWORD_RE)
-        if (groupMatch) {
-          setUserGroupPassword(obj, groupMatch[1], String(value))
+        const groupName = USER_GROUP_PASSWORD_RE.exec(key)?.[1]
+        if (groupName !== undefined) {
+          setUserGroupPassword(obj, groupName, String(value))
           continue
         }
         const spec = ENSHROUDED_KEY_SPECS[key]
