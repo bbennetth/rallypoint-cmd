@@ -99,6 +99,17 @@ export function flattenScalars(obj: JsonObject): { key: string; value: string | 
 // entry in place — everything else about the group is preserved.
 const USER_GROUP_PASSWORD_RE = /^userGroups\.(.+)\.password$/
 
+// The role trio current game builds generate on a fresh config. Files
+// created before Content Update #2 carry a single "Default" group, so
+// these are offered as empty password fields even when absent; setting
+// one creates the group with the canonical permission grading (players
+// pick their role by which password they type at join).
+const CANONICAL_USER_GROUPS: readonly JsonObject[] = [
+  { name: 'Admin', password: '', canKickBan: true, canAccessInventories: true, canEditWorld: true, canEditBase: true, canExtendBase: true, reservedSlots: 0 },
+  { name: 'Friend', password: '', canKickBan: false, canAccessInventories: true, canEditWorld: true, canEditBase: true, canExtendBase: true, reservedSlots: 0 },
+  { name: 'Guest', password: '', canKickBan: false, canAccessInventories: false, canEditWorld: false, canEditBase: false, canExtendBase: false, reservedSlots: 0 },
+]
+
 export function userGroupPasswordEntries(obj: JsonObject): { key: string; value: string; label: string }[] {
   const groups = obj['userGroups']
   if (!Array.isArray(groups)) return []
@@ -112,20 +123,35 @@ export function userGroupPasswordEntries(obj: JsonObject): { key: string; value:
       label: `${g['name']} password`,
     })
   }
+  // Offer the canonical roles even when the file predates them — setting
+  // a password creates the group.
+  for (const tmpl of CANONICAL_USER_GROUPS) {
+    const name = tmpl['name'] as string
+    if (!out.some((e) => e.key === `userGroups.${name}.password`)) {
+      out.push({ key: `userGroups.${name}.password`, value: '', label: `${name} password (sets up the role)` })
+    }
+  }
   return out
 }
 
 function setUserGroupPassword(obj: JsonObject, groupName: string, value: string): void {
-  const groups = obj['userGroups']
-  const group = Array.isArray(groups)
-    ? groups.find((g): g is JsonObject => isPlainObject(g) && g['name'] === groupName)
-    : undefined
-  if (!group) {
+  if (!Array.isArray(obj['userGroups'])) obj['userGroups'] = []
+  const groups = obj['userGroups'] as unknown[]
+  const group = groups.find((g): g is JsonObject => isPlainObject(g) && g['name'] === groupName)
+  if (group) {
+    group['password'] = value
+    return
+  }
+  const template = CANONICAL_USER_GROUPS.find((t) => t['name'] === groupName)
+  if (!template) {
     throw new JsonParseError(
       `userGroups has no group named "${groupName}" — edit userGroups via the raw editor.`,
     )
   }
-  group['password'] = value
+  // Leaving a canonical role's offered field empty is a no-op, not a
+  // request to create a passwordless group.
+  if (value === '') return
+  groups.push({ ...template, password: value })
 }
 
 // Panel invariants, enforced LAST on every write: the registry's ports

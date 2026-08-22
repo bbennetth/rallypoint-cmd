@@ -94,6 +94,14 @@ describe('read()', () => {
     expect(guest).toMatchObject({ value: 'GuestXXXXXXXX', label: 'Guest password' })
   })
 
+  it('offers absent canonical roles as empty password fields', () => {
+    // SAMPLE has Admin + Guest but no Friend — pre-Update-2 files can
+    // even have just "Default".
+    const { entries } = service.read()
+    const friend = entries.find((e) => e.key === 'userGroups.Friend.password')
+    expect(friend).toMatchObject({ value: '', kind: 'string', label: 'Friend password (sets up the role)' })
+  })
+
   it('throws a helpful JsonParseError when the file is missing', () => {
     fs.rmSync(jsonPath)
     expect(() => service.read()).toThrowError(/start it once/)
@@ -123,6 +131,28 @@ describe('writeStructured()', () => {
       { name: 'Admin', password: 'hunter2secret', canKickBan: true },
       { name: 'Guest', password: 'GuestXXXXXXXX', canKickBan: false },
     ])
+  })
+
+  it('creates an absent canonical role with graded permissions when its password is set', () => {
+    service.writeStructured({ 'userGroups.Friend.password': 'friendpass' })
+    const obj = JSON.parse(fs.readFileSync(jsonPath, 'utf8'))
+    expect(obj.userGroups).toContainEqual({
+      name: 'Friend',
+      password: 'friendpass',
+      canKickBan: false,
+      canAccessInventories: true,
+      canEditWorld: true,
+      canEditBase: true,
+      canExtendBase: true,
+      reservedSlots: 0,
+    })
+    expect(obj.userGroups[0]).toMatchObject({ name: 'Admin', password: 'AdminXXXXXXXX' })
+  })
+
+  it('treats an empty password for an absent canonical role as a no-op', () => {
+    service.writeStructured({ 'userGroups.Friend.password': '' })
+    const obj = JSON.parse(fs.readFileSync(jsonPath, 'utf8'))
+    expect(obj.userGroups).toHaveLength(2)
   })
 
   it('rejects a password write for a group that does not exist', () => {
