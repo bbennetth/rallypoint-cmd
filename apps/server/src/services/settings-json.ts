@@ -154,6 +154,68 @@ function setUserGroupPassword(obj: JsonObject, groupName: string, value: string)
   groups.push({ ...template, password: value })
 }
 
+// Enshrouded validates userGroups at boot and exits with status 255
+// when the rules are broken, which sends systemd into a restart loop.
+// Mirror those rules on every panel write so a bad combination comes
+// back as a 400 with an explanation instead of being written to disk
+// for the game to crash on. The rules, verbatim from the server's own
+// "Internal Error" log lines:
+//   - user groups passwords must be unique
+//   - only one user group can be without password
+//   - a game role without password must not have more rights than a
+//     password protected one
+const USER_GROUP_RIGHT_FLAGS = [
+  'canKickBan',
+  'canAccessInventories',
+  'canEditWorld',
+  'canEditBase',
+  'canExtendBase',
+] as const
+
+export function validateEnshroudedUserGroups(obj: JsonObject): string[] {
+  const raw = obj['userGroups']
+  if (!Array.isArray(raw)) return []
+  const groups = raw.flatMap((g, i) => {
+    if (!isPlainObject(g)) return []
+    return {
+      label: typeof g['name'] === 'string' && g['name'] ? `"${g['name']}"` : `#${i + 1}`,
+      password: typeof g['password'] === 'string' ? g['password'] : '',
+      rights: USER_GROUP_RIGHT_FLAGS.filter((f) => g[f] === true),
+    }
+  })
+  const problems: string[] = []
+
+  const byPassword = new Map<string, string[]>()
+  for (const g of groups) {
+    if (g.password === '') continue
+    byPassword.set(g.password, [...(byPassword.get(g.password) ?? []), g.label])
+  }
+  for (const labels of byPassword.values()) {
+    if (labels.length > 1) {
+      problems.push(`groups ${labels.join(' and ')} share the same password — every group needs its own`)
+    }
+  }
+
+  const open = groups.filter((g) => g.password === '')
+  if (open.length > 1) {
+    problems.push(
+      `groups ${open.map((g) => g.label).join(' and ')} all have no password — at most one group may be passwordless`,
+    )
+  }
+  for (const u of open) {
+    for (const p of groups) {
+      if (p.password === '') continue
+      const extra = u.rights.filter((f) => !p.rights.includes(f))
+      if (extra.length > 0) {
+        problems.push(
+          `passwordless group ${u.label} has rights (${extra.join(', ')}) that password-protected group ${p.label} lacks — give ${u.label} a password or make it the weakest role`,
+        )
+      }
+    }
+  }
+  return problems
+}
+
 // Panel invariants, enforced LAST on every write: the registry's ports
 // and the save/log dirs backups depend on. `gamePort` only when the key
 // exists — newer server builds dropped it.
@@ -194,6 +256,12 @@ export function createEnshroudedSettings(env: Env, db: Db, target: JsonSettingsT
 
   function writeObject(obj: JsonObject): void {
     applyEnshroudedInvariants(obj, target)
+    const problems = validateEnshroudedUserGroups(obj)
+    if (problems.length > 0) {
+      throw new JsonParseError(
+        `Enshrouded would refuse to start with these userGroups (it exits at boot and restarts in a loop): ${problems.join('; ')}. Adjust the group passwords, or edit userGroups in the raw editor (e.g. to remove a role or change its permissions).`,
+      )
+    }
     // Keep an undo copy, then temp-file + rename (atomic on same fs).
     const historyDir = path.join(env.DATA_DIR, 'ini-history', target.stateKey.replace(/[^a-zA-Z0-9_-]/g, '_'))
     fs.mkdirSync(historyDir, { recursive: true })
