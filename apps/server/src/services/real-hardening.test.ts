@@ -260,7 +260,10 @@ describe('sudoers drift (deploy/sudoers/rallypoint-cmd vs code)', () => {
     // Wine wrapper present for windows games.
     if (Object.values(GAMES).some((g) => g.platform === 'windows')) {
       expect(helper).toContain('WINEPREFIX')
-      expect(helper).toContain('/usr/bin/wine64')
+      // The loader is resolved at run time (wine64 then wine) rather than
+      // hardcoded — Debian releases disagree on which name exists.
+      expect(helper).toContain('for c in wine64 wine; do')
+      expect(helper).not.toContain('/usr/bin/wine64')
     }
   })
 })

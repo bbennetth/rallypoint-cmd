@@ -69,7 +69,23 @@ cd "$INSTALL_DIR"
 export HOME="$INSTALL_DIR"
 export WINEPREFIX="$INSTALL_DIR/.wine"
 export WINEDEBUG=-all
-exec /usr/bin/wine64 $START_CMD
+# Resolve the Wine loader at run time, not install time: Debian ships the
+# 64-bit loader under the wine64 name on some releases and only as a single
+# multi-arch "wine" binary on others, and Wine >= 9 dropped the wine64 name
+# entirely. Hardcoding an absolute path turns a missing binary into an opaque
+# "exec: not found" from the unit.
+WINE_BIN="\${WINE_BIN:-}"
+if [ -z "\$WINE_BIN" ]; then
+  for c in wine64 wine; do
+    if command -v "\$c" >/dev/null 2>&1; then WINE_BIN="\$(command -v "\$c")"; break; fi
+  done
+fi
+if [ -z "\$WINE_BIN" ]; then
+  echo "$SLUG: no Wine loader found (looked for wine64, wine on PATH)." >&2
+  echo "Install it in the container:  apt-get install -y wine wine64 || apt-get install -y wine" >&2
+  exit 127
+fi
+exec "\$WINE_BIN" $START_CMD
 EOF
     else
       cat > "$CONF_ROOT/$SLUG/start.sh" <<EOF
