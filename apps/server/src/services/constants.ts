@@ -55,3 +55,10 @@ export const PAL_APP_MANIFEST = 'steamapps/appmanifest_2394010.acf'
 // sibling dir so the active dir holds exactly the active mods.
 export const PAL_MODS_DIR = 'Pal/Content/Paks/~mods'
 export const PAL_MODS_DISABLED_DIR = 'Pal/Content/Paks/~mods-disabled'
+
+// Paths inside an Enshrouded install dir. The server generates
+// enshrouded_server.json on first boot; saveDirectory/logDirectory are
+// panel-managed to these values so backups and the registry stay truthful.
+export const ENSHROUDED_SERVER_JSON = 'enshrouded_server.json'
+export const ENSHROUDED_SAVE_DIR = 'savegame'
+export const ENSHROUDED_LOG_DIR = 'logs'

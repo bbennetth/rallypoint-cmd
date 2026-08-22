@@ -12,7 +12,6 @@ import { createFakeInstanceServices } from './fake/index.js'
 import { servers } from '../db/schema/index.js'
 import { createSettingsService } from './settings-ini.js'
 import {
-  classifyEntry,
   copySaveTree,
   createBackupService,
   isSafeEntryPath,
@@ -20,6 +19,7 @@ import {
   walkFiles,
   type BackupService,
 } from './backup.js'
+import { palworldContract } from './backup-contracts.js'
 import type { OpSink } from './types.js'
 import { vi } from 'vitest'
 
@@ -107,6 +107,7 @@ beforeEach(async () => {
     serverId: SERVER_ID,
     installDir: installDir,
     backupDir: env.BACKUP_DIR,
+    contract: palworldContract,
   }
   service = createBackupService(deps)
 })
@@ -255,10 +256,13 @@ describe('path-safety guard (pure)', () => {
   })
 
   it('classifies entries against the archive contract', () => {
-    expect(classifyEntry('manifest.json').kind).toBe('manifest')
-    expect(classifyEntry('PalWorldSettings.ini').kind).toBe('settings')
-    expect(classifyEntry(`SaveGames/0/${WORLD}/Level.sav`)).toEqual({ kind: 'save', worldId: WORLD })
-    expect(classifyEntry('evil.sh').kind).toBe('unknown')
+    expect(palworldContract.classifyEntry('manifest.json').kind).toBe('manifest')
+    expect(palworldContract.classifyEntry('PalWorldSettings.ini').kind).toBe('settings')
+    expect(palworldContract.classifyEntry(`SaveGames/0/${WORLD}/Level.sav`)).toEqual({
+      kind: 'save',
+      worldId: WORLD,
+    })
+    expect(palworldContract.classifyEntry('evil.sh').kind).toBe('unknown')
   })
 
   it('validateArchiveEntries rejects a traversal entry and a bomb', () => {
@@ -269,6 +273,7 @@ describe('path-safety guard (pure)', () => {
           { path: '../../etc/passwd', type: 'File', size: 10 },
         ],
         { maxEntries: 100, maxUncompressed: 1000 },
+        palworldContract,
       ),
     ).toThrowError(/unsafe path/)
     expect(() =>
@@ -278,6 +283,7 @@ describe('path-safety guard (pure)', () => {
           { path: `SaveGames/0/${WORLD}/Level.sav`, type: 'File', size: 10_000 },
         ],
         { maxEntries: 100, maxUncompressed: 500 },
+        palworldContract,
       ),
     ).toThrowError(/size cap/)
   })

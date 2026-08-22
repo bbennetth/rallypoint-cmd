@@ -3,7 +3,7 @@ import { rawSettingsSchema, settingsPatchSchema } from '@rallypoint-cmd/shared'
 import type { HonoApp } from '../context.js'
 import { ApiError, errors } from '../errors.js'
 import { requireSession } from '../middleware/session.js'
-import { IniParseError } from '../services/settings-ini.js'
+import { SettingsParseError } from '../services/settings-ini.js'
 import { requireCapability } from '../middleware/capability.js'
 
 export const settingsRoutes = new Hono<HonoApp>()
@@ -13,7 +13,7 @@ settingsRoutes.use('/settings', settingsGate)
 settingsRoutes.use('/settings/*', settingsGate)
 
 function mapIniError(err: unknown): never {
-  if (err instanceof IniParseError) {
+  if (err instanceof SettingsParseError) {
     throw new ApiError({ code: 'ini_invalid', message: err.message, status: 400 })
   }
   throw err
@@ -22,8 +22,8 @@ function mapIniError(err: unknown): never {
 settingsRoutes.get('/settings', requireSession, (c) => {
   const { settings } = c.get('services')
   try {
-    const { entries } = settings.read()
-    return c.json({ entries, pendingRestart: settings.getPendingRestart() })
+    const { entries, categories } = settings.read()
+    return c.json({ entries, categories, pendingRestart: settings.getPendingRestart() })
   } catch (err) {
     mapIniError(err)
   }

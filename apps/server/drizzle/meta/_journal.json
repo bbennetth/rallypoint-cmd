@@ -15,6 +15,13 @@
       "when": 1786666141546,
       "tag": "0001_unique_miss_america",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787407182786,
+      "tag": "0002_magical_morlocks",
+      "breakpoints": true
     }
   ]
 }

@@ -14,9 +14,8 @@ import type { Logger } from '../logger.js'
 import { backups } from '../db/schema/index.js'
 import type { GameControl, GameQuery, OpSink, SteamCmd } from './types.js'
 import type { SettingsService } from './settings-ini.js'
-import { PAL_GAME_USER_SETTINGS_INI, PAL_SAVE_ROOT, PAL_SETTINGS_INI } from './constants.js'
+import type { WorldContract } from './backup-contracts.js'
 import { assertDiskFloor } from './disk.js'
-import { resolveWorldId, saveDirFor } from './world.js'
 
 // Backup + restore engine — the panel's highest-risk surface. Every
 // guardrail here is deliberate:
@@ -29,7 +28,6 @@ import { resolveWorldId, saveDirFor } from './world.js'
 //  * restore: stop game → rename live saves aside (rollback) → rename
 //    staged saves in → restart → verify; ANY failure rolls back.
 
-const HEX32 = /^[0-9A-Fa-f]{32}$/
 const MAX_ENTRIES = 20_000
 // Palworld's own rotating in-save backups (bIsUseBackupSaveData=True).
 // Not world state: excluded from our archives, and the main reason a
@@ -46,31 +44,20 @@ export function isSafeEntryPath(entryPath: string): boolean {
   return true
 }
 
-// Which part of our archive contract an entry satisfies (or 'unknown',
-// which is rejected). Exported for direct unit testing.
-export function classifyEntry(
-  entryPath: string,
-): { kind: 'manifest' | 'settings' | 'dir' } | { kind: 'save'; worldId: string } | { kind: 'unknown' } {
-  const clean = entryPath.replace(/\\/g, '/').replace(/\/$/, '')
-  if (clean === 'manifest.json') return { kind: 'manifest' }
-  if (clean === 'PalWorldSettings.ini' || clean === 'GameUserSettings.ini') return { kind: 'settings' }
-  if (clean === 'SaveGames' || clean === 'SaveGames/0') return { kind: 'dir' }
-  const m = clean.match(/^SaveGames\/0\/([^/]+)(\/|$)/)
-  if (m) return { kind: 'save', worldId: m[1]! }
-  return { kind: 'unknown' }
-}
-
-// Validate the full entry list from a staged archive. Throws BackupError
-// on the first violation; returns the discovered world id set on success.
+// Validate the full entry list from a staged archive against the game's
+// world contract. Throws BackupError on the first violation; returns the
+// archive's world id (null for world-id-free games) on success.
 export function validateArchiveEntries(
   entries: { path: string; type: string; size: number }[],
   caps: { maxEntries: number; maxUncompressed: number },
-): { saveWorldIds: Set<string> } {
+  contract: WorldContract,
+): { worldId: string | null } {
   if (entries.length > caps.maxEntries) {
     throw new BackupError(`Archive has more than ${caps.maxEntries} entries.`, 'archive_invalid')
   }
   let totalUncompressed = 0
   let sawManifest = false
+  let saveFileCount = 0
   const saveWorldIds = new Set<string>()
   for (const entry of entries) {
     totalUncompressed += entry.size
@@ -86,22 +73,17 @@ export function validateArchiveEntries(
     if (!isSafeEntryPath(entry.path)) {
       throw new BackupError('Archive contains an unsafe path.', 'archive_invalid')
     }
-    const c = classifyEntry(entry.path)
+    const c = contract.classifyEntry(entry.path)
     if (c.kind === 'manifest') sawManifest = true
     else if (c.kind === 'save') {
-      if (!HEX32.test(c.worldId)) {
-        throw new BackupError(`Unexpected world dir in archive: ${c.worldId}`, 'archive_invalid')
-      }
-      saveWorldIds.add(c.worldId)
+      if (entry.type === 'File') saveFileCount++
+      if (c.worldId != null) saveWorldIds.add(c.worldId)
     } else if (c.kind === 'unknown') {
       throw new BackupError(`Unexpected entry in archive: ${entry.path}`, 'archive_invalid')
     }
   }
   if (!sawManifest) throw new BackupError('Archive is missing manifest.json.', 'archive_invalid')
-  if (saveWorldIds.size !== 1) {
-    throw new BackupError('Archive must contain exactly one world save.', 'archive_invalid')
-  }
-  return { saveWorldIds }
+  return { worldId: contract.validateSaveShape(saveWorldIds, saveFileCount) }
 }
 
 export class BackupError extends Error {
@@ -144,6 +126,9 @@ interface BackupDeps {
   serverId: string
   installDir: string
   backupDir: string
+  // Per-game archive/world semantics (save layout, entry allowlist,
+  // restore fixups) — see backup-contracts.ts.
+  contract: WorldContract
 }
 
 // Walk a directory tree, tolerating live-server churn (vanished dirs and
@@ -187,8 +172,9 @@ export function copySaveTree(
   srcRoot: string,
   destRoot: string,
   onProgress?: (copiedBytes: number, totalBytes: number) => void,
+  excludeTopDirs: readonly string[] = PAL_INTERNAL_BACKUP_DIRS,
 ): { copiedBytes: number; skipped: string[] } {
-  const files = walkFiles(srcRoot, '', PAL_INTERNAL_BACKUP_DIRS)
+  const files = walkFiles(srcRoot, '', excludeTopDirs)
   const totalBytes = files.reduce((a, f) => a + f.size, 0)
   let copiedBytes = 0
   const skipped: string[] = []
@@ -211,7 +197,7 @@ export function copySaveTree(
 }
 
 export function createBackupService(deps: BackupDeps): BackupService {
-  const { env, db, logger, serverId, installDir, backupDir } = deps
+  const { env, db, logger, serverId, installDir, backupDir, contract } = deps
   const stagingRoot = path.join(env.DATA_DIR, 'staging')
   const rollbackRoot = path.join(env.DATA_DIR, 'rollback')
 
@@ -243,26 +229,27 @@ export function createBackupService(deps: BackupDeps): BackupService {
     async create(kind, sink): Promise<Backup> {
       const say = (line: string): void => sink?.line(line)
       const pct = (n: number): void => sink?.progress(n)
-      const worldId = resolveWorldId(installDir)
-      if (!worldId) throw new BackupError('No world found to back up.', 'no_world')
-      const saveDir = saveDirFor(installDir, worldId)
+      const live = contract.resolveLive(installDir)
+      if (!live) throw new BackupError('No world found to back up.', 'no_world')
+      const { worldId, saveDir } = live
 
       // Disk floor: project roughly the save dir size (compressed will be
       // smaller; copy + archive both live on disk briefly). Excludes the
       // game's internal backup/ dir — we don't archive it.
-      const saveFiles = walkFiles(saveDir, '', PAL_INTERNAL_BACKUP_DIRS)
+      const saveFiles = walkFiles(saveDir, '', contract.internalBackupDirs)
       const saveBytes = saveFiles.reduce((a, f) => a + f.size, 0)
       await assertDiskFloor(backupDir, saveBytes * 2, env.DISK_FLOOR_BYTES)
       pct(2)
 
-      // Best-effort flush; a cold backup (game down) is fine too.
-      say('[backup] Requesting world save via REST...')
+      // Best-effort flush; a cold backup (game down or no save-flush API)
+      // is fine too — it captures the latest on-disk state.
+      say('[backup] Requesting world save flush...')
       try {
         await deps.query.save()
-        // Palworld flushes asynchronously; give it a moment.
+        // The game flushes asynchronously; give it a moment.
         await new Promise((r) => setTimeout(r, 2000))
       } catch {
-        say('[backup] REST save unavailable (game down?) — taking a cold backup.')
+        say('[backup] No save-flush API available (game down or unsupported) — backing up latest on-disk state.')
       }
 
       const stageId = ulid()
@@ -273,17 +260,22 @@ export function createBackupService(deps: BackupDeps): BackupService {
         // Churn-tolerant: skips the game's own backup/ dir and files that
         // vanish mid-copy instead of aborting (progress: 2 → 40).
         say('[backup] Copying save data...')
-        const stagedSave = path.join(archiveRoot, 'SaveGames', '0', worldId)
+        const stagedSave = path.join(archiveRoot, contract.archiveSaveRoot(worldId))
         fs.mkdirSync(path.dirname(stagedSave), { recursive: true })
-        const { skipped } = copySaveTree(saveDir, stagedSave, (done, total) => {
-          if (total > 0) pct(2 + (done / total) * 38)
-        })
+        const { skipped } = copySaveTree(
+          saveDir,
+          stagedSave,
+          (done, total) => {
+            if (total > 0) pct(2 + (done / total) * 38)
+          },
+          contract.internalBackupDirs,
+        )
         if (skipped.length > 0) {
           say(`[backup] Skipped ${skipped.length} file(s) that changed mid-copy (server is live).`)
         }
-        for (const ini of [PAL_SETTINGS_INI, PAL_GAME_USER_SETTINGS_INI]) {
-          const src = path.join(installDir, ini)
-          if (fs.existsSync(src)) fs.copyFileSync(src, path.join(archiveRoot, path.basename(ini)))
+        for (const cfg of contract.configFiles) {
+          const src = path.join(installDir, cfg)
+          if (fs.existsSync(src)) fs.copyFileSync(src, path.join(archiveRoot, path.basename(cfg)))
         }
         pct(40)
 
@@ -293,6 +285,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
         const manifest: BackupManifest = {
           schemaVersion: 1,
           createdAt: new Date().toISOString(),
+          game: contract.gameSlug,
           worldId,
           buildId: await deps.steamcmd.installedBuildId(),
           panelVersion: env.PANEL_VERSION,
@@ -314,7 +307,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
         // 3. Tar to a temp file IN BACKUP_DIR (same fs) then atomic rename
         // (progress: 75 → 95 on completion; tar has no per-byte callback).
         const stamp = new Date().toISOString().replace(/[:]/g, '-').replace(/\.\d+Z$/, 'Z')
-        const filename = `palworld-${worldId.slice(0, 8)}-${stamp}.tar.gz`
+        const filename = `${contract.filenamePrefix}${worldId ? `-${worldId.slice(0, 8)}` : ''}-${stamp}.tar.gz`
         fs.mkdirSync(backupDir, { recursive: true })
         const tmpFile = path.join(backupDir, `.tmp-${stageId}.tar.gz`)
         say('[backup] Compressing archive...')
@@ -432,11 +425,14 @@ export function createBackupService(deps: BackupDeps): BackupService {
       }
 
       try {
-        const { saveWorldIds } = validateArchiveEntries(listed, {
-          maxEntries: MAX_ENTRIES,
-          maxUncompressed: env.MAX_UNCOMPRESSED_BYTES,
-        })
-        const archiveWorldId = [...saveWorldIds][0]!
+        const { worldId: archiveWorldId } = validateArchiveEntries(
+          listed,
+          {
+            maxEntries: MAX_ENTRIES,
+            maxUncompressed: env.MAX_UNCOMPRESSED_BYTES,
+          },
+          contract,
+        )
 
         // 3. Extract into staging. Safe: every entry already passed the
         // strict validation above, and node-tar strips traversal by
@@ -456,14 +452,25 @@ export function createBackupService(deps: BackupDeps): BackupService {
         // 4. Manifest ↔ content cross-check.
         const manifestRaw = fs.readFileSync(path.join(extractDir, 'manifest.json'), 'utf8')
         const manifest = backupManifestSchema.parse(JSON.parse(manifestRaw))
-        if (manifest.worldId.toLowerCase() !== archiveWorldId.toLowerCase()) {
+        // Archives written before the manifest carried a game field are
+        // all Palworld (the only world-capable game back then).
+        const manifestGame = manifest.game ?? 'palworld'
+        if (manifestGame !== contract.gameSlug) {
+          throw new BackupError(
+            `Archive is a ${manifestGame} backup — it cannot be restored to a ${contract.gameSlug} server.`,
+            'archive_invalid',
+          )
+        }
+        if (
+          manifest.worldId !== null &&
+          archiveWorldId !== null &&
+          manifest.worldId.toLowerCase() !== archiveWorldId.toLowerCase()
+        ) {
           throw new BackupError('manifest.json worldId does not match the archived save dir.', 'archive_invalid')
         }
-        if (!fs.existsSync(path.join(extractDir, 'SaveGames', '0', archiveWorldId, 'Level.sav'))) {
-          throw new BackupError('Archive save dir has no Level.sav — not a Palworld world.', 'archive_invalid')
-        }
+        contract.verifyExtracted(extractDir)
 
-        const currentWorldId = resolveWorldId(installDir)
+        const currentWorldId = contract.resolveLive(installDir)?.worldId ?? null
         logger.info('restore staged', { stagingId, worldId: manifest.worldId })
         return {
           stagingId,
@@ -471,6 +478,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
           currentWorldId,
           worldIdMismatch:
             currentWorldId !== null &&
+            manifest.worldId !== null &&
             currentWorldId.toLowerCase() !== manifest.worldId.toLowerCase(),
         }
       } catch (err) {
@@ -503,11 +511,14 @@ export function createBackupService(deps: BackupDeps): BackupService {
       )
       // Server-side confirmation — the UI asks the user to type the world
       // id (or "restore"); we never trust a bare button click.
-      if (confirm.toLowerCase() !== manifest.worldId.toLowerCase() && confirm !== 'restore') {
+      const token = contract.confirmToken(manifest)
+      if (confirm !== 'restore' && (token === null || confirm.toLowerCase() !== token.toLowerCase())) {
         throw new BackupError('Confirmation text did not match.', 'confirm_mismatch')
       }
 
-      const saveRoot = path.join(installDir, PAL_SAVE_ROOT)
+      const { stagedDir: stagedWorldDir, worldId: targetWorldId } = contract.stagedSaveTarget(extractDir)
+      const liveWorldDir = contract.liveSaveDirIn(installDir, targetWorldId)
+      const saveRoot = path.dirname(liveWorldDir)
       // Preflight: root-owned save dirs (e.g. from a manual `pct push`
       // import) make every fs op below fail with EACCES. Fail up front
       // with an actionable message instead of a bare errno.
@@ -518,18 +529,12 @@ export function createBackupService(deps: BackupDeps): BackupService {
         const code = (err as NodeJS.ErrnoException).code
         if (code === 'EACCES' || code === 'EPERM') {
           throw new BackupError(
-            `The panel user cannot write ${saveRoot} (some files are probably root-owned from a manual copy). Fix inside the container with: chown -R rallypoint:rallypoint ${installDir}/Pal/Saved`,
+            `The panel user cannot write ${saveRoot} (some files are probably root-owned from a manual copy). Fix inside the container with: chown -R rallypoint:rallypoint ${installDir}`,
             'restore_failed',
           )
         }
         throw err
       }
-      const stagedWorldDir = ((): string => {
-        const dirs = fs.readdirSync(path.join(extractDir, 'SaveGames', '0'))
-        return path.join(extractDir, 'SaveGames', '0', dirs[0]!)
-      })()
-      const targetWorldId = path.basename(stagedWorldDir)
-      const liveWorldDir = path.join(saveRoot, targetWorldId)
 
       const statusBefore = await deps.gameControl.status()
       // The real status() maps a failed `systemctl show` to
@@ -563,7 +568,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
       const rollbackDir = path.join(rollbackRoot, ulid())
       fs.mkdirSync(rollbackDir, { recursive: true })
       const hadLiveWorld = fs.existsSync(liveWorldDir)
-      const rollbackWorldDir = path.join(rollbackDir, targetWorldId)
+      const rollbackWorldDir = path.join(rollbackDir, path.basename(liveWorldDir))
 
       try {
         if (hadLiveWorld) {
@@ -575,7 +580,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
 
         // 3. Swap staged world in (rename — same fs? staging lives in
         // DATA_DIR which may be another fs; fall back to copy).
-        say(`[restore] Installing world ${targetWorldId}...`)
+        say(`[restore] Installing ${targetWorldId ? `world ${targetWorldId}` : 'archived save data'}...`)
         try {
           fs.renameSync(stagedWorldDir, liveWorldDir)
         } catch {
@@ -584,65 +589,34 @@ export function createBackupService(deps: BackupDeps): BackupService {
         pct(55)
         await flush()
 
-        // 4. Point DedicatedServerName at the restored world if it moved.
-        // CASE MATTERS: the game joins this string onto the save path
-        // directly, and Linux filesystems are case-sensitive — a
-        // lowercased id pointing at an UPPERCASE dir makes Palworld
-        // silently create a FRESH world under the lowercase name (fresh
-        // world, fresh characters) while the panel keeps showing and
-        // backing up the restored dir. Write the dir's exact name.
-        const gusPath = path.join(installDir, PAL_GAME_USER_SETTINGS_INI)
-        if (fs.existsSync(gusPath)) {
-          const gus = fs.readFileSync(gusPath, 'utf8')
-          const updated = gus.replace(
-            /DedicatedServerName\s*=\s*[0-9A-Fa-f]{32}/,
-            `DedicatedServerName=${targetWorldId}`,
-          )
-          if (updated !== gus) {
-            say('[restore] Updating DedicatedServerName to match restored world.')
-            fs.writeFileSync(gusPath, updated)
-          }
-        }
-        // A sibling dir differing only by case (e.g. a fresh world the
-        // game created off a wrongly-cased DedicatedServerName) is a trap
-        // — call it out so a puzzled operator can see it.
-        for (const sibling of fs.readdirSync(saveRoot)) {
-          if (sibling !== targetWorldId && sibling.toLowerCase() === targetWorldId.toLowerCase()) {
-            say(
-              `[restore] WARNING: a case-mismatched sibling save dir exists (${sibling}) — the server now uses ${targetWorldId}; the sibling is likely a stray auto-created world and can be deleted.`,
-            )
-          }
-        }
+        // 4. Game-specific post-swap fixups (Palworld: point
+        // DedicatedServerName at the restored world + warn about stray
+        // case-mismatched siblings; world-id-free games: no-op).
+        contract.postSwapFixup({ installDir, targetWorldId, say })
 
         // 4b. Import the archived server settings, if the backup carried
-        // them. writeRaw round-trips through the tuple parser and
-        // re-enforces the panel invariants (REST on + panel-managed
-        // AdminPassword, RCON off) — an imported ini can never lock the
-        // panel out of the game. Best-effort: a malformed ini shouldn't
-        // sink an otherwise-good world restore.
-        const archivedIni = path.join(extractDir, 'PalWorldSettings.ini')
-        if (fs.existsSync(archivedIni)) {
+        // them. writeRaw round-trips through the game's settings parser
+        // and re-enforces the panel invariants — an imported settings
+        // file can never lock the panel out of the game. Best-effort: a
+        // malformed file shouldn't sink an otherwise-good world restore.
+        const importFile = contract.settingsImportFile
+        const archivedSettings = importFile ? path.join(extractDir, path.basename(importFile)) : null
+        if (importFile && archivedSettings && fs.existsSync(archivedSettings)) {
           try {
-            deps.settings.writeRaw(fs.readFileSync(archivedIni, 'utf8'))
+            deps.settings.writeRaw(fs.readFileSync(archivedSettings, 'utf8'))
             say('[restore] Imported server settings from the backup (panel-managed keys re-enforced).')
           } catch (err) {
             say(
-              `[restore] Backup contained PalWorldSettings.ini but it failed to parse — keeping current settings (${err instanceof Error ? err.message : String(err)}).`,
+              `[restore] Backup contained ${path.basename(importFile)} but it failed to parse — keeping current settings (${err instanceof Error ? err.message : String(err)}).`,
             )
           }
         }
         pct(65)
         await flush()
 
-        // 4c. Sanity: the panel must now resolve the restored world as
-        // the active one, or the game would boot something else entirely.
-        const resolved = resolveWorldId(installDir)
-        if (resolved?.toLowerCase() !== targetWorldId.toLowerCase()) {
-          throw new BackupError(
-            `World swap did not take: the active world resolves to ${resolved ?? 'none'} instead of ${targetWorldId}.`,
-            'restore_failed',
-          )
-        }
+        // 4c. Sanity: the restored save must now be the active one, or
+        // the game would boot something else entirely.
+        contract.verifySwap(installDir, targetWorldId)
 
         // 5. Restart + verify. The (re)start applies any imported ini, so
         // the pending-restart banner would be stale — clear it. "Verify"

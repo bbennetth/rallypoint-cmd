@@ -10,6 +10,9 @@ import type { OpSink, SteamCmd } from './types.js'
 export interface SteamCmdTarget {
   steamAppId: number
   installDir: string
+  // 'windows' forces the Windows depot (Wine-run servers, e.g.
+  // Enshrouded); absent = the native Linux depot.
+  platform?: 'windows' | undefined
 }
 
 // Real SteamCMD driver. Progress lines look like:
@@ -38,20 +41,27 @@ export function decideSteamcmdOutcome(o: {
   return { ok: false, message: `SteamCMD exited with code ${o.code} without reporting success` }
 }
 
+// Pure arg builder, exported for unit testing. The platform override
+// must precede +login — SteamCMD applies it at login time.
+export function steamcmdArgs(target: SteamCmdTarget, kind: 'install' | 'update' | 'validate'): string[] {
+  return [
+    ...(target.platform === 'windows' ? ['+@sSteamCmdForcePlatformType', 'windows'] : []),
+    '+force_install_dir',
+    target.installDir,
+    '+login',
+    'anonymous',
+    '+app_update',
+    String(target.steamAppId),
+    ...(kind === 'validate' || kind === 'install' ? ['validate'] : []),
+    '+quit',
+  ]
+}
+
 export function createRealSteamCmd(env: Env, logger: Logger, target: SteamCmdTarget): SteamCmd {
   return {
     run(kind, sink: OpSink): Promise<void> {
       return new Promise((resolve, reject) => {
-        const args = [
-          `+force_install_dir`,
-          target.installDir,
-          '+login',
-          'anonymous',
-          '+app_update',
-          String(target.steamAppId),
-          ...(kind === 'validate' || kind === 'install' ? ['validate'] : []),
-          '+quit',
-        ]
+        const args = steamcmdArgs(target, kind)
         sink.line(`$ steamcmd ${args.join(' ')}`)
         const child = spawn(env.STEAMCMD_BIN, args, {
           stdio: ['ignore', 'pipe', 'pipe'],

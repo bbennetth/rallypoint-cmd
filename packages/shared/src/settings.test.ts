@@ -34,11 +34,14 @@ describe('settings contract', () => {
           enumValues: null,
           managed: false,
           label: 'XP rate',
+          category: 'World & Gameplay',
         },
       ],
+      categories: ['World & Gameplay'],
       pendingRestart: false,
     })
     expect(res.entries[0]?.key).toBe('ExpRate')
+    expect(res.entries[0]?.category).toBe('World & Gameplay')
   })
 })
 
@@ -80,6 +83,29 @@ describe('backup manifest contract', () => {
       files: [],
     })
     expect(bad.success).toBe(false)
+  })
+
+  it('accepts a null world id and a game field (world-id-free games)', () => {
+    const res = backupManifestSchema.safeParse({
+      schemaVersion: 1,
+      createdAt: '2026-08-22T00:00:00Z',
+      game: 'enshrouded',
+      worldId: null,
+      buildId: '123456',
+      panelVersion: '0.1.0',
+      files: [],
+    })
+    expect(res.success).toBe(true)
+    const traversal = backupManifestSchema.safeParse({
+      schemaVersion: 1,
+      createdAt: '2026-08-22T00:00:00Z',
+      game: 'enshrouded',
+      worldId: '../evil',
+      buildId: null,
+      panelVersion: '0.1.0',
+      files: [],
+    })
+    expect(traversal.success).toBe(false)
   })
 })
 

@@ -16,7 +16,9 @@ import { createRealJournal } from './journal.real.js'
 import { createRealPalRest } from './pal-rest.real.js'
 import { createRealSteamCmd } from './steamcmd.real.js'
 import { createSettingsService } from './settings-ini.js'
+import { createEnshroudedSettings } from './settings-json.js'
 import { createBackupService } from './backup.js'
+import { contractFor } from './backup-contracts.js'
 import { createModsService } from './mods.js'
 import { createScheduler } from './scheduler.js'
 import { createFakePanelUpdate, createRealPanelUpdate } from './panel-update.js'
@@ -76,7 +78,14 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
             stateKey,
             restPort: game.ports.find((p) => p.name === 'rest')?.port ?? 8212,
           })
-        : createNullSettings(db, game, stateKey)
+        : game.settingsAdapter === 'enshrouded-json'
+          ? createEnshroudedSettings(env, db, {
+              installDir: row.installDir,
+              stateKey,
+              gamePort: game.ports.find((p) => p.name === 'game')?.port ?? 15636,
+              queryPort: game.ports.find((p) => p.name === 'query')?.port ?? 15637,
+            })
+          : createNullSettings(db, game, stateKey)
     const mods =
       game.capabilities.mods === 'ue-paks'
         ? createModsService(env, logger, row.installDir)
@@ -102,6 +111,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
               steamcmd: createRealSteamCmd(env, logger, {
                 steamAppId: game.steamAppId,
                 installDir: row.installDir,
+                platform: game.platform,
               }),
               dispose: () => journal.stop(),
             }
@@ -119,6 +129,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
           serverId: row.id,
           installDir: row.installDir,
           backupDir,
+          contract: contractFor(game),
         })
       : createNullBackup(game)
     backup.pruneStaging()

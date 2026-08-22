@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import type { SettingsEntry, SettingValue } from '@rallypoint-cmd/shared'
-import { MANAGED_KEYS, PAL_KEY_SPECS } from '@rallypoint-cmd/shared'
+import { MANAGED_KEYS, PAL_KEY_SPECS, SETTINGS_CATEGORIES } from '@rallypoint-cmd/shared'
 import type { Db } from '../db/client.js'
 import type { Env } from '../env.js'
 import { panelState } from '../db/schema/index.js'
@@ -27,7 +27,16 @@ export interface ParsedIni {
   suffix: string
 }
 
-export class IniParseError extends Error {
+// Base class for settings-file parse/validation failures across all
+// adapters (INI, JSON) — routes map it to a 400.
+export class SettingsParseError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'SettingsParseError'
+  }
+}
+
+export class IniParseError extends SettingsParseError {
   constructor(message: string) {
     super(message)
     this.name = 'IniParseError'
@@ -205,7 +214,7 @@ export function applyInvariants(parsed: ParsedIni, restPort: number): void {
 // --- service ----------------------------------------------------------------
 
 export interface SettingsService {
-  read(): { entries: SettingsEntry[] }
+  read(): { entries: SettingsEntry[]; categories: string[] }
   writeStructured(values: Record<string, SettingValue>): void
   readRaw(): string
   writeRaw(content: string): void
@@ -275,9 +284,10 @@ export function createSettingsService(env: Env, db: Db, target: SettingsTarget):
           enumValues: spec?.enumValues ? [...spec.enumValues] : null,
           managed: spec?.managed ?? false,
           label: spec?.label ?? null,
+          category: spec?.category ?? null,
         }
       })
-      return { entries }
+      return { entries, categories: [...SETTINGS_CATEGORIES] }
     },
 
     writeStructured(values) {

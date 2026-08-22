@@ -13,7 +13,8 @@ export const backupSchema = z.object({
   filename: z.string(),
   sizeBytes: z.number().int().nonnegative(),
   sha256: z.string(),
-  worldId: z.string(),
+  // Null for games without named worlds (e.g. Enshrouded).
+  worldId: z.string().nullable(),
   buildId: z.string().nullable(),
   kind: backupKindSchema,
   createdAtMs: z.number().int().nonnegative(),
@@ -30,7 +31,11 @@ export type BackupsResponse = z.infer<typeof backupsResponseSchema>
 export const backupManifestSchema = z.object({
   schemaVersion: z.literal(1),
   createdAt: z.string(), // UTC ISO 8601
-  worldId: z.string().regex(/^[0-9A-Fa-f]{32}$/),
+  // Which game's archive this is. Absent in archives written before
+  // multi-game backups existed — those are all Palworld.
+  game: z.string().optional(),
+  // Null for games without named worlds (e.g. Enshrouded).
+  worldId: z.string().regex(/^[0-9A-Fa-f]{32}$/).nullable(),
   buildId: z.string().nullable(),
   panelVersion: z.string(),
   files: z.array(

@@ -25,6 +25,38 @@ AudioSettings=(Master=1.000000)
 DedicatedServerName=${FAKE_WORLD_ID.toLowerCase()}
 `
 
+const DEFAULT_ENSHROUDED_JSON = {
+  name: 'Fake Enshrouded Server',
+  password: '',
+  saveDirectory: './savegame',
+  logDirectory: './logs',
+  ip: '0.0.0.0',
+  queryPort: 15637,
+  slotCount: 16,
+  gameSettingsPreset: 'Default',
+  enableVoiceChat: false,
+  enableTextChat: false,
+  gameSettings: {
+    playerHealthFactor: 1,
+    playerManaFactor: 1,
+    playerStaminaFactor: 1,
+    enableDurability: true,
+    tombstoneMode: 'AddBackpackMaterials',
+    enemyDamageFactor: 1,
+    enemyHealthFactor: 1,
+    randomSpawnerAmount: 'Normal',
+    aggroPoolAmount: 'Normal',
+    weatherFrequency: 'Normal',
+    dayTimeDuration: 1_800_000_000_000,
+    nightTimeDuration: 720_000_000_000,
+  },
+  userGroups: [
+    { name: 'Admin', password: 'AdminXXXXXXXX', canKickBan: true },
+    { name: 'Friend', password: 'FriendXXXXXXXX', canKickBan: false },
+    { name: 'Guest', password: 'GuestXXXXXXXX', canKickBan: false },
+  ],
+}
+
 type FakeGameState = 'inactive' | 'activating' | 'active' | 'deactivating' | 'failed'
 
 class FakeWorld {
@@ -76,6 +108,18 @@ class FakeWorld {
       fs.writeFileSync(path.join(saveDir, 'LevelMeta.sav'), Buffer.from('fake-level-meta'))
       fs.mkdirSync(path.join(saveDir, 'Players'), { recursive: true })
       fs.writeFileSync(path.join(saveDir, 'Players', 'fake-player.sav'), Buffer.from('fake-player'))
+    } else if (this.game.slug === 'enshrouded') {
+      // Config + save layout the full-support services (JSON settings,
+      // world-id-free backups) expect.
+      const cfg = path.join(root, 'enshrouded_server.json')
+      if (!fs.existsSync(cfg)) fs.writeFileSync(cfg, `${JSON.stringify(DEFAULT_ENSHROUDED_JSON, null, 4)}\n`)
+      const saveDir = path.join(root, 'savegame')
+      fs.mkdirSync(saveDir, { recursive: true })
+      if (!fs.existsSync(path.join(saveDir, '3ad85aea'))) {
+        fs.writeFileSync(path.join(saveDir, '3ad85aea'), Buffer.from('fake-enshrouded-world'))
+        fs.writeFileSync(path.join(saveDir, '3ad85aea-index'), Buffer.from('fake-enshrouded-index'))
+      }
+      fs.mkdirSync(path.join(root, 'logs'), { recursive: true })
     } else {
       for (const savePath of this.game.savePaths) {
         fs.mkdirSync(path.join(root, savePath), { recursive: true })
