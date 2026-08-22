@@ -15,7 +15,7 @@ export function ConsolePage() {
   const [autoscroll, setAutoscroll] = useState(true)
   // Broadcast needs an admin/query API; hide it for games without one.
   const game = useCurrentGame()
-  const canAnnounce = game ? game.capabilities.query !== 'none' : false
+  const canAnnounce = game ? game.capabilities.query === 'pal-rest' : false
 
   async function announce(e: React.FormEvent) {
     e.preventDefault()

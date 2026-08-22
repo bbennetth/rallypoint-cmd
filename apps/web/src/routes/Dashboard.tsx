@@ -130,10 +130,15 @@ export function DashboardPage() {
             label="Players"
             value={metrics ? `${metrics.currentplayernum}/${metrics.maxplayernum}` : '—'}
           />
-          <Stat label="Server FPS" value={metrics ? metrics.serverfps : '—'} />
+          <Stat label="Server FPS" value={metrics?.serverfps ?? '—'} />
           <Stat
             label="Uptime"
-            value={formatUptime(metrics?.uptime)}
+            value={formatUptime(
+              metrics?.uptime ??
+                (running && status.systemd.activeEnterAtMs
+                  ? Math.floor((Date.now() - status.systemd.activeEnterAtMs) / 1000)
+                  : undefined),
+            )}
             sub={status.rest.info?.version}
           />
           <Stat

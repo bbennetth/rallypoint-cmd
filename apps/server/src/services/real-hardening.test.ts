@@ -17,6 +17,7 @@ import { parseSystemdTimestamp } from './game-control.real.js'
 import { decideSteamcmdOutcome, steamcmdArgs } from './steamcmd.real.js'
 import { isNewerVersion } from './panel-update.js'
 import { extractTunnelAddress, PlayitTrace, readGamePort } from './public-access.js'
+import { parseA2sInfo } from './a2s.real.js'
 
 describe('parseSystemdTimestamp', () => {
   it('parses the --timestamp=unix form (@epoch seconds → ms)', () => {
@@ -192,6 +193,39 @@ describe('readGamePort (per-server tunnel port)', () => {
 
   it('returns null for an unknown server id', () => {
     expect(readGamePort(instances, 'nope')).toBeNull()
+  })
+})
+
+describe('parseA2sInfo (A2S query fallback)', () => {
+  function buildInfoPacket(): Buffer {
+    const c = (str: string) => Buffer.from(`${str}\0`, 'utf8')
+    return Buffer.concat([
+      Buffer.from([0xff, 0xff, 0xff, 0xff, 0x49, 0x11]), // header, 0x49, protocol
+      c('Rallypoint Enshrouded'), // name
+      c('map'),
+      c('enshrouded'),
+      c('Enshrouded'),
+      Buffer.from([0x6c, 0x22]), // appid int16
+      Buffer.from([3, 16, 0]), // players, max, bots
+      Buffer.from('dlwo', 'latin1'), // type, env, visibility, vac
+      c('0.7.4.0'), // version
+    ])
+  }
+
+  it('parses name, version and player counts from a source-format packet', () => {
+    expect(parseA2sInfo(buildInfoPacket())).toEqual({
+      name: 'Rallypoint Enshrouded',
+      version: '0.7.4.0',
+      players: 3,
+      maxPlayers: 16,
+    })
+  })
+
+  it('rejects non-INFO payloads', () => {
+    expect(() => parseA2sInfo(Buffer.from([0xff, 0xff, 0xff, 0xff, 0x41, 1, 2, 3, 4]))).toThrowError(
+      /not an A2S_INFO/,
+    )
+    expect(() => parseA2sInfo(Buffer.from('junk'))).toThrowError(/not an A2S_INFO/)
   })
 })
 

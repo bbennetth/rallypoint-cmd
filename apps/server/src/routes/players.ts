@@ -13,7 +13,7 @@ export const playerRoutes = new Hono<HonoApp>()
 
 // Whole area gated on the game exposing an admin/query API. (Scoped to
 // these paths — routers mounted at the same prefix share middleware.)
-const playersGate = requireCapability((g) => g.capabilities.query !== 'none', 'player administration')
+const playersGate = requireCapability((g) => g.capabilities.query === 'pal-rest', 'player administration')
 playerRoutes.use('/players', playersGate)
 playerRoutes.use('/players/*', playersGate)
 playerRoutes.use('/save', playersGate)
