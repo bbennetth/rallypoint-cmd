@@ -6,6 +6,7 @@ import { LoginPage } from './routes/Login.js'
 import { ServersPage } from './routes/Servers.js'
 import { DashboardPage } from './routes/Dashboard.js'
 import { ConsolePage } from './routes/Console.js'
+import { MonitoringPage } from './routes/Monitoring.js'
 import { PlayersPage } from './routes/Players.js'
 import { SettingsPage } from './routes/Settings.js'
 import { BackupsPage } from './routes/Backups.js'
@@ -41,6 +42,7 @@ export function App() {
       <Route path="/" element={<RequireAuth><ServersPage /></RequireAuth>} />
       <Route path="/servers/:serverId" element={<RequireAuth><ServerPage page={<DashboardPage />} /></RequireAuth>} />
       <Route path="/servers/:serverId/console" element={<RequireAuth><ServerPage page={<ConsolePage />} /></RequireAuth>} />
+      <Route path="/servers/:serverId/monitoring" element={<RequireAuth><ServerPage page={<MonitoringPage />} /></RequireAuth>} />
       <Route path="/servers/:serverId/players" element={<RequireAuth><ServerPage page={<PlayersPage />} /></RequireAuth>} />
       <Route path="/servers/:serverId/settings" element={<RequireAuth><ServerPage page={<SettingsPage />} /></RequireAuth>} />
       <Route path="/servers/:serverId/updates" element={<RequireAuth><ServerPage page={<UpdatesPage />} /></RequireAuth>} />

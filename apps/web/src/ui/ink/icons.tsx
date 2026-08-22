@@ -84,6 +84,7 @@ export type IconName =
   | 'puzzle'
   | 'upload'
   | 'stop'
+  | 'pulse'
 
 const PATHS: Record<IconName, JSX.Element> = {
   search: (
@@ -329,6 +330,10 @@ const PATHS: Record<IconName, JSX.Element> = {
   ),
   // Filled square. `pause` would misread as "hold", not "shut down".
   stop: <rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor" stroke="none" />,
+  // Monitor trace with one spike. `bar-chart` exists upstream but reads
+  // as a static report; Monitoring is a live signal with excursions,
+  // which is the whole point of the page.
+  pulse: <path d="M1.5 8.5h3L6.4 4l3 8 1.8-3.5h3.3" />,
 }
 
 export function Icon({

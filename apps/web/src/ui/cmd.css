@@ -432,6 +432,38 @@
   color: var(--ink-mute);
 }
 
+/* ─── SPARKLINE ────────────────────────────────────────────── */
+/* Same sunken treatment as the log pane — both are recessed readouts
+   rather than content surfaces. `width: 100%` plus the SVG's
+   preserveAspectRatio="none" is what lets one 240-unit viewBox stretch
+   to any card width. */
+.cmd-spark {
+  display: block;
+  width: 100%;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  box-shadow: inset 0 0 0 1px var(--hairline-soft);
+}
+/* The div fallback shown when there aren't two points to connect. */
+div.cmd-spark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cmd-spark-empty {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink-mute);
+}
+/* Chart caption row: current value on the left, scale/context right. */
+.cmd-spark-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
 /* ─── DIALOG ───────────────────────────────────────────────── */
 /* Chassis-tinted blur rather than black/60 — a black scrim reads as a
    hole punched in the page against the navy chassis. */

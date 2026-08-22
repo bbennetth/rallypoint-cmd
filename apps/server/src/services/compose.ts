@@ -13,6 +13,7 @@ import { WorldLock } from './world-lock.js'
 import { createFakeInstanceServices } from './fake/index.js'
 import { createRealGameControl } from './game-control.real.js'
 import { createRealJournal } from './journal.real.js'
+import { createRealMetricsSampler } from './metrics.real.js'
 import { createRealPalRest } from './pal-rest.real.js'
 import { createA2sQuery } from './a2s.real.js'
 import { createRealSteamCmd } from './steamcmd.real.js'
@@ -98,25 +99,40 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
         : (() => {
             const journal = createRealJournal(logger, row.unitName)
             journal.start()
+            const query =
+              game.capabilities.query === 'pal-rest'
+                ? createRealPalRest(logger, row.installDir)
+                : game.capabilities.query === 'a2s'
+                  ? createA2sQuery(game.ports.find((p) => p.name === 'query')?.port ?? 0)
+                  : createNullQuery(game)
+            // Samples the unit's cgroup on its own timer from panel
+            // start, so the history window is already filled by the time
+            // someone opens the Monitoring page to ask what just happened.
+            const metrics = createRealMetricsSampler(logger, {
+              unitName: row.unitName,
+              game,
+              query,
+              journal,
+            })
+            metrics.start()
             return {
               gameControl: createRealGameControl(env, logger, {
                 unitName: row.unitName,
                 installDir: row.installDir,
                 installedProbe: game.installedProbe,
               }),
-              query:
-                game.capabilities.query === 'pal-rest'
-                  ? createRealPalRest(logger, row.installDir)
-                  : game.capabilities.query === 'a2s'
-                    ? createA2sQuery(game.ports.find((p) => p.name === 'query')?.port ?? 0)
-                    : createNullQuery(game),
+              query,
               journal,
+              metrics,
               steamcmd: createRealSteamCmd(env, logger, {
                 steamAppId: game.steamAppId,
                 installDir: row.installDir,
                 platform: game.platform,
               }),
-              dispose: () => journal.stop(),
+              dispose: () => {
+                metrics.stop()
+                journal.stop()
+              },
             }
           })()
 
@@ -146,6 +162,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
       gameControl: base.gameControl,
       query: base.query,
       journal: base.journal,
+      metrics: base.metrics,
       steamcmd: base.steamcmd,
       settings,
       backup,
@@ -206,6 +223,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
       gameControl: instance.gameControl,
       query: instance.query,
       journal: instance.journal,
+      metrics: instance.metrics,
       steamcmd: instance.steamcmd,
       longOps: instance.longOps,
       worldLock: instance.worldLock,

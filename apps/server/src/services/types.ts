@@ -1,4 +1,4 @@
-import type { GameDef, LongOpKind, PalServerInfo, PalServerMetrics, Player } from '@rallypoint-cmd/shared'
+import type { GameDef, LongOpKind, MetricsSnapshot, PalServerInfo, PalServerMetrics, Player } from '@rallypoint-cmd/shared'
 import type { WorldLock } from './world-lock.js'
 import type { LongOpRunner } from './long-op.js'
 import type { SettingsService } from './settings-ini.js'
@@ -57,6 +57,17 @@ export interface Journal {
   stop(): void
 }
 
+// Per-instance resource sampler. It polls on its own timer and answers
+// from memory, so the route handler never blocks on a probe — and a slow
+// or unreachable game degrades one sample, not the request.
+// Named for the sampling, not `Metrics`, to stay distinct from
+// GameQuery.metrics() (player counts from the game's own API).
+export interface MetricsSampler {
+  snapshot(): MetricsSnapshot
+  start(): void
+  stop(): void
+}
+
 // Sink long-running ops write into; the runner fans lines/progress out
 // to SSE subscribers.
 export interface OpSink {
@@ -80,6 +91,7 @@ export interface ServerInstance {
   gameControl: GameControl
   query: GameQuery
   journal: Journal
+  metrics: MetricsSampler
   steamcmd: SteamCmd
   settings: SettingsService
   backup: BackupService
@@ -97,6 +109,7 @@ export interface Services {
   gameControl: GameControl
   query: GameQuery
   journal: Journal
+  metrics: MetricsSampler
   steamcmd: SteamCmd
   longOps: LongOpRunner
   worldLock: WorldLock

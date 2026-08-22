@@ -14,6 +14,7 @@ import { healthRoutes } from './routes/health.js'
 import { authRoutes } from './routes/auth.js'
 import { serverRoutes } from './routes/servers.js'
 import { statusRoutes } from './routes/status.js'
+import { metricsRoutes } from './routes/metrics.js'
 import { powerRoutes } from './routes/power.js'
 import { consoleRoutes } from './routes/console.js'
 import { playerRoutes } from './routes/players.js'
@@ -97,6 +98,7 @@ export function buildApp(deps: BuildAppDeps): Hono<HonoApp> {
   // middleware resolves the instance and injects its `services` bag.
   const gameRouters = [
     statusRoutes,
+    metricsRoutes,
     powerRoutes,
     consoleRoutes,
     playerRoutes,
