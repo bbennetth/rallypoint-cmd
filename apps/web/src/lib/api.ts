@@ -55,6 +55,13 @@ export function apiScope(): string {
   return m ? `/api/servers/${m[1]}` : '/api'
 }
 
+// ?server=<id> for panel-scoped endpoints that still resolve per-server
+// data (public access), empty outside a server route.
+function serverQuery(): string {
+  const m = window.location.pathname.match(/^\/servers\/([a-z0-9-]+)/)
+  return m ? `?server=${m[1]}` : ''
+}
+
 export class ApiError extends Error {
   constructor(
     readonly code: string,
@@ -156,11 +163,13 @@ export const api = {
   runUpdate: (kind: 'install' | 'update' | 'validate'): Promise<LongOp> =>
     request('POST', `${apiScope()}/updates/run`, longOpSchema, { kind }),
 
-  // public access (playit.gg)
+  // public access (playit.gg) — panel-scoped agent, but the port/address
+  // belong to the server being viewed, so the current /servers/:id is
+  // passed along when present.
   publicAccess: (): Promise<PublicAccessStatus> =>
-    request('GET', '/api/public-access', publicAccessStatusSchema),
+    request('GET', `/api/public-access${serverQuery()}`, publicAccessStatusSchema),
   enablePublicAccess: (): Promise<LongOp> =>
-    request('POST', '/api/public-access/enable', longOpSchema),
+    request('POST', `/api/public-access/enable${serverQuery()}`, longOpSchema),
   disablePublicAccess: (): Promise<unknown> =>
     request('POST', '/api/public-access/disable', okSchema),
   publicAccessConsole: (): Promise<PublicAccessConsole> =>

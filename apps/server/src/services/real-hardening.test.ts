@@ -16,7 +16,7 @@ import {
 import { parseSystemdTimestamp } from './game-control.real.js'
 import { decideSteamcmdOutcome, steamcmdArgs } from './steamcmd.real.js'
 import { isNewerVersion } from './panel-update.js'
-import { extractTunnelAddress, PlayitTrace } from './public-access.js'
+import { extractTunnelAddress, PlayitTrace, readGamePort } from './public-access.js'
 
 describe('parseSystemdTimestamp', () => {
   it('parses the --timestamp=unix form (@epoch seconds → ms)', () => {
@@ -153,6 +153,36 @@ describe('extractTunnelAddress (playit tunnels-list parsing)', () => {
     ).toBeNull()
     expect(extractTunnelAddress(null, 8211)).toBeNull()
     expect(extractTunnelAddress({ nope: true }, 8211)).toBeNull()
+  })
+})
+
+describe('readGamePort (per-server tunnel port)', () => {
+  const instances = {
+    list: () => [
+      {
+        id: 'srv-pal',
+        installDir: '/opt/games/palworld',
+        game: { settingsAdapter: 'none', ports: [{ name: 'game', port: 8211 }] },
+      },
+      {
+        id: 'srv-ensh',
+        installDir: '/opt/games/enshrouded',
+        game: { settingsAdapter: 'none', ports: [{ name: 'game', port: 15636 }] },
+      },
+    ],
+  }
+
+  it('scopes to the requested server, not the first instance', () => {
+    expect(readGamePort(instances, 'srv-ensh')).toBe(15636)
+    expect(readGamePort(instances, 'srv-pal')).toBe(8211)
+  })
+
+  it('falls back to the first server with a game port when unscoped', () => {
+    expect(readGamePort(instances)).toBe(8211)
+  })
+
+  it('returns null for an unknown server id', () => {
+    expect(readGamePort(instances, 'nope')).toBeNull()
   })
 })
 

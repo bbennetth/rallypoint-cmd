@@ -193,6 +193,10 @@ function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
 // without port-forwarding. Enable runs install→claim→start as a long-op;
 // the claim URL must be approved by the user in their playit account.
 function PublicAccessCard() {
+  const game = useCurrentGame()
+  // Fallback while status is in flight: the current game's declared port,
+  // not a Palworld-specific 8211.
+  const declaredPort = game?.ports.find((p) => p.name === 'game')?.port
   const [status, setStatus] = useState<PublicAccessStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -337,7 +341,7 @@ function PublicAccessCard() {
         </div>
       ) : status.running ? (
         <p className="cmd-empty">
-          Agent is running but no UDP tunnel targets port {status.gamePort ?? 8211}. Create one at{' '}
+          Agent is running but no UDP tunnel targets port {status.gamePort ?? declaredPort ?? '—'}. Create one at{' '}
           <a
             className="cmd-link"
             href="https://playit.gg/account/tunnels"
@@ -346,7 +350,7 @@ function PublicAccessCard() {
           >
             playit.gg/account/tunnels
           </a>{' '}
-          (UDP → 127.0.0.1:{status.gamePort ?? 8211}) — the address appears here automatically.
+          (UDP → 127.0.0.1:{status.gamePort ?? declaredPort ?? '—'}) — the address appears here automatically.
         </p>
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-3">

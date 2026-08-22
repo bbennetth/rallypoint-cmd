@@ -182,7 +182,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
   const scheduler = createScheduler({ env, db, logger, getInstance: (id) => instanceMap.get(id) })
   const panelUpdate = env.PANEL_MODE === 'mock' ? createFakePanelUpdate(env) : createRealPanelUpdate({ env, db, logger })
   const publicAccess =
-    env.PANEL_MODE === 'mock' ? createFakePublicAccess() : createRealPublicAccess({ db, logger, instances })
+    env.PANEL_MODE === 'mock' ? createFakePublicAccess(instances) : createRealPublicAccess({ db, logger, instances })
   const unitProvisioner =
     env.PANEL_MODE === 'mock' ? createFakeUnitProvisioner(logger) : createRealUnitProvisioner(logger)
   // Panel-scoped coordination (self-update + public access), independent
