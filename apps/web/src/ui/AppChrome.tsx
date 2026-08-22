@@ -13,9 +13,10 @@ import { useAuth } from '../lib/auth.js'
 //
 // Icon choices where the vendored set had no exact match: `grid` for the
 // dashboard (four tiles), `sliders` for Settings (a settings *form* is knobs,
-// not a gear), `file` for Backups (they are literally .tar.gz files) and
-// `clock` for Schedules (cron). `terminal`, `users` and `puzzle` are the
-// cmd-local glyphs added to ui/ink/icons.tsx.
+// not a gear), `gear` for the panel-level Management page (panel machinery:
+// self-update + disk reclaim), `file` for Backups (they are literally
+// .tar.gz files) and `clock` for Schedules (cron). `terminal`, `users` and
+// `puzzle` are the cmd-local glyphs added to ui/ink/icons.tsx.
 //
 // Eight tabs trips shell.css's `:has(> .pl-tab:nth-child(7))` rule, so the
 // mobile pill sizes tabs to their content and scrolls horizontally rather
@@ -27,14 +28,25 @@ function navItems(
   game: GameDef | undefined,
 ): readonly AppChromeNavItem[] {
   // `aria-hidden` and no text: a badge visible to assistive tech would join
-  // the link's accessible name and break `getByRole('link', {name:'Updates'})`.
+  // the link's accessible name and break `getByRole('link', {name:'Management'})`.
   const dot: ReactNode = updateAvailable ? (
     <span className="pl-navdot" aria-hidden="true" />
   ) : null
 
-  // Outside a server (the server-list home) the nav is just Servers.
+  // Panel-level Management (self-update + disk reclaim) is in the nav
+  // whether or not a server is selected — on a fresh install with zero
+  // servers it must still be reachable. The update dot lives here: the
+  // "update available" it signals is the panel's own.
+  const management: AppChromeNavItem = {
+    to: '/management',
+    label: 'Management',
+    icon: 'gear',
+    ...(dot ? { badge: dot } : {}),
+  }
+
+  // Outside a server (the server-list home) the nav is Servers + Management.
   if (!serverId) {
-    return [{ to: '/', label: 'Servers', icon: 'grid', end: true }]
+    return [{ to: '/', label: 'Servers', icon: 'grid', end: true }, management]
   }
 
   // Inside a server: capability-gated per the game registry entry.
@@ -50,7 +62,7 @@ function navItems(
     ...(game && game.settingsAdapter !== 'none'
       ? [{ to: `${base}/settings`, label: 'Settings', icon: 'sliders' } as const]
       : []),
-    { to: `${base}/updates`, label: 'Updates', icon: 'download', ...(dot ? { badge: dot } : {}) },
+    { to: `${base}/updates`, label: 'Updates', icon: 'download' },
     ...(caps && caps.mods !== 'none'
       ? [{ to: `${base}/mods`, label: 'Mods', icon: 'puzzle' } as const]
       : []),
@@ -58,6 +70,7 @@ function navItems(
       ? [{ to: `${base}/backups`, label: 'Backups', icon: 'file' } as const]
       : []),
     { to: `${base}/schedules`, label: 'Schedules', icon: 'clock' },
+    management,
   ]
 }
 
@@ -65,8 +78,8 @@ export function AppChrome({ children }: { children: ReactNode }) {
   const { session, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  // Daily update check (server-side cached): dots the Updates nav item when a
-  // newer release exists. Best-effort only.
+  // Daily update check (server-side cached): dots the Management nav item
+  // when a newer panel release exists. Best-effort only.
   const [updateAvailable, setUpdateAvailable] = useState(false)
   useEffect(() => {
     api

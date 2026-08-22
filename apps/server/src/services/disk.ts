@@ -19,6 +19,41 @@ export async function diskUsage(label: string, dirPath: string): Promise<DiskUsa
   }
 }
 
+// Collapse duplicates when several dirs share one filesystem (statfs
+// reports the mount, so two dirs on one disk return identical numbers).
+export function dedupeDisks(disks: DiskUsage[]): DiskUsage[] {
+  return disks.filter(
+    (d, i) => disks.findIndex((o) => o.totalBytes === d.totalBytes && o.freeBytes === d.freeBytes) === i,
+  )
+}
+
+// On-disk size of a directory tree. Tolerant of churn — entries that
+// vanish mid-walk count as 0 and a missing root is an empty tree.
+// Symlinks are neither followed nor sized (Dirent type checks are
+// lstat-based), so a link can't double-count or escape the root.
+export async function dirSize(dir: string): Promise<number> {
+  let entries
+  try {
+    entries = await fs.promises.readdir(dir, { withFileTypes: true })
+  } catch {
+    return 0
+  }
+  let total = 0
+  for (const entry of entries) {
+    const abs = path.join(dir, entry.name)
+    if (entry.isDirectory()) {
+      total += await dirSize(abs)
+    } else if (entry.isFile()) {
+      try {
+        total += (await fs.promises.stat(abs)).size
+      } catch {
+        // vanished mid-walk
+      }
+    }
+  }
+  return total
+}
+
 // statfs the nearest existing ancestor — pre-install the target dir may
 // not exist yet, but its filesystem does.
 export async function freeBytes(dirPath: string): Promise<number> {

@@ -12,6 +12,7 @@ import { BackupsPage } from './routes/Backups.js'
 import { ModsPage } from './routes/Mods.js'
 import { SchedulesPage } from './routes/Schedules.js'
 import { UpdatesPage } from './routes/Updates.js'
+import { ManagementPage } from './routes/Management.js'
 import { AccountPage } from './routes/Account.js'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -46,6 +47,7 @@ export function App() {
       <Route path="/servers/:serverId/mods" element={<RequireAuth><ServerPage page={<ModsPage />} /></RequireAuth>} />
       <Route path="/servers/:serverId/backups" element={<RequireAuth><ServerPage page={<BackupsPage />} /></RequireAuth>} />
       <Route path="/servers/:serverId/schedules" element={<RequireAuth><ServerPage page={<SchedulesPage />} /></RequireAuth>} />
+      <Route path="/management" element={<RequireAuth><ManagementPage /></RequireAuth>} />
       <Route path="/account" element={<RequireAuth><AccountPage /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

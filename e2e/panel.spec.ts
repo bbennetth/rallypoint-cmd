@@ -76,3 +76,43 @@ test('backups: create then list', async ({ page }) => {
     timeout: 40_000,
   })
 })
+
+// Runs after the backup test (serial), so a Palworld install and at least
+// one backup archive exist on disk. Only Palworld data is touched — the
+// enshrouded spec shares the panel process.
+test('management: panel updater and storage, delete a backup directory', async ({ page }) => {
+  await login(page)
+
+  // Management is panel-level: reachable straight from the server list.
+  await page.getByRole('link', { name: 'Management' }).click()
+  await expect(page).toHaveURL(/\/management$/)
+
+  // The Rallypoint updater card moved here (the fake always has v9.9.9 pending).
+  await expect(page.getByText('update available')).toBeVisible()
+
+  // Storage: the Palworld install dir is listed with its server attached.
+  const gamesCard = page.locator('section.pl-card').filter({ hasText: 'Game files' })
+  await expect(gamesCard.getByRole('cell', { name: /palworld/ }).first()).toBeVisible()
+
+  // Delete the Palworld server's backup directory (the enshrouded spec
+  // shares the panel — don't touch its rows) via the typed confirmation.
+  const backupsCard = page.locator('section.pl-card').filter({ hasText: 'Backup storage' })
+  const row = backupsCard.getByRole('row').filter({ hasText: 'Palworld' }).first()
+  const dirName = (await row.locator('td').first().innerText()).trim()
+  await row.getByRole('button', { name: 'Delete' }).click()
+
+  const dialog = page.getByRole('alertdialog')
+  const confirm = dialog.getByRole('button', { name: 'Delete permanently' })
+  await expect(confirm).toBeDisabled()
+  await dialog.getByRole('textbox').fill(dirName)
+  await confirm.click()
+
+  await expect(page.getByText('Backup directory deleted.')).toBeVisible({ timeout: 30_000 })
+  await expect(backupsCard.getByText(dirName)).toHaveCount(0)
+
+  // The server's Backups tab reflects the purge — no phantom rows.
+  await page.getByRole('link', { name: 'Servers' }).click()
+  await page.getByRole('button', { name: 'Open Palworld' }).first().click()
+  await page.getByRole('link', { name: 'Backups' }).click()
+  await expect(page.getByText('No backups yet.')).toBeVisible()
+})

@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { panelUpdateInfoSchema } from '@rallypoint-cmd/shared'
+import { panelOpStateSchema, panelUpdateInfoSchema } from '@rallypoint-cmd/shared'
 import type { HonoApp } from '../context.js'
 import { errors } from '../errors.js'
 import { requireSession } from '../middleware/session.js'
@@ -12,6 +12,13 @@ export const panelUpdateRoutes = new Hono<HonoApp>()
 // the panel-level LongOpRunner, independent of any game server).
 panelUpdateRoutes.get('/api/panel/stream', requireSession, (c) => {
   return streamLongOp(c, c.get('composed').longOps)
+})
+
+// Currently- or last-run op on the panel-level runner (panel_update,
+// public_access, storage deletes). The per-server /updates state can't
+// answer this — panel ops never run on an instance's runner.
+panelUpdateRoutes.get('/api/panel/op', requireSession, (c) => {
+  return c.json(panelOpStateSchema.parse({ op: c.get('composed').longOps.current() }))
 })
 
 // Current version + (cached, daily) latest-release check. ?force=1 hits
