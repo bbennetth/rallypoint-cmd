@@ -37,7 +37,7 @@ function makeEnv(root: string): Env {
     PANEL_HOST: '127.0.0.1',
     PANEL_PORT: 0,
     DATA_DIR: path.join(root, 'panel'),
-    BACKUP_DIR: path.join(root, 'backups'),
+    PANEL_BACKUP_DIR: path.join(root, 'backups'),
     STEAMCMD_BIN: path.join(root, 'steamcmd.sh'),
     DB_PATH: path.join(root, 'panel', 'panel.sqlite'),
     PANEL_PASSWORD_PEPPER: 'test-pepper-0123456789abcdef',
@@ -106,7 +106,7 @@ beforeEach(async () => {
     settings: createSettingsService(env, db, { installDir, stateKey: `pendingRestart:${SERVER_ID}`, restPort: 8212 }),
     serverId: SERVER_ID,
     installDir: installDir,
-    backupDir: env.BACKUP_DIR,
+    backupDir: env.PANEL_BACKUP_DIR,
     contract: palworldContract,
   }
   service = createBackupService(deps)
@@ -205,7 +205,7 @@ describe('live-churn copy (the real-deploy backup fix)', () => {
     const backup = await service.create('manual', noopSink)
     const listed: string[] = []
     await tar.list({
-      file: path.join(env.BACKUP_DIR, backup.filename),
+      file: path.join(env.PANEL_BACKUP_DIR, backup.filename),
       onReadEntry: (e) => void listed.push(e.path),
     })
     expect(listed.some((p) => p.includes('/backup/'))).toBe(false)
@@ -227,7 +227,7 @@ describe('backup create + download', () => {
   it('creates a backup and records a row with a real file', async () => {
     const backup = await service.create('manual', noopSink)
     expect(backup.worldId).toBe(WORLD)
-    expect(fs.existsSync(path.join(env.BACKUP_DIR, backup.filename))).toBe(true)
+    expect(fs.existsSync(path.join(env.PANEL_BACKUP_DIR, backup.filename))).toBe(true)
     expect(service.list()).toHaveLength(1)
     const resolved = service.filePathFor(backup.id)
     expect(resolved.sizeBytes).toBeGreaterThan(0)
@@ -235,7 +235,7 @@ describe('backup create + download', () => {
 
   it('round-trips: a created backup re-uploads and validates', async () => {
     const backup = await service.create('manual', noopSink)
-    const preview = await service.stageUpload(bodyOf(path.join(env.BACKUP_DIR, backup.filename)))
+    const preview = await service.stageUpload(bodyOf(path.join(env.PANEL_BACKUP_DIR, backup.filename)))
     expect(preview.manifest.worldId).toBe(WORLD)
     expect(preview.worldIdMismatch).toBe(false)
   })
@@ -353,7 +353,7 @@ describe('restore happy path + rollback', () => {
     const liveLevel = path.join(installDir, 'Pal/Saved/SaveGames/0', WORLD, 'Level.sav')
     fs.writeFileSync(liveLevel, 'MUTATED-AFTER-BACKUP')
 
-    const preview = await service.stageUpload(bodyOf(path.join(env.BACKUP_DIR, backup.filename)))
+    const preview = await service.stageUpload(bodyOf(path.join(env.PANEL_BACKUP_DIR, backup.filename)))
     await service.restore(preview.stagingId, WORLD, noopSink)
 
     // Live level is back to the backed-up content (the fake writes
@@ -373,7 +373,7 @@ describe('restore happy path + rollback', () => {
       iniPath,
       fs.readFileSync(iniPath, 'utf8').replace('"Fake Palworld Server"', '"Mutated After Backup"'),
     )
-    const preview = await service.stageUpload(bodyOf(path.join(env.BACKUP_DIR, backup.filename)))
+    const preview = await service.stageUpload(bodyOf(path.join(env.PANEL_BACKUP_DIR, backup.filename)))
     await service.restore(preview.stagingId, WORLD, noopSink)
     const after = fs.readFileSync(iniPath, 'utf8')
     expect(after).toContain('"Fake Palworld Server"') // archived value restored
@@ -384,7 +384,7 @@ describe('restore happy path + rollback', () => {
 
   it('refuses restore when the confirmation text is wrong', async () => {
     const backup = await service.create('manual', noopSink)
-    const preview = await service.stageUpload(bodyOf(path.join(env.BACKUP_DIR, backup.filename)))
+    const preview = await service.stageUpload(bodyOf(path.join(env.PANEL_BACKUP_DIR, backup.filename)))
     await expect(service.restore(preview.stagingId, 'nope', noopSink)).rejects.toMatchObject({
       code: 'confirm_mismatch',
     })
@@ -399,7 +399,7 @@ describe('restore happy path + rollback', () => {
     // Point the live ini at a DIFFERENT world id, lowercased, so restore
     // must rewrite it.
     fs.writeFileSync(gusPath, 'DedicatedServerName=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n')
-    const preview = await service.stageUpload(bodyOf(path.join(env.BACKUP_DIR, backup.filename)))
+    const preview = await service.stageUpload(bodyOf(path.join(env.PANEL_BACKUP_DIR, backup.filename)))
     await service.restore(preview.stagingId, WORLD, noopSink)
     const gus = fs.readFileSync(gusPath, 'utf8')
     expect(gus).toContain(`DedicatedServerName=${WORLD}`) // exact UPPERCASE dir name
@@ -412,7 +412,7 @@ describe('restore happy path + rollback', () => {
     fs.mkdirSync(path.join(installDir, 'Pal/Saved/SaveGames/0', WORLD.toLowerCase()), {
       recursive: true,
     })
-    const preview = await service.stageUpload(bodyOf(path.join(env.BACKUP_DIR, backup.filename)))
+    const preview = await service.stageUpload(bodyOf(path.join(env.PANEL_BACKUP_DIR, backup.filename)))
     const lines: string[] = []
     await service.restore(preview.stagingId, WORLD, {
       line: (l) => lines.push(l),
@@ -423,7 +423,7 @@ describe('restore happy path + rollback', () => {
 
   it('refuses restore when the game state is indeterminate (systemctl query failed)', async () => {
     const backup = await service.create('manual', noopSink)
-    const preview = await service.stageUpload(bodyOf(path.join(env.BACKUP_DIR, backup.filename)))
+    const preview = await service.stageUpload(bodyOf(path.join(env.PANEL_BACKUP_DIR, backup.filename)))
     const blindService = createBackupService({
       ...deps,
       gameControl: {
@@ -452,7 +452,7 @@ describe('restore happy path + rollback', () => {
     const liveLevel = path.join(installDir, 'Pal/Saved/SaveGames/0', WORLD, 'Level.sav')
     fs.writeFileSync(liveLevel, 'MUTATED-AFTER-BACKUP')
 
-    const preview = await service.stageUpload(bodyOf(path.join(env.BACKUP_DIR, backup.filename)))
+    const preview = await service.stageUpload(bodyOf(path.join(env.PANEL_BACKUP_DIR, backup.filename)))
     // Game reports active until start() is called post-swap, then plays
     // dead on the stability re-check — like Palworld crashing on load.
     let restarted = false

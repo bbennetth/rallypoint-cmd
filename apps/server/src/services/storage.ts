@@ -6,7 +6,7 @@ import type { SystemdStatus } from './types.js'
 // endpoints (routes/management.ts), extracted so it unit-tests without
 // HTTP or systemd.
 
-// Charset for backup-dir names under BACKUP_DIR: a server id (lowercase
+// Charset for backup-dir names under PANEL_BACKUP_DIR: a server id (lowercase
 // ulid) or the legacy 'default'. Anything else is an operator stray the
 // panel neither lists nor touches.
 export const SAFE_ID = /^[a-z0-9]{1,32}$/
@@ -30,7 +30,7 @@ export function classifyGameDirs(
   })
 }
 
-// Classify first-level BACKUP_DIR dir names against live server rows.
+// Classify first-level PANEL_BACKUP_DIR dir names against live server rows.
 // Names outside SAFE_ID are dropped entirely.
 export function classifyBackupDirs(
   names: string[],

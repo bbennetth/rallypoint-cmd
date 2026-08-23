@@ -1,45 +1,41 @@
 import { GAMES, templateUnitFor } from '@rallypoint-cmd/shared'
 
-// Frozen argv constants. The sudoers file (deploy/sudoers/rallypoint-cmd)
-// pins these EXACT command lines — code and sudoers must never drift, so
-// both are generated from/checked against this file + the game registry.
+// Frozen argv constants for the commands the panel shells out to.
+//
+// The panel runs as root inside an unprivileged LXC, so these are direct
+// calls — but unit and slug names still come from HTTP input, so both are
+// validated against the closed set the game registry defines before they
+// ever reach an argv. Never interpolate a caller-supplied string into a
+// unit name without going through the asserts below.
 
 export const SYSTEMCTL_BIN = '/usr/bin/systemctl'
 export const JOURNALCTL_BIN = '/usr/bin/journalctl'
 
-// `sudo -n systemctl <verb> <unit>` — the only privileged verbs.
+// The lifecycle verbs the panel drives on a game unit.
 export const SYSTEMCTL_VERBS = ['start', 'stop', 'restart'] as const
 export type SystemctlVerb = (typeof SYSTEMCTL_VERBS)[number]
 
-// The closed set of units the panel may ever pass to sudo systemctl /
-// journalctl: one template instance per registry slug. The sudoers file
-// enumerates exactly these (wildcard-free).
+// The closed set of units the panel may ever act on: one template
+// instance per registry slug.
 export const ALLOWED_UNITS: readonly string[] = Object.keys(GAMES).map((slug) =>
   templateUnitFor(slug),
 )
 
 export function assertAllowedUnit(unit: string): void {
   if (!ALLOWED_UNITS.includes(unit)) {
-    throw new Error(`unit ${unit} is not in the sudoers-pinned allow list`)
+    throw new Error(`unit ${unit} is not a known game unit`)
   }
 }
-
-// `sudo -n rallypoint-cmd-game <verb> <slug>` — unit provisioning. The
-// sudoers file pins one line per (verb, slug) pair; the helper
-// re-validates the slug against its baked-in game table.
-export const GAME_HELPER_BIN = '/usr/local/bin/rallypoint-cmd-game'
-export const GAME_HELPER_VERBS = ['add', 'remove'] as const
-export type GameHelperVerb = (typeof GAME_HELPER_VERBS)[number]
 
 export const ALLOWED_SLUGS: readonly string[] = Object.keys(GAMES)
 
 export function assertAllowedSlug(slug: string): void {
   if (!ALLOWED_SLUGS.includes(slug)) {
-    throw new Error(`slug ${slug} is not in the sudoers-pinned allow list`)
+    throw new Error(`slug ${slug} is not a known game slug`)
   }
 }
 
-// `sudo -n journalctl -u <unit> -n 500 -o cat -f`
+// `journalctl -u <unit> -n 500 -o cat -f`
 export function journalctlTailArgs(unit: string): readonly string[] {
   return ['-u', unit, '-n', '500', '-o', 'cat', '-f']
 }

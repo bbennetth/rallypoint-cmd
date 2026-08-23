@@ -135,8 +135,8 @@ function PanelUpdateCard() {
             </Button>
           </div>
           <p className="cmd-note">
-            Downloads the release artifact, verifies it, swaps it in via the root helper, and
-            restarts the panel. The game server keeps running.
+            Downloads the release artifact, verifies it, swaps it in, and restarts the panel.
+            Game servers keep running.
           </p>
         </div>
       ) : (

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
 # update-panel.sh — push a panel update from your workstation into the
-# Proxmox LXC, WITHOUT needing a git remote. Use this for local dev
-# iteration; for a normal git-based update just re-run
-# `ct/rallypoint-cmd.sh` inside the CT (see deploy/README.md).
+# Proxmox LXC, WITHOUT cutting a release. Use this for local dev
+# iteration; for a normal update re-run `ct/rallypoint-cmd.sh` inside the
+# CT, or use the panel's Updates card (see deploy/README.md).
 #
 # It tars the working tree (excluding node_modules/dist/data/.git), ships
 # it to the CT via the Proxmox host, then rebuilds + restarts the panel.
@@ -45,14 +45,13 @@ msg "Rebuilding + restarting the panel in CT $CTID (game stays up)..."
 ssh "$PVE_HOST" "pct exec $CTID -- bash -euo pipefail -c '
   rm -rf /opt/rallypoint-cmd-new && mkdir -p /opt/rallypoint-cmd-new
   tar xzf /tmp/panel-src.tar.gz -C /opt/rallypoint-cmd-new
-  # Preserve the existing .git (if any) so git-based updates keep working.
-  [ -d /opt/rallypoint-cmd/.git ] && cp -a /opt/rallypoint-cmd/.git /opt/rallypoint-cmd-new/.git || true
   rm -rf /opt/rallypoint-cmd && mv /opt/rallypoint-cmd-new /opt/rallypoint-cmd
   cd /opt/rallypoint-cmd
   npm ci
   npm run build
-  chown -R root:rallypoint /opt/rallypoint-cmd
-  chmod -R g-w /opt/rallypoint-cmd
+  install -m 0644 deploy/systemd/rallypoint-cmd.service /etc/systemd/system/rallypoint-cmd.service
+  install -m 0644 deploy/systemd/rallypoint-game@.service /etc/systemd/system/rallypoint-game@.service
+  systemctl daemon-reload
   systemctl restart rallypoint-cmd.service
   rm -f /tmp/panel-src.tar.gz
 '"

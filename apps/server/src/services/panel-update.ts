@@ -18,19 +18,27 @@ const execFileAsync = promisify(execFile)
 
 // Panel self-update from GitHub Releases.
 //
-// Security shape: /opt/rallypoint-cmd is root:rallypoint READ-ONLY — the
-// panel never writes its own code. It downloads + verifies the release
-// artifact into DATA_DIR staging, then hands off to the pinned root
-// helper (sudoers-whitelisted) which swaps files in and restarts the
-// service. The restart kills this process mid-op BY DESIGN; the UI polls
+// Shape: download the release artifact into DATA_DIR staging, verify it
+// (size/entry caps, zip-slip guards, release.json matches the tag, the
+// built dists are present), then swap it over /opt/rallypoint-cmd and
+// restart. The restart kills this process mid-op BY DESIGN; the UI polls
 // /api/health until the new version answers.
+//
+// This is the same work the Proxmox ct script's update_script() does, so
+// both write APP_VERSION_FILE — the version file
+// `check_for_gh_release` reads — and neither can be surprised by the
+// other having updated the panel.
 
 const GITHUB_REPO = 'bbennetth/rallypoint-cmd'
 const CHECK_TTL_MS = 24 * 60 * 60 * 1000 // daily
 const STATE_KEY = 'panel_update_check'
 const MAX_ARTIFACT_BYTES = 500 * 1024 * 1024
 const MAX_ARTIFACT_ENTRIES = 50_000
-export const APPLY_HELPER = '/usr/local/bin/rallypoint-cmd-apply-update'
+export const APP_DIR = '/opt/rallypoint-cmd'
+// community-scripts' fetch_and_deploy_gh_release records the deployed
+// version in $HOME/.<app>; the panel runs as root, so this is the path
+// its update_script() will compare against.
+export const APP_VERSION_FILE = '/root/.rallypoint-cmd'
 
 interface CachedCheck {
   latest: string | null
@@ -64,16 +72,20 @@ export function isNewerVersion(current: string, latest: string): boolean {
   return false
 }
 
-// The apply helper's stderr is the only place the real failure reason
-// lives (sudoers denial, rsync/npm errors, visudo refusal). Fold its
-// tail into the op error so the UI can show why. Exported for unit tests.
-export function formatHelperFailure(code: number | string | undefined, stderr: string): string {
+// The failing sub-command's stderr (rsync, npm ci, systemctl) is the only
+// place the real reason lives. Fold its tail into the op error so the UI
+// can show why. Exported for unit tests.
+export function formatApplyFailure(
+  step: string,
+  code: number | string | undefined,
+  stderr: string,
+): string {
   const tail = stderr
     .split('\n')
     .map((l) => l.trim())
     .filter(Boolean)
     .slice(-5)
-  const head = `Apply helper failed${code != null ? ` (exit ${code})` : ''}`
+  const head = `${step} failed${code != null ? ` (exit ${code})` : ''}`
   return tail.length > 0 ? `${head}: ${tail.join(' | ')}` : `${head} with no output.`
 }
 
@@ -235,32 +247,62 @@ export function createRealPanelUpdate(deps: Deps): PanelUpdateService {
       }
       sink.progress(70)
 
-      // 3. Hand off to the pinned root helper. It swaps /opt/rallypoint-cmd,
-      // installs prod deps, fixes ownership, and restarts the service —
-      // which kills this process. Everything after this line may not run.
+      // 3. Apply. Swap the staged tree over the app dir, install prod
+      // deps, refresh the systemd units, then restart — which kills this
+      // process. Everything after that line may not run.
       sink.line(`[update] Applying ${check.latest} — the panel will restart momentarily...`)
       sink.progress(80)
-      const emitHelperOutput = (stdout: string, stderr: string): void => {
-        for (const chunk of [stdout, stderr]) {
-          for (const line of chunk.split('\n')) {
-            if (line.trim()) sink.line(`[helper] ${line.trimEnd()}`)
+
+      const run = async (step: string, bin: string, args: string[], cwd?: string): Promise<void> => {
+        try {
+          const { stdout, stderr } = await execFileAsync(bin, args, { timeout: 600_000, cwd })
+          for (const chunk of [stdout, stderr]) {
+            for (const line of chunk.split('\n')) {
+              if (line.trim()) sink.line(`[apply] ${line.trimEnd()}`)
+            }
           }
+        } catch (err) {
+          const e = err as Error & { stdout?: string; stderr?: string; code?: number | string }
+          for (const line of (e.stdout ?? '').split('\n')) {
+            if (line.trim()) sink.line(`[apply] ${line.trimEnd()}`)
+          }
+          logger.error('panel update apply failed', {
+            step,
+            code: e.code ?? null,
+            stderr: e.stderr ?? '',
+          })
+          throw new Error(formatApplyFailure(step, e.code, e.stderr ?? ''))
         }
       }
-      try {
-        const { stdout, stderr } = await execFileAsync('sudo', ['-n', APPLY_HELPER, extractDir], {
-          timeout: 600_000,
-        })
-        emitHelperOutput(stdout, stderr)
-      } catch (err) {
-        const e = err as Error & { stdout?: string; stderr?: string; code?: number | string }
-        emitHelperOutput(e.stdout ?? '', e.stderr ?? '')
-        logger.error('panel update apply failed', { code: e.code ?? null, stderr: e.stderr ?? '' })
-        throw new Error(formatHelperFailure(e.code, e.stderr ?? ''))
+
+      // Mirror the staged tree over the app dir. --delete drops files the
+      // new release removed; node_modules and .git are excluded so prod
+      // deps and a git-based checkout both survive the swap.
+      await run('rsync', 'rsync', [
+        '-a',
+        '--delete',
+        '--exclude=.git',
+        '--exclude=node_modules',
+        `${extractDir}/`,
+        `${APP_DIR}/`,
+      ])
+      await run('npm ci', 'npm', ['ci', '--omit=dev', '--no-audit', '--no-fund'], APP_DIR)
+
+      // A release may ship changed unit files.
+      const unitSrc = path.join(APP_DIR, 'deploy/systemd')
+      for (const unit of ['rallypoint-cmd.service', 'rallypoint-game@.service']) {
+        const src = path.join(unitSrc, unit)
+        if (fs.existsSync(src)) fs.copyFileSync(src, path.join('/etc/systemd/system', unit))
       }
-      // Only reached if the restart is slow to land:
-      sink.line('[update] Helper finished; waiting for service restart.')
+      await run('systemctl daemon-reload', '/usr/bin/systemctl', ['daemon-reload'])
+
+      // Keep the ct script's update_script() in agreement about what is
+      // installed (it compares against this file).
+      fs.writeFileSync(APP_VERSION_FILE, `${check.latest.replace(/^v/, '')}\n`)
+
+      sink.line('[update] Restarting the panel.')
       sink.progress(95)
+      await run('systemctl restart', '/usr/bin/systemctl', ['restart', 'rallypoint-cmd.service'])
     },
   }
 }

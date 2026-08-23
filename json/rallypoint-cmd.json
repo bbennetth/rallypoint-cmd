@@ -1,0 +1,74 @@
+{
+  "name": "Rallypoint cmd",
+  "slug": "rallypoint-cmd",
+  "categories": [
+    24
+  ],
+  "date_created": "2026-08-23",
+  "type": "ct",
+  "updateable": true,
+  "privileged": false,
+  "architectures": ["amd64"],
+  "interface_port": 8080,
+  "documentation": "https://github.com/bbennetth/rallypoint-cmd#readme",
+  "website": "https://github.com/bbennetth/rallypoint-cmd",
+  "repository": "https://github.com/bbennetth/rallypoint-cmd",
+  "logo": "https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/steam.webp",
+  "description": "Self-hosted web panel for Steam dedicated game servers. Installs, starts, monitors, configures, backs up and updates game servers via SteamCMD and systemd, with a live console, restart schedules and per-game settings editors for Palworld and Enshrouded.",
+  "install_methods": [
+    {
+      "type": "default",
+      "script": "ct/rallypoint-cmd.sh",
+      "config_path": "/etc/rallypoint-cmd/panel.env",
+      "resources": {
+        "cpu": 6,
+        "ram": 16384,
+        "hdd": 64,
+        "os": "Debian",
+        "version": "13"
+      }
+    }
+  ],
+  "default_credentials": {
+    "username": "admin",
+    "password": null
+  },
+  "app_vars": [
+    {
+      "name": "var_admin_user",
+      "label": "Panel Admin Username",
+      "type": "text",
+      "default": "admin"
+    },
+    {
+      "name": "var_admin_password",
+      "label": "Panel Admin Password",
+      "type": "password",
+      "secret": true
+    },
+    {
+      "name": "var_panel_port",
+      "label": "Panel Port",
+      "type": "number",
+      "default": "8080"
+    }
+  ],
+  "notes": [
+    {
+      "text": "The container starts with an empty server list — add games from the panel and each installs into /opt/games/<slug>. Size the disk for what you plan to run: ARK: Survival Evolved alone wants ~100 GB, Rust and Counter-Strike 2 ~35 GB each.",
+      "type": "warning"
+    },
+    {
+      "text": "The panel listens on plain HTTP and is a single-admin console. Do not port-forward it directly — reach it over a VPN, a Cloudflare Tunnel, or an HTTPS reverse proxy, then set COOKIE_SECURE=true and TRUSTED_PROXY=true in the config file.",
+      "type": "warning"
+    },
+    {
+      "text": "If no admin password was supplied, one is generated at install time and written to /etc/rallypoint-cmd/panel.env. Change it after first login.",
+      "type": "info"
+    },
+    {
+      "text": "SteamCMD is 32-bit, so the container enables i386 multiarch. Wine is installed as well, for dedicated servers that ship Windows-only binaries (Enshrouded).",
+      "type": "info"
+    }
+  ]
+}

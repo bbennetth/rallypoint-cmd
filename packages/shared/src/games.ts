@@ -1,8 +1,8 @@
 // Data-driven game registry. Every game the panel can manage is an entry
 // here; server-side services and the web UI both derive behavior from the
 // entry rather than hardcoding any one game. Adding a game is a data
-// change (plus deploy files: systemd drop-in + sudoers lines, generated
-// from this registry and drift-tested).
+// change — the systemd start script and per-instance drop-in are
+// rendered from this registry at provision time (unit-provision.ts).
 //
 // Invariant: every entry is installable with `steamcmd +login anonymous`
 // (no Steam account) and is either a native Linux dedicated server or a
@@ -231,7 +231,7 @@ export const GAMES: Record<string, GameDef> = {
     name: 'Enshrouded',
     steamAppId: 2278520,
     // The dedicated server is Windows-only; installed via the Windows
-    // depot and run under Wine (see rallypoint-cmd-game).
+    // depot and run under Wine (see unit-provision.ts).
     platform: 'windows',
     startCommand: { bin: './enshrouded_server.exe', args: [] },
     stopSignal: 'SIGINT',

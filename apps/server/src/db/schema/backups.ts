@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm'
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
-// Metadata for archives under BACKUP_DIR. The `filename` column is the
+// Metadata for archives under PANEL_BACKUP_DIR. The `filename` column is the
 // only path source download/restore ever use — user input never touches
 // the filesystem.
 export const backups = sqliteTable('backups', {

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-// Backup archives are tar.gz files under BACKUP_DIR/<serverId>/ holding
+// Backup archives are tar.gz files under PANEL_BACKUP_DIR/<serverId>/ holding
 // SaveGames/<worldId>/, the two ini files, and a manifest.json. The
 // panel's DB row is the source of truth for paths — API callers only
 // ever reference backups by id.

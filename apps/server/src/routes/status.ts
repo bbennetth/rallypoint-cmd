@@ -45,7 +45,7 @@ statusRoutes.get('/status', requireSession, async (c) => {
 
   const dedupedDisks = dedupeDisks(
     (
-      await Promise.all([diskUsage('game', instance.installDir), diskUsage('backups', env.BACKUP_DIR)])
+      await Promise.all([diskUsage('game', instance.installDir), diskUsage('backups', env.PANEL_BACKUP_DIR)])
     ).filter((d): d is NonNullable<typeof d> => d !== null),
   )
 

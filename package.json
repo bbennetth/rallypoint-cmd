@@ -1,7 +1,7 @@
 {
   "name": "rallypoint-cmd",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Game-server management panel — AMP-style web console for SteamCMD-powered dedicated servers in a Proxmox LXC.",
   "engines": {

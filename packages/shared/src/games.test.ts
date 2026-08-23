@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { GAMES, PALWORLD_APP_ID, appManifestFor, templateUnitFor } from './index.js'
 
-// Registry invariants: the deploy files (sudoers, systemd) and the
+// Registry invariants: the generated systemd units and the
 // per-instance services all trust these properties.
 
 describe('game registry', () => {
@@ -10,7 +10,7 @@ describe('game registry', () => {
   it('keys match slugs and slugs are unit-instance safe', () => {
     for (const [key, game] of Object.entries(GAMES)) {
       expect(game.slug).toBe(key)
-      // Same charset the rallypoint-cmd-game root helper validates.
+      // Slugs become systemd template instance names.
       expect(game.slug).toMatch(/^[a-z0-9-]{1,32}$/)
     }
   })

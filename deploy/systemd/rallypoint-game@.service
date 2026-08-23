@@ -5,19 +5,33 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=rallypoint
-Group=rallypoint
-# Per-game specifics (WorkingDirectory, memory limits, stop signal) live
-# in the drop-in written by `rallypoint-cmd-game add <slug>` at
+# Per-game specifics (WorkingDirectory, stop signal, memory limits, and
+# the ReadWritePaths entry for the install dir) live in the drop-in the
+# panel writes at
 # /etc/systemd/system/rallypoint-game@<slug>.service.d/instance.conf,
 # and the start command in /etc/rallypoint-cmd/games/<slug>/start.sh —
-# both generated from the game registry, root-owned, never panel-written.
+# both generated from the game registry (packages/shared/src/games.ts).
 ExecStart=/etc/rallypoint-cmd/games/%i/start.sh
 Restart=on-failure
 RestartSec=10
 OOMPolicy=stop
 LimitNOFILE=100000
 SyslogIdentifier=rallypoint-game-%i
+
+# Game servers execute third-party binaries and load user-supplied mods,
+# so they run sandboxed: read-only filesystem except the paths below,
+# no access to /root or /home, a private /tmp, and no way to gain
+# privileges. The per-game drop-in adds that game's install dir to
+# ReadWritePaths.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/opt/games
 
 [Install]
 WantedBy=multi-user.target

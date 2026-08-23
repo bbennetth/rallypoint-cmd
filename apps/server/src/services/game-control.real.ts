@@ -36,19 +36,19 @@ export function parseSystemdTimestamp(raw: string | undefined): number | null {
   return Number.isFinite(ms) ? ms : null
 }
 
-// Real systemd control. The panel runs as an unprivileged user; only
-// start/stop/restart go through sudo (unit names pinned in sudoers).
-// Status reads are unprivileged D-Bus queries.
+// Real systemd control. The panel runs as root inside the unprivileged
+// LXC, so systemctl is called directly; `unit` is still validated against
+// the registry's closed set before it reaches an argv.
 
 export function createRealGameControl(_env: Env, logger: Logger, target: GameControlTarget): GameControl {
   assertAllowedUnit(target.unitName)
   const unit = target.unitName
 
-  async function sudoSystemctl(verb: SystemctlVerb): Promise<void> {
+  async function runSystemctl(verb: SystemctlVerb): Promise<void> {
     try {
       // `restart` blocks until the unit is down+up again; a game can take
       // ~90s to flush its save on stop, so give the job room.
-      await execFileAsync('sudo', ['-n', SYSTEMCTL_BIN, verb, unit], { timeout: 180_000 })
+      await execFileAsync(SYSTEMCTL_BIN, [verb, unit], { timeout: 180_000 })
       logger.info('systemctl ok', { verb, unit })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -109,9 +109,9 @@ export function createRealGameControl(_env: Env, logger: Logger, target: GameCon
   }
 
   return {
-    start: () => sudoSystemctl('start'),
-    stop: () => sudoSystemctl('stop'),
-    restart: () => sudoSystemctl('restart'),
+    start: () => runSystemctl('start'),
+    stop: () => runSystemctl('stop'),
+    restart: () => runSystemctl('restart'),
     status,
     waitFor: async (state, timeoutMs) => {
       const deadline = Date.now() + timeoutMs

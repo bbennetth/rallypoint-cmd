@@ -19,7 +19,7 @@ import {
   deleteRefusal,
 } from '../services/storage.js'
 
-// Panel-level storage management: what sits under GAMES_ROOT/BACKUP_DIR
+// Panel-level storage management: what sits under GAMES_ROOT/PANEL_BACKUP_DIR
 // (server rows or not) and the destructive reclaim actions. Server
 // deletion is an unregistration that leaves files behind — this is the
 // only place the panel ever removes them. Deletes run on the panel
@@ -45,7 +45,7 @@ managementRoutes.get('/api/panel/storage', requireSession, async (c) => {
 
   const disks = dedupeDisks(
     (
-      await Promise.all([diskUsage('games', env.GAMES_ROOT), diskUsage('backups', env.BACKUP_DIR)])
+      await Promise.all([diskUsage('games', env.GAMES_ROOT), diskUsage('backups', env.PANEL_BACKUP_DIR)])
     ).filter((d): d is NonNullable<typeof d> => d !== null),
   )
 
@@ -66,11 +66,11 @@ managementRoutes.get('/api/panel/storage', requireSession, async (c) => {
 
   const backupDirs = await Promise.all(
     classifyBackupDirs(
-      await listDirNames(env.BACKUP_DIR),
+      await listDirNames(env.PANEL_BACKUP_DIR),
       rows.map((i) => ({ id: i.id, name: i.name })),
     ).map(async (entry) => ({
       ...entry,
-      sizeBytes: await dirSize(path.join(env.BACKUP_DIR, entry.id)),
+      sizeBytes: await dirSize(path.join(env.PANEL_BACKUP_DIR, entry.id)),
     })),
   )
 
@@ -177,7 +177,7 @@ managementRoutes.post('/api/panel/storage/backups/:id/delete', requireSession, a
   if (!SAFE_ID.test(id)) throw errors.notFound('Backup directory')
   await parseConfirm(c, id)
 
-  const dir = assertSafeChild(env.BACKUP_DIR, id)
+  const dir = assertSafeChild(env.PANEL_BACKUP_DIR, id)
   const inst = composed.instances.get(id)
   if (!inst && !fs.existsSync(dir)) throw errors.notFound('Backup directory')
 

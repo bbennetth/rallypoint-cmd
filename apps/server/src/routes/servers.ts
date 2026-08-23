@@ -82,7 +82,7 @@ serverRoutes.get('/api/servers', requireSession, async (c) => {
 })
 
 // Create a server: provisions the systemd unit (start.sh + drop-in via
-// the sudoers-pinned rallypoint-cmd-game helper), then registers the
+// the unit provisioner, from the game registry), then registers the
 // row + instance. The actual game files arrive via the install long-op
 // (POST .../updates/run kind=install).
 serverRoutes.post('/api/servers', requireSession, async (c) => {

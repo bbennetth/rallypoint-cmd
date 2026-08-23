@@ -2,8 +2,9 @@
 
 A self-hosted web panel for Steam dedicated game servers — an AMP-style console that installs,
 starts/stops, monitors, configures, backs up, and updates game servers via SteamCMD + systemd.
-Single binary of responsibility: one small Node service (Hono + SQLite) serving a React SPA, one
-unprivileged `rallypoint` OS user, and a wildcard-free sudoers file.
+Single binary of responsibility: one small Node service (Hono + SQLite) serving a React SPA in a
+disposable, unprivileged Proxmox LXC, with each game server confined to its own sandboxed systemd
+unit.
 
 A fresh install starts with an **empty server list** — you add games from the panel and each one
 installs into `/opt/games/<slug>` under its own `rallypoint-game@<slug>.service` unit.
@@ -34,47 +35,49 @@ deepening support for a game is adapter work, not a rewrite.
 
 ### Proxmox VE (recommended, one line)
 
-Run on the Proxmox host as root — creates an unprivileged Debian 12 LXC and provisions
-everything (Node 22, SteamCMD, the panel):
+Run on the Proxmox host as root — creates an unprivileged Debian 13 LXC and provisions
+everything (Node 22, SteamCMD, Wine, the panel):
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/bbennetth/rallypoint-cmd/main/ct/rallypoint-cmd.sh)"
 ```
 
-- **Preview first** (no changes): prefix with `DRYRUN=1`.
-- **Override defaults** with env vars: `CTID HN CORES RAM SWAP DISK STORAGE BRIDGE NET_IP NET_GW
-  PANEL_PORT PANEL_BIND PANEL_ADMIN_USER PANEL_ADMIN_PASSWORD PANEL_REPO_URL PANEL_REPO_REF`, e.g.
-  `CTID=210 RAM=24576 DISK=80 NET_IP=192.168.1.60/24 NET_GW=192.168.1.1 bash -c "$(...)"`.
-- **Verbose output**: `VERBOSE=1`.
-- **Update in place**: re-run the exact same line *inside* the CT (`pct enter <ctid>`). It detects
-  the existing install and does git pull + rebuild + restart; game servers keep running.
+This is a [Proxmox VE Helper-Scripts](https://community-scripts.org/docs/contribution) style
+installer: it runs on the community-scripts engine, so it behaves like every other script in that
+ecosystem.
 
-It prints the panel URL and admin login at the end. Log in, **Add server**, pick a game — the
-panel runs the SteamCMD install with live progress. On a live host, also provision the game's
-systemd unit once (as root, inside the CT):
+- **Defaults**: 6 cores / 16 GiB RAM / 64 GiB disk. Size the disk for the games you plan to run
+  (see the table above — ARK alone wants ~100 GB).
+- **Change anything**: pick **Advanced** at the first prompt for the full wizard (CT id, hostname,
+  storage, bridge, static IP/VLAN/MTU, DNS, timezone, SSH keys). The wizard can save your answers
+  as defaults for next time.
+- **Unattended**: set `var_*` variables up front, e.g.
+  `var_cpu=8 var_ram=24576 var_disk=80 var_admin_user=admin var_admin_password=hunter2 bash -c "$(...)"`.
+  Panel-specific ones are `var_panel_port`, `var_panel_bind`, `var_admin_user`, `var_admin_password`
+  (empty generates one).
+- **Debugging**: `dev_mode=trace,keep,logs` (also `pause`, `net`, `timing`) — see the
+  [dev mode guide](https://community-scripts.org/docs/dev_mode).
+- **Update in place**: re-run the exact same line *inside* the CT (`pct enter <ctid>`). It checks
+  GitHub Releases, and updates only if there's a newer one; game servers keep running.
 
-```bash
-rallypoint-cmd-game add <slug>
-```
-
-Defaults: 6 cores / 16 GiB RAM / 64 GiB disk. Size the disk for the games you plan to run (see
-the table above — ARK alone wants ~100 GB).
+It prints the panel URL and admin login at the end. Log in, **Add server**, pick a game — the panel
+runs the SteamCMD install with live progress and writes that game's systemd unit itself. There is
+no separate provisioning step.
 
 ### Any Debian/Ubuntu host (manual)
 
-The provisioner's in-container steps translate directly to any systemd distro:
+[`install/rallypoint-cmd-install.sh`](install/rallypoint-cmd-install.sh) is the source of truth —
+it runs inside the container and its steps translate directly to any systemd distro:
 
 1. **Prereqs**: Node ≥ 22, `dpkg --add-architecture i386` + `lib32gcc-s1 lib32stdc++6`
-   (SteamCMD is 32-bit), `git sudo curl tar`.
-2. **User + dirs**: create the unprivileged `rallypoint` user (home `/var/lib/rallypoint-cmd`);
-   make `/opt/games`, `/var/backups/rallypoint-cmd`, `/etc/rallypoint-cmd` (root:rallypoint 0750).
-3. **SteamCMD** (shared, game-neutral): untar to `/opt/steamcmd`, owned by `rallypoint`.
-4. **Panel**: clone to `/opt/rallypoint-cmd`, `npm ci && npm run build`, then lock down
-   `chown -R root:rallypoint /opt/rallypoint-cmd && chmod -R g-w` (the panel can't modify its own code).
-5. **systemd + sudoers**: install `deploy/systemd/rallypoint-cmd.service` and
-   `deploy/systemd/rallypoint-game@.service`; install `deploy/bin/rallypoint-cmd-game`,
-   `rallypoint-cmd-apply-update`, `rallypoint-cmd-playit` to `/usr/local/bin`; install
-   `deploy/sudoers/rallypoint-cmd` to `/etc/sudoers.d/` (verify with `visudo -cf`).
+   (SteamCMD is 32-bit), `curl tar xz-utils rsync`, and `wine` for Windows-only servers.
+2. **Dirs**: `/opt/games`, `/opt/steamcmd`, `/var/lib/rallypoint-cmd`,
+   `/var/backups/rallypoint-cmd`, `/etc/rallypoint-cmd`.
+3. **SteamCMD** (shared, game-neutral): untar to `/opt/steamcmd`.
+4. **Panel**: unpack a release artifact to `/opt/rallypoint-cmd`, then `npm ci --omit=dev`.
+   (Releases ship prebuilt server + web dists, so the host never runs a build.)
+5. **systemd**: install `deploy/systemd/rallypoint-cmd.service` and
+   `deploy/systemd/rallypoint-game@.service`.
 6. **Config**: write `/etc/rallypoint-cmd/panel.env` (see [Configuration](#configuration)),
    `systemctl enable --now rallypoint-cmd`.
 
@@ -94,10 +97,18 @@ against a mock-mode build.
 
 ### Updating a deployed panel
 
-- **From the panel UI** (preferred): Updates → the Rallypoint card checks GitHub Releases and
-  applies via the pinned `rallypoint-cmd-apply-update` root helper.
-- **Git-based**: re-run the installer one-liner inside the CT/host.
-- **Workstation push** (local dev, no git remote): `PVE_HOST=root@<pve> CTID=<id> bash deploy/update-panel.sh`.
+- **From the panel UI**: Updates → the Rallypoint card checks GitHub Releases, verifies the
+  artifact, swaps it in and restarts.
+- **From the installer**: re-run the one-liner inside the CT (`pct enter <ctid>`).
+- **Workstation push** (local dev, no release cut): `PVE_HOST=root@<pve> CTID=<id> bash deploy/update-panel.sh`.
+
+Both of the first two consume the same GitHub Release and record the installed version in
+`/root/.rallypoint-cmd`, so they never disagree about what is deployed.
+
+> **Upgrading from 0.2.x:** 0.3.0 changed the deployment model (the panel and game servers now run
+> as root inside the unprivileged container; the `rallypoint` user, its sudoers file and the
+> `/usr/local/bin/rallypoint-cmd-*` helpers are gone). There is no in-place migration — back up your
+> worlds from the panel, create a fresh container with the one-liner, and restore.
 
 ## Remote access
 
@@ -161,8 +172,8 @@ Exposing the *panel* is separate from exposing the *game*. If you can't (or don'
 port-forward the game's UDP port, the dashboard's **Public access** card sets up a free
 [playit.gg](https://playit.gg) tunnel:
 
-1. **Enable public access** → the panel installs the playit agent (via the pinned
-   `rallypoint-cmd-playit` root helper) and generates a claim code.
+1. **Enable public access** → the panel installs the playit agent (from its apt repo) and
+   generates a claim code.
 2. Approve the shown `playit.gg/claim/…` URL in your playit account.
 3. The panel starts the agent and displays the public `host:port` players connect to.
 
@@ -172,8 +183,8 @@ Details worth knowing:
   `PublicPort` from its ini). If no UDP tunnel matches, create one at
   *playit.gg → account → tunnels* (UDP → `127.0.0.1:<game port>`); the panel picks up the
   address automatically.
-- The agent secret is written by the root helper to `/etc/playit/playit.toml` and never enters
-  the panel's logs (the diagnostics trace redacts it).
+- The agent secret is written to `/etc/playit/playit.toml` (mode 0600) and never enters the
+  panel's logs — the diagnostics trace redacts it.
 - **Disable** stops the agent; the Console toggle on the card shows the panel↔playit exchange and
   the agent's journal for debugging.
 
@@ -191,7 +202,7 @@ If you'd rather port-forward: forward the game's UDP port(s) from the table in
 | `GAMES_ROOT` | `/opt/games` | each server installs to `GAMES_ROOT/<slug>` |
 | `STEAMCMD_BIN` | `/opt/steamcmd/steamcmd.sh` | shared SteamCMD |
 | `DATA_DIR` | `/var/lib/rallypoint-cmd` | SQLite DB, staging, ini history |
-| `BACKUP_DIR` | `/var/backups/rallypoint-cmd` | per-server subdirs |
+| `PANEL_BACKUP_DIR` | `/var/backups/rallypoint-cmd` | per-server subdirs |
 | `WEB_DIST_DIR` | — | serve the built SPA from here (production) |
 | `PANEL_PASSWORD_PEPPER` | — | **required in production** (random ≥16 chars) |
 | `PANEL_ADMIN_USERNAME` / `PANEL_ADMIN_PASSWORD` | `admin` / generated | first-boot seed only; generated password printed once to the journal |
@@ -201,13 +212,16 @@ If you'd rather port-forward: forward the game's UDP port(s) from the table in
 
 ## Security model
 
-- The panel runs as the unprivileged `rallypoint` user; `/opt/rallypoint-cmd` is root-owned and
-  read-only to it.
-- Privilege is confined to a **wildcard-free sudoers file**: `systemctl start/stop/restart` and a
-  `journalctl` tail for each registry game unit (exact argv pinned, drift-tested in CI), plus two
-  fixed-verb root helpers (panel self-update, playit). No `systemctl *` anywhere.
-- Game units are systemd template instances (`rallypoint-game@<slug>`) whose start scripts and
-  resource drop-ins are root-written by `rallypoint-cmd-game` — never by the panel.
+- **The container is the boundary.** The panel and the game servers run as root inside an
+  *unprivileged* LXC, so container-root is not host-root — this is the model every Proxmox VE
+  Helper-Script uses. Treat the container as disposable and keep backups off it.
+- **Game servers are sandboxed by systemd.** They execute third-party binaries and load
+  user-supplied mods, so `rallypoint-game@<slug>` runs with `NoNewPrivileges`, `ProtectSystem=strict`,
+  `ProtectHome`, `PrivateTmp` and kernel/cgroup protections. The only writable path is that game's
+  own install dir, granted per instance via `ReadWritePaths`.
+- **Unit files are never assembled from request input.** Start scripts and per-instance drop-ins are
+  rendered from the game registry (`packages/shared/src/games.ts`), and every slug and unit name is
+  checked against that registry's closed set before it reaches an argv.
 - Session cookies + double-submit CSRF on every state-changing request; SQLite-backed login rate
   limiting; backups/mod uploads are streamed with byte caps and validated (zip-slip/bomb checks)
   before anything touches game dirs.
@@ -218,8 +232,10 @@ If you'd rather port-forward: forward the game's UDP port(s) from the table in
 apps/server/      Hono API + SSE + services (real & mock impls per integration)
 apps/web/         React SPA (Vite), served by the server in production
 packages/shared/  Zod contract + the game registry (games.ts)
-ct/               Proxmox one-line installer / in-place updater
-deploy/           systemd units, sudoers, root helpers, deploy README
+ct/               Proxmox host-side script: container creation + update_script()
+install/          In-container install script (run by ct/ via the engine)
+json/             Catalog metadata for the community-scripts website
+deploy/           systemd units + deploy README
 e2e/              Playwright suite (runs against a mock-mode build)
 ```
 
