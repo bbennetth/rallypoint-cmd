@@ -1,38 +1,40 @@
 import { describe, expect, it } from 'vitest'
-import { formatHelperFailure, isNewerVersion } from './panel-update.js'
+import { formatApplyFailure, isNewerVersion } from './panel-update.js'
 
-describe('formatHelperFailure', () => {
+describe('formatApplyFailure', () => {
   it('includes the exit code and the stderr lines', () => {
-    expect(formatHelperFailure(1, 'refusing: staging dir missing release.json\n')).toBe(
-      'Apply helper failed (exit 1): refusing: staging dir missing release.json',
+    expect(formatApplyFailure('rsync', 1, 'refusing: staging dir missing release.json\n')).toBe(
+      'rsync failed (exit 1): refusing: staging dir missing release.json',
     )
   })
 
   it('keeps only the last 5 stderr lines', () => {
     const stderr = ['one', 'two', 'three', 'four', 'five', 'six', 'seven'].join('\n')
-    const msg = formatHelperFailure(2, stderr)
-    expect(msg).toBe('Apply helper failed (exit 2): three | four | five | six | seven')
+    const msg = formatApplyFailure('npm ci', 2, stderr)
+    expect(msg).toBe('npm ci failed (exit 2): three | four | five | six | seven')
   })
 
   it('skips blank lines and trims whitespace', () => {
-    expect(formatHelperFailure(1, '\n  rsync: error 23  \n\n')).toBe(
-      'Apply helper failed (exit 1): rsync: error 23',
+    expect(formatApplyFailure('rsync', 1, '\n  rsync: error 23  \n\n')).toBe(
+      'rsync failed (exit 1): rsync: error 23',
     )
   })
 
-  it('says so when the helper produced no output', () => {
-    expect(formatHelperFailure(1, '')).toBe('Apply helper failed (exit 1) with no output.')
+  it('says so when the step produced no output', () => {
+    expect(formatApplyFailure('rsync', 1, '')).toBe('rsync failed (exit 1) with no output.')
   })
 
   it('omits the exit code when unknown', () => {
-    // sudo -n denial or a timeout kill can reject without a numeric code.
-    expect(formatHelperFailure(undefined, 'sudo: a password is required')).toBe(
-      'Apply helper failed: sudo: a password is required',
+    // A timeout kill can reject without a numeric code.
+    expect(formatApplyFailure('npm ci', undefined, 'ENOSPC: no space left on device')).toBe(
+      'npm ci failed: ENOSPC: no space left on device',
     )
   })
 
   it('accepts string codes (signal names)', () => {
-    expect(formatHelperFailure('SIGTERM', '')).toBe('Apply helper failed (exit SIGTERM) with no output.')
+    expect(formatApplyFailure('npm ci', 'SIGTERM', '')).toBe(
+      'npm ci failed (exit SIGTERM) with no output.',
+    )
   })
 })
 

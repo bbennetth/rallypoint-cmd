@@ -9,7 +9,7 @@ import { JOURNALCTL_BIN, assertAllowedUnit, journalctlTailArgs } from './constan
 const BUFFER_MAX = 500
 const RESPAWN_DELAY_MS = 3000
 
-// Per-unit journald tailer: ONE `sudo journalctl -f` per game server no
+// Per-unit journald tailer: ONE `journalctl -f` per game server no
 // matter how many SSE viewers are connected. Subscribers replay the ring
 // buffer, then get live lines. The child is respawned with backoff if it
 // dies and killed on panel shutdown.
@@ -42,8 +42,7 @@ export function createRealJournal(logger: Logger, unitName: string): Journal {
 
   function spawnTailer(): void {
     if (stopped || child) return
-    // Frozen argv — must match deploy/sudoers/rallypoint-cmd exactly.
-    child = spawn('sudo', ['-n', JOURNALCTL_BIN, ...journalctlTailArgs(unitName)], {
+    child = spawn(JOURNALCTL_BIN, journalctlTailArgs(unitName), {
       stdio: ['ignore', 'pipe', 'ignore'],
     })
     const rl = createInterface({ input: child.stdout })
@@ -53,7 +52,7 @@ export function createRealJournal(logger: Logger, unitName: string): Journal {
       rl.close()
       scheduleRespawn(`exit ${code}`)
     })
-    // Spawn failure (bad sudoers, missing binary): recover instead of
+    // Spawn failure (missing binary, exec error): recover instead of
     // wedging the tailer forever with a non-null `child`.
     child.on('error', (err) => {
       logger.error('journalctl spawn error', { err: err.message })

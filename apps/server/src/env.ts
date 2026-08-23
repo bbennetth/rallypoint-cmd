@@ -37,7 +37,7 @@ const EnvSchema = z.object({
 
   // Filesystem layout (live defaults match the LXC provisioner).
   DATA_DIR: z.string().optional(),
-  BACKUP_DIR: z.string().optional(),
+  PANEL_BACKUP_DIR: z.string().optional(),
   // Parent dir for game-server installs — each server lives at
   // GAMES_ROOT/<slug>.
   GAMES_ROOT: z.string().optional(),
@@ -78,7 +78,7 @@ export interface Env {
   PANEL_HOST: string
   PANEL_PORT: number
   DATA_DIR: string
-  BACKUP_DIR: string
+  PANEL_BACKUP_DIR: string
   GAMES_ROOT: string
   STEAMCMD_BIN: string
   WEB_DIST_DIR: string | undefined
@@ -114,7 +114,7 @@ export function parseEnv(raw: NodeJS.ProcessEnv): Env {
   const sandboxRoot = path.resolve(process.cwd(), 'data')
   const dataDir = parsed.DATA_DIR ?? (mock ? path.join(sandboxRoot, 'panel') : '/var/lib/rallypoint-cmd')
   const backupDir =
-    parsed.BACKUP_DIR ?? (mock ? path.join(sandboxRoot, 'backups') : '/var/backups/rallypoint-cmd')
+    parsed.PANEL_BACKUP_DIR ?? (mock ? path.join(sandboxRoot, 'backups') : '/var/backups/rallypoint-cmd')
   const gamesRoot = parsed.GAMES_ROOT ?? (mock ? path.join(sandboxRoot, 'games') : '/opt/games')
   // SteamCMD is shared by every game, so it lives at the game-neutral
   // /opt/steamcmd. Existing deploys pin STEAMCMD_BIN in panel.env; the
@@ -126,7 +126,7 @@ export function parseEnv(raw: NodeJS.ProcessEnv): Env {
   return {
     ...parsed,
     DATA_DIR: dataDir,
-    BACKUP_DIR: backupDir,
+    PANEL_BACKUP_DIR: backupDir,
     GAMES_ROOT: gamesRoot,
     STEAMCMD_BIN: steamcmdBin,
     DB_PATH: path.join(dataDir, 'panel.sqlite'),

@@ -1,23 +1,19 @@
 [Unit]
-Description=Palworld Management Panel
+Description=Rallypoint cmd game-server panel
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=rallypoint
-Group=rallypoint
 WorkingDirectory=/opt/rallypoint-cmd
 EnvironmentFile=/etc/rallypoint-cmd/panel.env
 ExecStart=/usr/bin/node /opt/rallypoint-cmd/apps/server/dist/server.js
 Restart=always
 RestartSec=3
-MemoryMax=512M
+# Steady-state the panel sits well under 512M, but self-update runs
+# `npm ci` as a child in this cgroup — cap it where that fits.
+MemoryMax=1536M
 SyslogIdentifier=rallypoint-cmd
-# IMPORTANT: do NOT set NoNewPrivileges=true here — the panel calls
-# `sudo systemctl` to control the game units, and NoNewPrivileges
-# breaks sudo. (If you want that hardening, switch service control to a
-# polkit rule first; see deploy/README.md.)
 
 [Install]
 WantedBy=multi-user.target

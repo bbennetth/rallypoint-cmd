@@ -1,9 +1,11 @@
 name: release
 
-# On a version tag (v0.2.0), build the panel and attach a prebuilt
-# artifact to a GitHub Release. The panel's in-app updater downloads this
-# artifact — it contains built server + web dists plus release.json, so
-# the CT never has to run a build (only `npm ci --omit=dev`).
+# On a version tag (v0.3.0), build the panel and attach a prebuilt
+# artifact to a GitHub Release. Both update paths consume this artifact —
+# the panel's in-app updater and the ct script's update_script() via
+# fetch_and_deploy_gh_release "prebuild" — so it carries the built server
+# and web dists plus release.json, and the CT never runs a build (only
+# `npm ci --omit=dev`).
 on:
   push:
     tags: ['v*']
@@ -53,7 +55,8 @@ jobs:
             --exclude='**/dist-types' \
             --exclude='*.tsbuildinfo' \
             release.json package.json package-lock.json tsconfig.base.json tsconfig.json \
-            packages apps ct deploy e2e eslint.config.js .prettierrc.json vitest.config.ts
+            LICENSE packages apps ct install json deploy e2e eslint.config.js \
+            .prettierrc.json vitest.config.ts
           ls -la rallypoint-cmd-*.tar.gz
 
       - name: Create GitHub Release

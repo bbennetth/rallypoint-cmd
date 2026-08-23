@@ -20,7 +20,7 @@ function makeEnv(root: string): Env {
     PANEL_HOST: '127.0.0.1',
     PANEL_PORT: 0,
     DATA_DIR: path.join(root, 'panel'),
-    BACKUP_DIR: path.join(root, 'backups'),
+    PANEL_BACKUP_DIR: path.join(root, 'backups'),
     STEAMCMD_BIN: path.join(root, 'steamcmd.sh'),
     DB_PATH: path.join(root, 'panel', 'panel.sqlite'),
     PANEL_PASSWORD_PEPPER: 'test-pepper-0123456789abcdef',

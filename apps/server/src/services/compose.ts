@@ -48,7 +48,7 @@ export interface ComposedServices {
   panelUpdate: PanelUpdateService
   publicAccess: PublicAccessService
   // Provisions/deprovisions the systemd unit (start.sh + drop-in) for a
-  // game slug via the sudoers-pinned root helper.
+  // game slug, rendered from the game registry.
   unitProvisioner: UnitProvisioner
   // Panel-level coordination for panel-scoped long-ops (self-update,
   // public access) — independent of any game server, so these keep
@@ -69,7 +69,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
 
     // Per-server pending-restart flag + backup subdir, namespaced by id.
     const stateKey = `pendingRestart:${row.id}`
-    const backupDir = path.join(env.BACKUP_DIR, row.id)
+    const backupDir = path.join(env.PANEL_BACKUP_DIR, row.id)
 
     // Settings/mods are always the real fs implementations — in mock
     // mode they just operate on the sandbox dirs.
@@ -204,7 +204,9 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
   const publicAccess =
     env.PANEL_MODE === 'mock' ? createFakePublicAccess(instances) : createRealPublicAccess({ db, logger, instances })
   const unitProvisioner =
-    env.PANEL_MODE === 'mock' ? createFakeUnitProvisioner(logger) : createRealUnitProvisioner(logger)
+    env.PANEL_MODE === 'mock'
+      ? createFakeUnitProvisioner(logger)
+      : createRealUnitProvisioner(env, logger)
   // Panel-scoped coordination (self-update + public access), independent
   // of any game server.
   const panelLongOps = new LongOpRunner()

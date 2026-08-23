@@ -3,8 +3,8 @@ import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
 // One row per managed game-server instance. `gameSlug` keys into the
 // shared GAMES registry; `installDir` and `unitName` are frozen at
-// create time (the sudoers file pins systemctl/journalctl argv per
-// unit, so unit names are never derived at request time).
+// create time and validated against the registry's closed set, so unit
+// names are never derived from request input.
 export const servers = sqliteTable('servers', {
   id: text('id').primaryKey(), // 'default' for the seeded legacy row, ulid-lowercase otherwise
   gameSlug: text('game_slug').notNull(),

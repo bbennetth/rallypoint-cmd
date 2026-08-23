@@ -29,7 +29,7 @@ function makeEnv(root: string): Env {
     PANEL_HOST: '127.0.0.1',
     PANEL_PORT: 0,
     DATA_DIR: path.join(root, 'panel'),
-    BACKUP_DIR: path.join(root, 'backups'),
+    PANEL_BACKUP_DIR: path.join(root, 'backups'),
     STEAMCMD_BIN: path.join(root, 'steamcmd.sh'),
     DB_PATH: path.join(root, 'panel', 'panel.sqlite'),
     PANEL_PASSWORD_PEPPER: 'test-pepper-0123456789abcdef',
@@ -127,7 +127,7 @@ beforeEach(async () => {
     }),
     serverId: SERVER_ID,
     installDir,
-    backupDir: env.BACKUP_DIR,
+    backupDir: env.PANEL_BACKUP_DIR,
     contract: enshroudedContract,
   })
 })
@@ -142,17 +142,17 @@ describe('enshrouded backup create + round-trip', () => {
     const backup = await service.create('manual', noopSink)
     expect(backup.worldId).toBeNull()
     expect(backup.filename.startsWith('enshrouded-')).toBe(true)
-    expect(fs.existsSync(path.join(env.BACKUP_DIR, backup.filename))).toBe(true)
+    expect(fs.existsSync(path.join(env.PANEL_BACKUP_DIR, backup.filename))).toBe(true)
 
     const listed: string[] = []
     await tar.list({
-      file: path.join(env.BACKUP_DIR, backup.filename),
+      file: path.join(env.PANEL_BACKUP_DIR, backup.filename),
       onReadEntry: (e) => void listed.push(e.path),
     })
     expect(listed.some((p) => p.replace(/\/$/, '') === 'enshrouded_server.json')).toBe(true)
     expect(listed.some((p) => p.startsWith('savegame/'))).toBe(true)
 
-    const preview = await service.stageUpload(bodyOf(path.join(env.BACKUP_DIR, backup.filename)))
+    const preview = await service.stageUpload(bodyOf(path.join(env.PANEL_BACKUP_DIR, backup.filename)))
     expect(preview.manifest.worldId).toBeNull()
     expect(preview.manifest.game).toBe('enshrouded')
     expect(preview.currentWorldId).toBeNull()
@@ -210,7 +210,7 @@ describe('enshrouded restore', () => {
     const liveWorld = path.join(installDir, 'savegame', '3ad85aea')
     fs.writeFileSync(liveWorld, 'MUTATED-AFTER-BACKUP')
 
-    const preview = await service.stageUpload(bodyOf(path.join(env.BACKUP_DIR, backup.filename)))
+    const preview = await service.stageUpload(bodyOf(path.join(env.PANEL_BACKUP_DIR, backup.filename)))
     await service.restore(preview.stagingId, 'restore', noopSink)
 
     expect(fs.readFileSync(liveWorld, 'utf8')).toBe('fake-enshrouded-world')
@@ -225,7 +225,7 @@ describe('enshrouded restore', () => {
     mutated['name'] = 'Mutated After Backup'
     fs.writeFileSync(cfgPath, JSON.stringify(mutated, null, 4))
 
-    const preview = await service.stageUpload(bodyOf(path.join(env.BACKUP_DIR, backup.filename)))
+    const preview = await service.stageUpload(bodyOf(path.join(env.PANEL_BACKUP_DIR, backup.filename)))
     await service.restore(preview.stagingId, 'restore', noopSink)
 
     const after = JSON.parse(fs.readFileSync(cfgPath, 'utf8')) as Record<string, unknown>
@@ -236,7 +236,7 @@ describe('enshrouded restore', () => {
 
   it('refuses a wrong confirmation', async () => {
     const backup = await service.create('manual', noopSink)
-    const preview = await service.stageUpload(bodyOf(path.join(env.BACKUP_DIR, backup.filename)))
+    const preview = await service.stageUpload(bodyOf(path.join(env.PANEL_BACKUP_DIR, backup.filename)))
     await expect(service.restore(preview.stagingId, 'nope', noopSink)).rejects.toMatchObject({
       code: 'confirm_mismatch',
     })

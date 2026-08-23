@@ -1,5 +1,3 @@
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import fs from 'node:fs'
 import path from 'node:path'
 import { eq } from 'drizzle-orm'
@@ -9,6 +7,7 @@ import type { Logger } from '../logger.js'
 import { panelState } from '../db/schema/index.js'
 import type { OpSink } from './types.js'
 import { PAL_SETTINGS_INI } from './constants.js'
+import * as playit from './playit-agent.js'
 
 // Minimal view of the instance manager (a structural type, to avoid a
 // compose.ts import cycle). The playit agent is panel-scoped, but each
@@ -24,15 +23,12 @@ export interface InstancePortSource {
   list(): ServerPortView[]
 }
 
-const execFileAsync = promisify(execFile)
+// Public Access via playit.gg: the panel drives the playit agent
+// directly (see playit-agent.ts) and reads tunnel state from
+// api.playit.gg with the agent secret. Everything here is manager-level
+// (game-agnostic): it exposes whatever UDP port the game declares
+// (PublicPort in the ini for Palworld).
 
-// Public Access via playit.gg: the panel drives the playit agent through
-// the pinned root helper (rallypoint-cmd-playit, sudoers-whitelisted) and
-// reads tunnel state from api.playit.gg with the agent secret. Everything
-// here is manager-level (game-agnostic): it exposes whatever UDP port the
-// game declares (PublicPort in the ini for Palworld).
-
-export const PLAYIT_HELPER = '/usr/local/bin/rallypoint-cmd-playit'
 // Cached last-known address, keyed per game port — with several games
 // installed each has its own tunnel, so one shared cache row would leak
 // another game's address into the fallback.
@@ -147,49 +143,43 @@ export function createRealPublicAccess(deps: Deps): PublicAccessService {
   let pendingClaim: { code: string; url: string } | null = null
   const trace = new PlayitTrace()
 
-  async function helper(...args: string[]): Promise<{ ok: boolean; stdout: string }> {
-    const verb = args[0] ?? '?'
+  // Runs one agent operation, tracing the outcome. The trace is
+  // user-visible (the card's Console toggle), so it records what was
+  // attempted and how it ended, never any secret value.
+  async function step<T>(verb: string, fn: () => Promise<T>): Promise<T | null> {
     try {
-      const { stdout } = await execFileAsync('sudo', ['-n', PLAYIT_HELPER, ...args], {
-        timeout: args[0] === 'claim' ? 330_000 : args[0] === 'install' ? 300_000 : 30_000,
-      })
-      // `secret` output is the secret itself — never trace its value.
-      if (verb !== 'secret' && verb !== 'logs') {
-        trace.add('helper', `$ playit-helper ${verb} → ok${stdout ? `: ${stdout.split('\n')[0]}` : ''}`)
-      }
-      return { ok: true, stdout: stdout.trim() }
+      const result = await fn()
+      trace.add('helper', `$ playit ${verb} → ok`)
+      return result
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      logger.warn('playit helper failed', { args: verb, err: msg })
-      trace.add('helper', `$ playit-helper ${verb} → FAILED: ${msg.slice(0, 200)}`)
-      return { ok: false, stdout: '' }
+      logger.warn('playit agent op failed', { verb, err: msg })
+      trace.add('helper', `$ playit ${verb} → FAILED: ${msg.slice(0, 200)}`)
+      return null
     }
   }
 
-  async function helperStatus(): Promise<{ installed: boolean; claimed: boolean; running: boolean }> {
-    if (!fs.existsSync(PLAYIT_HELPER)) return { installed: false, claimed: false, running: false }
-    const res = await helper('status')
-    if (!res.ok) return { installed: false, claimed: false, running: false }
-    const kv = Object.fromEntries(res.stdout.split(/\s+/).map((p) => p.split('=')))
-    return {
-      installed: kv.installed === '1',
-      claimed: kv.claimed === '1',
-      running: kv.active === 'active',
+  async function agentStatus(): Promise<{ installed: boolean; claimed: boolean; running: boolean }> {
+    try {
+      return await playit.status()
+    } catch (err) {
+      logger.warn('playit status failed', { err: err instanceof Error ? err.message : String(err) })
+      return { installed: false, claimed: false, running: false }
     }
   }
 
   async function fetchAddress(gamePort: number): Promise<string | null> {
-    const secret = await helper('secret')
-    if (!secret.ok || !secret.stdout) {
+    const secret = playit.readSecret()
+    if (!secret) {
       trace.add('api', 'skipped tunnels/list — no agent secret available')
       return null
     }
-    trace.redact(secret.stdout)
+    trace.redact(secret)
     try {
       const res = await fetch(`${API_BASE}/tunnels/list`, {
         method: 'POST',
         headers: {
-          authorization: `agent-key ${secret.stdout}`,
+          authorization: `agent-key ${secret}`,
           'content-type': 'application/json',
           'user-agent': 'rallypoint-cmd',
         },
@@ -237,7 +227,7 @@ export function createRealPublicAccess(deps: Deps): PublicAccessService {
 
   return {
     async status(serverId?: string): Promise<PublicAccessStatus> {
-      const s = await helperStatus()
+      const s = await agentStatus()
       const gamePort = readGamePort(instances, serverId) ?? 8211
       let address: string | null = null
       if (s.claimed) {
@@ -254,43 +244,35 @@ export function createRealPublicAccess(deps: Deps): PublicAccessService {
     },
 
     async enable(sink, serverId): Promise<void> {
-      const s = await helperStatus()
-      if (!fs.existsSync(PLAYIT_HELPER)) {
-        throw new Error(
-          'The playit helper is not installed — update the panel via the installer one-liner first.',
-        )
-      }
+      const s = await agentStatus()
       if (!s.installed) {
         sink.line('[public-access] Installing the playit agent (apt)...')
         sink.progress(5)
-        const inst = await helper('install')
-        if (!inst.ok) throw new Error('playit agent installation failed (see panel logs).')
+        const inst = await step('install', () => playit.install())
+        if (inst === null) throw new Error('playit agent installation failed (see panel logs).')
       }
       sink.progress(20)
 
       if (!s.claimed) {
-        // Generate a claim code locally (unprivileged) and surface the URL.
         sink.line('[public-access] Generating claim code...')
-        const gen = await execFileAsync('playit', ['claim', 'generate'], { timeout: 30_000 })
-        const code = gen.stdout.trim().split(/\s+/).pop() ?? ''
-        if (!/^[a-z0-9]{4,64}$/.test(code)) throw new Error(`Unexpected claim code: ${code}`)
+        const code = await playit.generateClaimCode()
         const url = `https://playit.gg/claim/${code}`
         pendingClaim = { code, url }
         sink.line(`[public-access] APPROVE THIS AGENT: ${url}`)
         sink.line('[public-access] Waiting for approval (up to 5 minutes)...')
         sink.progress(30)
         try {
-          // Blocks until approved (helper runs `claim exchange --wait 300`,
-          // writes the returned secret to /etc/playit/playit.toml — the CLI
-          // only prints it — and restarts the agent).
-          const claim = await helper('claim', code)
-          if (!claim.ok) throw new Error('Claim was not approved in time — try again.')
+          // Blocks until approved: `claim exchange --wait 300` only PRINTS
+          // the secret, so playit.claim() also persists it to
+          // /etc/playit/playit.toml and restarts the agent.
+          const claimed = await step('claim', () => playit.claim(code))
+          if (claimed === null) throw new Error('Claim was not approved in time — try again.')
         } finally {
           pendingClaim = null
         }
         sink.line('[public-access] Claimed — agent starting.')
       } else {
-        await helper('start')
+        await step('start', () => playit.start())
       }
       sink.progress(80)
 
@@ -307,16 +289,12 @@ export function createRealPublicAccess(deps: Deps): PublicAccessService {
     },
 
     async disable(): Promise<void> {
-      const res = await helper('stop')
-      if (!res.ok) throw new Error('Failed to stop the playit agent.')
+      const res = await step('stop', () => playit.stop())
+      if (res === null) throw new Error('Failed to stop the playit agent.')
     },
 
     async console(): Promise<PublicAccessConsole> {
-      let agentLog: string[] = []
-      if (fs.existsSync(PLAYIT_HELPER)) {
-        const logs = await helper('logs')
-        agentLog = logs.ok && logs.stdout ? logs.stdout.split('\n').slice(-200) : []
-      }
+      const agentLog = playit.playitBinPath() ? (await playit.logs()).slice(-200) : []
       return { trace: trace.list(), agentLog }
     },
   }

@@ -20,7 +20,7 @@ import { assertDiskFloor } from './disk.js'
 // Backup + restore engine — the panel's highest-risk surface. Every
 // guardrail here is deliberate:
 //  * create: REST save → COPY the live save dir → tar the copy → atomic
-//    rename into BACKUP_DIR → DB row (paths only ever come from rows).
+//    rename into PANEL_BACKUP_DIR → DB row (paths only ever come from rows).
 //  * upload: raw stream with a byte cap into an isolated staging dir.
 //  * validate: dry-run listing pass (type allowlist, zip-slip, bomb
 //    caps, shape check) BEFORE any extraction; extraction re-applies the
@@ -304,7 +304,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
         fs.writeFileSync(path.join(archiveRoot, 'manifest.json'), JSON.stringify(manifest, null, 2))
         pct(75)
 
-        // 3. Tar to a temp file IN BACKUP_DIR (same fs) then atomic rename
+        // 3. Tar to a temp file IN PANEL_BACKUP_DIR (same fs) then atomic rename
         // (progress: 75 → 95 on completion; tar has no per-byte callback).
         const stamp = new Date().toISOString().replace(/[:]/g, '-').replace(/\.\d+Z$/, 'Z')
         const filename = `${contract.filenamePrefix}${worldId ? `-${worldId.slice(0, 8)}` : ''}-${stamp}.tar.gz`

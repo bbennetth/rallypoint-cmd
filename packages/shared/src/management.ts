@@ -3,7 +3,7 @@ import { longOpSchema } from './api.js'
 import { diskUsageSchema } from './server-status.js'
 
 // Panel-level storage view: what actually sits on disk under GAMES_ROOT
-// and BACKUP_DIR, including directories with no corresponding server row
+// and PANEL_BACKUP_DIR, including directories with no corresponding server row
 // (server deletion is an unregistration, not an uninstall — orphans are
 // the expected steady state and exactly what's worth reclaiming).
 
@@ -24,7 +24,7 @@ export const gameDirEntrySchema = z.object({
 export type GameDirEntry = z.infer<typeof gameDirEntrySchema>
 
 export const backupDirEntrySchema = z.object({
-  // Directory name under BACKUP_DIR: a server id (lowercase ulid) or the
+  // Directory name under PANEL_BACKUP_DIR: a server id (lowercase ulid) or the
   // legacy 'default'.
   id: z.string(),
   sizeBytes: z.number().int().nonnegative(),
