@@ -15,12 +15,14 @@ import { useAuth } from '../lib/auth.js'
 // dashboard (four tiles), `sliders` for Settings (a settings *form* is knobs,
 // not a gear), `gear` for the panel-level Management page (panel machinery:
 // self-update + disk reclaim), `file` for Backups (they are literally
-// .tar.gz files) and `clock` for Schedules (cron). `terminal`, `users` and
-// `puzzle` are the cmd-local glyphs added to ui/ink/icons.tsx.
+// .tar.gz files) and `clock` for Schedules (cron). `terminal`, `users`,
+// `puzzle` and `pulse` are the cmd-local glyphs added to ui/ink/icons.tsx.
 //
 // Eight tabs trips shell.css's `:has(> .pl-tab:nth-child(7))` rule, so the
 // mobile pill sizes tabs to their content and scrolls horizontally rather
-// than squeezing eight unreadable slivers into one screen width.
+// than squeezing eight unreadable slivers into one screen width. A
+// full-support game is already well past that (Enshrouded gets ten with
+// Monitoring), so the scrolling pill is the normal case, not the edge one.
 
 function navItems(
   updateAvailable: boolean,
@@ -56,6 +58,7 @@ function navItems(
     { to: '/', label: 'Servers', icon: 'grid', end: true },
     { to: base, label: 'Dashboard', icon: 'grid', end: true },
     { to: `${base}/console`, label: 'Console', icon: 'terminal' },
+    { to: `${base}/monitoring`, label: 'Monitoring', icon: 'pulse' },
     ...(caps && caps.query !== 'none'
       ? [{ to: `${base}/players`, label: 'Players', icon: 'users' } as const]
       : []),

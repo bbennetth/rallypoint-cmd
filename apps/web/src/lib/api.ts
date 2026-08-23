@@ -2,6 +2,7 @@ import {
   backupsResponseSchema,
   errorEnvelopeSchema,
   longOpSchema,
+  metricsSnapshotSchema,
   modsResponseSchema,
   modUploadResultSchema,
   panelOpStateSchema,
@@ -23,6 +24,7 @@ import {
   type Backup,
   type CreateScheduleRequest,
   type LongOp,
+  type MetricsSnapshot,
   type ModsResponse,
   type ModUploadResult,
   type PanelOpState,
@@ -140,6 +142,9 @@ export const api = {
   status: (): Promise<ServerStatus> => request('GET', `${apiScope()}/status`, serverStatusSchema),
   power: (action: 'start' | 'stop' | 'restart'): Promise<unknown> =>
     request('POST', `${apiScope()}/power`, okSchema, { action }),
+
+  // resource telemetry (Monitoring page)
+  metrics: (): Promise<MetricsSnapshot> => request('GET', `${apiScope()}/metrics`, metricsSnapshotSchema),
 
   // players
   players: (): Promise<PlayersResponse> => request('GET', `${apiScope()}/players`, playersResponseSchema),

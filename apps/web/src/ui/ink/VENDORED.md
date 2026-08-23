@@ -85,7 +85,7 @@ The **only** permitted hand-edits. Re-apply these after any re-sync.
 
 | File | Edit |
 |---|---|
-| `icons.tsx` | 5 glyphs (`terminal`, `users`, `puzzle`, `upload`, `stop`) appended in a marked trailing block on both the `IconName` union and `PATHS`. Kept trailing so the diff is two clean hunks. |
+| `icons.tsx` | 6 glyphs (`terminal`, `users`, `puzzle`, `upload`, `stop`, `pulse`) appended in a marked trailing block on both the `IconName` union and `PATHS`. Kept trailing so the diff is two clean hunks. |
 | `AppChrome.tsx` | swipe-nav removed (import, `SwipeStart`, both touch handlers, the `activeIndex` block that only fed them, and `useLocation`/`useNavigate`); `AppChromeNavItem.badge` added and rendered in both nav variants. |
 | `theme.css` | its four `@import './tokens/*.css'` lines deleted — hoisted into `apps/web/src/index.css`. A nested `@import` inherits its parent's cascade layer, and the tokens must stay unlayered while `theme.css` is imported `layer(components)`. See the note in `index.css`. |
 | `tokens/primitives.css` + `shell.css` | the four type roles (`.display`, `.mono`, `.eyebrow`, `.meta`) are defined in **primitives.css only**. Upstream duplicates them into both, with shell.css winning on source order; `.mono` here takes shell.css's real `font-family` rather than upstream's deliberately-empty primitives copy. Splitting them apart keeps the type layer usable without shell.css, which carries `html, body { overflow: hidden }` and therefore can only be imported once a `.plapp` scroll container exists. |

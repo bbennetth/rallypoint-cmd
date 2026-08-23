@@ -1,10 +1,22 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { EventEmitter } from 'node:events'
-import type { GameDef, PalServerInfo, PalServerMetrics, Player } from '@rallypoint-cmd/shared'
+import {
+  DEFAULT_ERROR_PATTERNS,
+  compileErrorMatcher,
+  parseSystemdBytes,
+  type GameDef,
+  type MetricsErrorLine,
+  type MetricsSample,
+  type MetricsSnapshot,
+  type PalServerInfo,
+  type PalServerMetrics,
+  type Player,
+} from '@rallypoint-cmd/shared'
 import type { Env } from '../../env.js'
 import type { Logger } from '../../logger.js'
-import type { GameControl, GameQuery, Journal, OpSink, SteamCmd, SystemdStatus } from '../types.js'
+import type { GameControl, GameQuery, Journal, MetricsSampler, OpSink, SteamCmd, SystemdStatus } from '../types.js'
 import { createNullQuery } from '../stubs.js'
 
 // Fake implementations of every game-facing service, driven by one
@@ -229,8 +241,124 @@ export interface FakeInstanceServices {
   gameControl: GameControl
   query: GameQuery
   journal: Journal
+  metrics: MetricsSampler
   steamcmd: SteamCmd
   dispose(): void
+}
+
+// Simulated resource telemetry. The shape matters more than the numbers:
+// a load that wanders, a periodic spike, and an overload line logged at
+// the same instant as the spike — so the Monitoring page's central claim
+// (pressure and errors line up) is visible and e2e-assertable without a
+// real game.
+const FAKE_TICK_MS = 2_000
+const FAKE_HISTORY_MAX = 1_440
+// Every Nth sample is a spike. Fixed rather than random so the e2e spec
+// can rely on an overload line existing after backfill.
+const SPIKE_EVERY = 8
+const FAKE_OVERLOAD_LINE = 'Server overloaded — simulation tick took 812ms (budget 33ms)'
+
+function createFakeMetricsSampler(world: FakeWorld, game: GameDef): MetricsSampler {
+  const history: MetricsSample[] = []
+  const errors: MetricsErrorLine[] = []
+  const matcher = compileErrorMatcher(game.logPatterns?.error ?? DEFAULT_ERROR_PATTERNS)
+  const memHighBytes = parseSystemdBytes(game.memoryHigh)
+  const limits = {
+    memHighBytes,
+    memMaxBytes: parseSystemdBytes(game.memoryMax),
+    hostCpus: Math.max(1, os.cpus().length),
+    hostMemBytes: os.totalmem(),
+  }
+  // Wander around a plausible idle load for a mid-size server.
+  const memBase = memHighBytes !== null ? memHighBytes * 0.62 : 6 * 1024 ** 3
+  let cpu = 34
+  let mem = memBase
+  let latency = 28
+  let n = 0
+  let timer: ReturnType<typeof setInterval> | null = null
+  let unsubscribe: (() => void) | null = null
+  let backfilled = false
+
+  function recordError(line: string, ts: number): void {
+    if (!matcher?.test(line)) return
+    errors.push({ ts, line })
+    if (errors.length > 100) errors.shift()
+  }
+
+  const drift = (v: number, by: number, lo: number, hi: number): number =>
+    Math.min(hi, Math.max(lo, v + (Math.random() - 0.5) * by))
+
+  // One simulated sample. `at` lets backfill lay down a past series with
+  // the same generator the live tick uses.
+  function step(at: number, quiet = false): MetricsSample {
+    n += 1
+    const spike = n % SPIKE_EVERY === 0
+    cpu = spike ? drift(93, 8, 80, 100) : drift(cpu, 14, 12, 62)
+    mem = drift(mem, memBase * 0.05, memBase * 0.7, memBase * 1.18)
+    latency = spike ? drift(220, 90, 120, 400) : drift(latency, 18, 8, 70)
+    if (spike && !quiet) world.log(`[${game.name}] ${FAKE_OVERLOAD_LINE}`)
+    else if (spike) recordError(FAKE_OVERLOAD_LINE, at)
+    return {
+      ts: at,
+      cpuPct: Math.round(cpu * 10) / 10,
+      cpuThrottledPct: spike ? Math.round(drift(18, 10, 4, 40) * 10) / 10 : 0,
+      cpuPressure: Math.round((spike ? drift(55, 20, 30, 90) : drift(4, 6, 0, 18)) * 10) / 10,
+      memPressure: Math.round(drift(1, 2, 0, 6) * 10) / 10,
+      memBytes: Math.round(mem),
+      latencyMs: Math.round(latency),
+      reachable: true,
+      load1: Math.round(((cpu / 100) * limits.hostCpus + Math.random() * 0.4) * 100) / 100,
+    }
+  }
+
+  function push(sample: MetricsSample): void {
+    history.push(sample)
+    if (history.length > FAKE_HISTORY_MAX) history.shift()
+  }
+
+  // Lay down a past window the first time the server comes up, so the
+  // charts have a shape to draw immediately instead of one lonely point.
+  function backfill(): void {
+    if (backfilled) return
+    backfilled = true
+    const now = Date.now()
+    for (let i = 120; i > 0; i -= 1) push(step(now - i * FAKE_TICK_MS, true))
+  }
+
+  return {
+    snapshot: (): MetricsSnapshot => {
+      const running = world.state === 'active'
+      if (running) backfill()
+      const cutoff = Date.now() - 3_600_000
+      return {
+        running,
+        limits,
+        current: running && history.length > 0 ? history[history.length - 1]! : null,
+        history: [...history],
+        errors: {
+          recent: [...errors],
+          lastHourCount: errors.reduce((c, e) => (e.ts >= cutoff ? c + 1 : c), 0),
+        },
+      }
+    },
+    start: () => {
+      if (timer) return
+      for (const line of world.journalBuffer()) recordError(line, Date.now())
+      unsubscribe = world.onLine((line) => recordError(line, Date.now()))
+      timer = setInterval(() => {
+        if (world.state !== 'active') return
+        backfill()
+        push(step(Date.now()))
+      }, FAKE_TICK_MS)
+      timer.unref()
+    },
+    stop: () => {
+      if (timer) clearInterval(timer)
+      timer = null
+      unsubscribe?.()
+      unsubscribe = null
+    },
+  }
 }
 
 export function createFakeInstanceServices(
@@ -350,11 +478,18 @@ export function createFakeInstanceServices(
     installedBuildId: () => Promise.resolve(world.buildId),
   }
 
+  const metrics = createFakeMetricsSampler(world, game)
+  metrics.start()
+
   return {
     gameControl,
     query: game.capabilities.query === 'pal-rest' ? palQuery : createNullQuery(game),
     journal,
+    metrics,
     steamcmd,
-    dispose: () => world.dispose(),
+    dispose: () => {
+      metrics.stop()
+      world.dispose()
+    },
   }
 }

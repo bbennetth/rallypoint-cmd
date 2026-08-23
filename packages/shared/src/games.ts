@@ -50,6 +50,11 @@ export interface GameDef {
     // backup/restore engine, whose archive contract assumes them.
     world: boolean
   }
+  // Regex sources (case-insensitive, matched against console lines) that
+  // mark a line as worth surfacing on the Monitoring page. Omit to take
+  // DEFAULT_ERROR_PATTERNS; set it when a game names its own trouble in
+  // words the default set would miss.
+  logPatterns?: { error: string[] }
   // Rough full-install size, surfaced in the add-server UI.
   diskEstimateGb: number
   // 'full' = settings/players/mods/backups wired; 'basic' = install,
@@ -250,6 +255,12 @@ export const GAMES: Record<string, GameDef> = {
     // No admin API and no official mod system, but the Steam query port
     // answers A2S_INFO — read-only name/version/player counts.
     capabilities: { query: 'a2s', players: false, mods: 'none', world: true },
+    // The server announces tick starvation as "server overloaded" and
+    // reports save trouble separately; both are what a player actually
+    // feels, so they lead the list ahead of the generic patterns.
+    logPatterns: {
+      error: ['server (is )?overload', 'overloaded', 'sav(e|ing).*(fail|error)', '\\berrors?\\b', '\\bwarn(ing)?\\b'],
+    },
     diskEstimateGb: 8,
     supportLevel: 'full',
   },
