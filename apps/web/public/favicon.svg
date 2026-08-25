@@ -1,0 +1,16 @@
+<!-- Rallypoint brand compass (ui/ink/icons.tsx) on the app's dark chassis.
+     Colors are baked in — a favicon can't resolve the theme's CSS vars:
+     bg --bg #0b1b2b, ring --ink #ffffff, needle/dot --acid #0ea5e9. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#0b1b2b" />
+  <g transform="translate(256 256) scale(0.82) translate(-256 -256)">
+    <circle cx="256" cy="256" r="200" stroke="#ffffff" stroke-width="24" fill="none" />
+    <line x1="256" y1="40" x2="256" y2="74" stroke="#ffffff" stroke-width="24" stroke-linecap="round" />
+    <line x1="256" y1="438" x2="256" y2="472" stroke="#ffffff" stroke-width="24" stroke-linecap="round" />
+    <line x1="40" y1="256" x2="74" y2="256" stroke="#ffffff" stroke-width="24" stroke-linecap="round" />
+    <line x1="438" y1="256" x2="472" y2="256" stroke="#ffffff" stroke-width="24" stroke-linecap="round" />
+    <polygon points="343.1,168.9 183.73,258.41 253.59,328.27" fill="#0ea5e9" />
+    <circle cx="397.4" cy="114.6" r="30" fill="#0ea5e9" />
+    <circle cx="397.4" cy="114.6" r="12" fill="#0b1b2b" />
+  </g>
+</svg>
