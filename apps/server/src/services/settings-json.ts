@@ -408,6 +408,10 @@ export function createEnshroudedSettings(env: Env, db: Db, target: JsonSettingsT
       return row?.value === '1'
     },
 
+    markPendingRestart() {
+      setPending(true)
+    },
+
     clearPendingRestart() {
       setPending(false)
     },

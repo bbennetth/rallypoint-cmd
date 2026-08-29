@@ -1,9 +1,16 @@
-import type { MetricsSample, MetricsSnapshot } from '@rallypoint-cmd/shared'
-import { api } from '../lib/api.js'
+import { useEffect, useState } from 'react'
+import {
+  memoryLimitSchema,
+  type MetricsSample,
+  type MetricsSnapshot,
+  type ResourcesPatch,
+  type ResourcesResponse,
+} from '@rallypoint-cmd/shared'
+import { api, ApiError } from '../lib/api.js'
 import { usePoll } from '../lib/usePoll.js'
 import { useCurrentGame } from '../lib/useCurrentGame.js'
 import { formatBytes } from '../lib/format.js'
-import { Badge, Card, Spinner, Stat } from '../ui/primitives.js'
+import { Badge, Button, Card, inputClass, Spinner, Stat } from '../ui/primitives.js'
 import { Banner } from '../ui/Banner.js'
 import { ProgressBar } from '../ui/ProgressBar.js'
 import { LogPane } from '../ui/LogPane.js'
@@ -126,7 +133,7 @@ export function MonitoringPage() {
           max={100}
           tone={(current?.cpuPct ?? 0) > 85 ? 'bad' : (current?.cpuPct ?? 0) > 60 ? 'warn' : 'accent'}
           value={pct(current?.cpuPct)}
-          right={`${limits.hostCpus} cores · load ${current?.load1?.toFixed(2) ?? '—'}`}
+          right={`${limits.hostCpus} cores${limits.cpuQuotaPct != null ? ` · quota ${limits.cpuQuotaPct}%` : ''} · load ${current?.load1?.toFixed(2) ?? '—'}`}
         />
 
         <Card title="Memory">
@@ -175,6 +182,8 @@ export function MonitoringPage() {
         />
       </div>
 
+      <ResourcesCard />
+
       <Card title={`Recent errors${errors.recent.length > 0 ? ` (${errors.recent.length})` : ''}`}>
         <LogPane
           lines={errors.recent.map((e) => `${new Date(e.ts).toLocaleTimeString()}  ${e.line}`)}
@@ -184,6 +193,163 @@ export function MonitoringPage() {
         />
       </Card>
     </div>
+  )
+}
+
+// Editable per-server resource limits, layered over the game's registry
+// defaults. Empty field = use the default; a save rewrites the systemd
+// drop-in and takes effect on the next restart.
+function ResourcesCard() {
+  const [data, setData] = useState<ResourcesResponse | null>(null)
+  const [loadErr, setLoadErr] = useState<string | null>(null)
+  const [memoryHigh, setMemoryHigh] = useState('')
+  const [memoryMax, setMemoryMax] = useState('')
+  const [cpuQuota, setCpuQuota] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveErr, setSaveErr] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+
+  async function load() {
+    try {
+      const res = await api.resources()
+      setData(res)
+      setMemoryHigh(res.overrides.memoryHigh ?? '')
+      setMemoryMax(res.overrides.memoryMax ?? '')
+      setCpuQuota(res.overrides.cpuQuotaPct != null ? String(res.overrides.cpuQuotaPct) : '')
+    } catch (e) {
+      setLoadErr(e instanceof ApiError ? e.message : 'Failed to load resource limits')
+    }
+  }
+  useEffect(() => {
+    void load()
+  }, [])
+
+  if (loadErr) {
+    return (
+      <Card title="Resource limits">
+        <Banner tone="bad">{loadErr}</Banner>
+      </Card>
+    )
+  }
+  if (!data) {
+    return (
+      <Card title="Resource limits">
+        <p className="cmd-empty">Loading…</p>
+      </Card>
+    )
+  }
+
+  const maxQuota = data.host.cpus * 100
+  const memInvalid = (v: string): boolean => v !== '' && !memoryLimitSchema.safeParse(v).success
+  const cpuNum = cpuQuota === '' ? null : Number(cpuQuota)
+  const cpuInvalid =
+    cpuNum !== null && (!Number.isInteger(cpuNum) || cpuNum < 10 || cpuNum > maxQuota)
+  const invalid = memInvalid(memoryHigh) || memInvalid(memoryMax) || cpuInvalid
+
+  const dirty =
+    memoryHigh !== (data.overrides.memoryHigh ?? '') ||
+    memoryMax !== (data.overrides.memoryMax ?? '') ||
+    cpuQuota !== (data.overrides.cpuQuotaPct != null ? String(data.overrides.cpuQuotaPct) : '')
+
+  async function save() {
+    setSaving(true)
+    setSaveErr(null)
+    setSaved(false)
+    try {
+      const patch: ResourcesPatch = {
+        memoryHigh: memoryHigh === '' ? null : memoryHigh,
+        memoryMax: memoryMax === '' ? null : memoryMax,
+        cpuQuotaPct: cpuQuota === '' ? null : Number(cpuQuota),
+      }
+      await api.updateResources(patch)
+      setSaved(true)
+      await load()
+    } catch (e) {
+      setSaveErr(e instanceof ApiError ? e.message : 'Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Card
+      title="Resource limits"
+      actions={
+        <Button variant="primary" size="sm" disabled={saving || invalid || !dirty} onClick={save}>
+          {saving ? <Spinner /> : 'Save'}
+        </Button>
+      }
+    >
+      <div className="space-y-3">
+        {saveErr && <Banner tone="bad">{saveErr}</Banner>}
+        {(saved || data.pendingRestart) && (
+          <Banner tone="warn">Unapplied changes — restart the server for them to take effect.</Banner>
+        )}
+        <div className="grid gap-3 sm:grid-cols-3">
+          <LimitField
+            label="Memory (soft limit)"
+            hint="MemoryHigh — reclaim starts here"
+            value={memoryHigh}
+            invalid={memInvalid(memoryHigh)}
+            placeholder={data.defaults.memoryHigh ?? 'unlimited'}
+            onChange={setMemoryHigh}
+          />
+          <LimitField
+            label="Memory (hard limit)"
+            hint="MemoryMax — the OOM ceiling"
+            value={memoryMax}
+            invalid={memInvalid(memoryMax)}
+            placeholder={data.defaults.memoryMax ?? 'unlimited'}
+            onChange={setMemoryMax}
+          />
+          <LimitField
+            label="CPU quota (%)"
+            hint={`100 = one core · host max ${maxQuota}`}
+            value={cpuQuota}
+            invalid={cpuInvalid}
+            placeholder="unlimited"
+            onChange={setCpuQuota}
+          />
+        </div>
+        <p className="cmd-note">
+          Overrides the game's defaults ({data.defaults.memoryHigh ?? 'no'} soft /{' '}
+          {data.defaults.memoryMax ?? 'no'} hard memory limit). Memory takes a K/M/G/T suffix, e.g.{' '}
+          <span className="mono">8G</span>. Leave a field empty to use the default. Host has{' '}
+          {data.host.cpus} cores and {formatBytes(data.host.memBytes)} RAM.
+        </p>
+      </div>
+    </Card>
+  )
+}
+
+function LimitField({
+  label,
+  hint,
+  value,
+  invalid,
+  placeholder,
+  onChange,
+}: {
+  label: string
+  hint: string
+  value: string
+  invalid: boolean
+  placeholder: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <label className="block">
+      <span className="eyebrow mb-1.5 block">{label}</span>
+      <input
+        className={inputClass}
+        value={value}
+        placeholder={placeholder}
+        aria-invalid={invalid}
+        style={invalid ? { borderColor: 'var(--bad, #e5484d)' } : undefined}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <span className="meta mt-1 block">{hint}</span>
+    </label>
   )
 }
 

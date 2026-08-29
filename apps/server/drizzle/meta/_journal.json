@@ -22,6 +22,13 @@
       "when": 1787407182786,
       "tag": "0002_magical_morlocks",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1788035835086,
+      "tag": "0003_funny_yellowjacket",
+      "breakpoints": true
     }
   ]
 }

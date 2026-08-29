@@ -222,6 +222,9 @@ export interface SettingsService {
   // (no-op when the ini exists, or for games without a settings file).
   seedIfMissing(): void
   getPendingRestart(): boolean
+  // Raise the flag from outside the settings file itself (e.g. resource
+  // limits changed) — same flag, same restart-to-apply story.
+  markPendingRestart(): void
   clearPendingRestart(): void
 }
 
@@ -358,6 +361,10 @@ export function createSettingsService(env: Env, db: Db, target: SettingsTarget):
         .where(eq(panelState.key, target.stateKey))
         .get()
       return row?.value === '1'
+    },
+
+    markPendingRestart() {
+      setPending(true)
     },
 
     clearPendingRestart() {

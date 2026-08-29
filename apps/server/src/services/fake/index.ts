@@ -5,11 +5,13 @@ import { EventEmitter } from 'node:events'
 import {
   DEFAULT_ERROR_PATTERNS,
   compileErrorMatcher,
+  effectiveResources,
   parseSystemdBytes,
   type GameDef,
   type MetricsErrorLine,
   type MetricsSample,
   type MetricsSnapshot,
+  type ResourceOverrides,
   type PalServerInfo,
   type PalServerMetrics,
   type Player,
@@ -258,16 +260,26 @@ const FAKE_HISTORY_MAX = 1_440
 const SPIKE_EVERY = 8
 const FAKE_OVERLOAD_LINE = 'Server overloaded — simulation tick took 812ms (budget 33ms)'
 
-function createFakeMetricsSampler(world: FakeWorld, game: GameDef): MetricsSampler {
+function createFakeMetricsSampler(
+  world: FakeWorld,
+  game: GameDef,
+  getOverrides?: () => ResourceOverrides,
+): MetricsSampler {
   const history: MetricsSample[] = []
   const errors: MetricsErrorLine[] = []
   const matcher = compileErrorMatcher(game.logPatterns?.error ?? DEFAULT_ERROR_PATTERNS)
   const memHighBytes = parseSystemdBytes(game.memoryHigh)
-  const limits = {
-    memHighBytes,
-    memMaxBytes: parseSystemdBytes(game.memoryMax),
-    hostCpus: Math.max(1, os.cpus().length),
-    hostMemBytes: os.totalmem(),
+  const hostCpus = Math.max(1, os.cpus().length)
+  const hostMemBytes = os.totalmem()
+  function currentLimits() {
+    const effective = effectiveResources(game, getOverrides?.())
+    return {
+      memHighBytes: parseSystemdBytes(effective.memoryHigh ?? undefined),
+      memMaxBytes: parseSystemdBytes(effective.memoryMax ?? undefined),
+      cpuQuotaPct: effective.cpuQuotaPct,
+      hostCpus,
+      hostMemBytes,
+    }
   }
   // Wander around a plausible idle load for a mid-size server.
   const memBase = memHighBytes !== null ? memHighBytes * 0.62 : 6 * 1024 ** 3
@@ -307,7 +319,7 @@ function createFakeMetricsSampler(world: FakeWorld, game: GameDef): MetricsSampl
       memBytes: Math.round(mem),
       latencyMs: Math.round(latency),
       reachable: true,
-      load1: Math.round(((cpu / 100) * limits.hostCpus + Math.random() * 0.4) * 100) / 100,
+      load1: Math.round(((cpu / 100) * hostCpus + Math.random() * 0.4) * 100) / 100,
     }
   }
 
@@ -332,7 +344,7 @@ function createFakeMetricsSampler(world: FakeWorld, game: GameDef): MetricsSampl
       const cutoff = Date.now() - 3_600_000
       return {
         running,
-        limits,
+        limits: currentLimits(),
         current: running && history.length > 0 ? history[history.length - 1]! : null,
         history: [...history],
         errors: {
@@ -366,6 +378,7 @@ export function createFakeInstanceServices(
   logger: Logger,
   installDir: string,
   game: GameDef,
+  getResourceOverrides?: () => ResourceOverrides,
 ): FakeInstanceServices {
   const world = new FakeWorld(installDir, game)
   const banned = new Set<string>()
@@ -478,7 +491,7 @@ export function createFakeInstanceServices(
     installedBuildId: () => Promise.resolve(world.buildId),
   }
 
-  const metrics = createFakeMetricsSampler(world, game)
+  const metrics = createFakeMetricsSampler(world, game, getResourceOverrides)
   metrics.start()
 
   return {

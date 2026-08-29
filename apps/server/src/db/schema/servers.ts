@@ -11,6 +11,11 @@ export const servers = sqliteTable('servers', {
   name: text('name').notNull(),
   installDir: text('install_dir').notNull().unique(),
   unitName: text('unit_name').notNull().unique(),
+  // Resource overrides applied over the registry defaults (null = use
+  // the game's default). Materialized into the unit's systemd drop-in.
+  memoryHigh: text('memory_high'),
+  memoryMax: text('memory_max'),
+  cpuQuotaPct: integer('cpu_quota_pct'),
   createdAt: integer('created_at', { mode: 'timestamp_ms' })
     .notNull()
     .default(sql`(unixepoch() * 1000)`),

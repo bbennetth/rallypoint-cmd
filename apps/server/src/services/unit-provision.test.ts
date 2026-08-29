@@ -64,6 +64,46 @@ describe('renderInstanceDropIn', () => {
     expect(conf).not.toContain('MemoryMax=')
   })
 
+  it('lets per-server overrides win over the registry caps and adds a CPU quota', () => {
+    const conf = renderInstanceDropIn(palworld, '/opt/games/palworld', {
+      memoryHigh: '30G',
+      memoryMax: null,
+      cpuQuotaPct: 400,
+    })
+    expect(conf).toContain('MemoryHigh=30G')
+    // null override = fall through to the registry default.
+    expect(conf).toContain(`MemoryMax=${palworld.memoryMax}`)
+    expect(conf).toContain('CPUQuota=400%')
+  })
+
+  it('omits CPUQuota when no override sets one', () => {
+    expect(renderInstanceDropIn(palworld, '/opt/games/palworld')).not.toContain('CPUQuota=')
+  })
+
+  it('refuses malformed override values before they reach a systemd file', () => {
+    expect(() =>
+      renderInstanceDropIn(palworld, '/opt/games/palworld', {
+        memoryHigh: '1G\nExecStart=/bin/sh',
+        memoryMax: null,
+        cpuQuotaPct: null,
+      }),
+    ).toThrow(/invalid memory limit/)
+    expect(() =>
+      renderInstanceDropIn(palworld, '/opt/games/palworld', {
+        memoryHigh: null,
+        memoryMax: 'infinity',
+        cpuQuotaPct: null,
+      }),
+    ).toThrow(/invalid memory limit/)
+    expect(() =>
+      renderInstanceDropIn(palworld, '/opt/games/palworld', {
+        memoryHigh: null,
+        memoryMax: null,
+        cpuQuotaPct: 1.5,
+      }),
+    ).toThrow(/invalid CPU quota/)
+  })
+
   it('opens the install dir for writing under the template unit ProtectSystem=strict', () => {
     for (const game of Object.values(GAMES)) {
       expect(renderInstanceDropIn(game, `/opt/games/${game.slug}`), game.slug).toContain(

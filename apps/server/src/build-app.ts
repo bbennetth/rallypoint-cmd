@@ -20,6 +20,7 @@ import { consoleRoutes } from './routes/console.js'
 import { playerRoutes } from './routes/players.js'
 import { updateRoutes } from './routes/updates.js'
 import { settingsRoutes } from './routes/settings.js'
+import { resourceRoutes } from './routes/resources.js'
 import { backupRoutes } from './routes/backups.js'
 import { modRoutes } from './routes/mods.js'
 import { scheduleRoutes } from './routes/schedules.js'
@@ -104,6 +105,7 @@ export function buildApp(deps: BuildAppDeps): Hono<HonoApp> {
     playerRoutes,
     updateRoutes,
     settingsRoutes,
+    resourceRoutes,
     backupRoutes,
     modRoutes,
     scheduleRoutes,
