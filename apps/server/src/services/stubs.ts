@@ -59,6 +59,10 @@ export function createNullSettings(db: Db, game: GameDef, stateKey: string): Set
         .get()
       return row?.value === '1'
     },
+    markPendingRestart() {
+      setPending(true)
+    },
+
     clearPendingRestart() {
       setPending(false)
     },

@@ -1,4 +1,4 @@
-import type { GameDef, LongOpKind, MetricsSnapshot, PalServerInfo, PalServerMetrics, Player } from '@rallypoint-cmd/shared'
+import type { GameDef, LongOpKind, MetricsSnapshot, PalServerInfo, PalServerMetrics, Player, ResourceOverrides } from '@rallypoint-cmd/shared'
 import type { WorldLock } from './world-lock.js'
 import type { LongOpRunner } from './long-op.js'
 import type { SettingsService } from './settings-ini.js'
@@ -98,6 +98,11 @@ export interface ServerInstance {
   mods: ModsService
   longOps: LongOpRunner
   worldLock: WorldLock
+  // Per-server resource overrides (memory/CPU limits over the registry
+  // defaults). Held in-memory alongside the DB row so the metrics
+  // sampler reflects a save without a panel restart.
+  getResourceOverrides(): ResourceOverrides
+  setResourceOverrides(overrides: ResourceOverrides): void
   dispose(): void
 }
 

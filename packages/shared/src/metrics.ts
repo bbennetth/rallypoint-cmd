@@ -55,6 +55,9 @@ export type MetricsErrorLine = z.infer<typeof metricsErrorLineSchema>
 export const metricsLimitsSchema = z.object({
   memHighBytes: z.number().int().nonnegative().nullable(),
   memMaxBytes: z.number().int().nonnegative().nullable(),
+  // Effective systemd CPUQuota (percent of one core); null = no quota,
+  // in which case the ceiling is hostCpus * 100.
+  cpuQuotaPct: z.number().int().positive().nullable(),
   hostCpus: z.number().int().positive(),
   hostMemBytes: z.number().int().nonnegative(),
 })

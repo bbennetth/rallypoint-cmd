@@ -6,11 +6,13 @@ import path from 'node:path'
 import {
   DEFAULT_ERROR_PATTERNS,
   compileErrorMatcher,
+  effectiveResources,
   parseSystemdBytes,
   type GameDef,
   type MetricsErrorLine,
   type MetricsSample,
   type MetricsSnapshot,
+  type ResourceOverrides,
 } from '@rallypoint-cmd/shared'
 import type { Logger } from '../logger.js'
 import type { GameQuery, Journal, MetricsSampler } from './types.js'
@@ -40,6 +42,9 @@ export interface MetricsTarget {
   game: GameDef
   query: GameQuery
   journal: Journal
+  // Live per-server resource overrides (panel-edited); read fresh per
+  // snapshot so a saved change moves the ceilings without a restart.
+  getOverrides?: () => ResourceOverrides
 }
 
 // Parse a cgroup v2 flat-keyed file ("usage_usec 123\nnr_throttled 4\n")
@@ -109,11 +114,18 @@ export function createRealMetricsSampler(logger: Logger, target: MetricsTarget):
   // own without a per-tick subprocess in the steady state.
   let cgroupDir: string | null = null
 
-  const limits = {
-    memHighBytes: parseSystemdBytes(game.memoryHigh),
-    memMaxBytes: parseSystemdBytes(game.memoryMax),
-    hostCpus: Math.max(1, os.cpus().length),
-    hostMemBytes: os.totalmem(),
+  const hostCpus = Math.max(1, os.cpus().length)
+  const hostMemBytes = os.totalmem()
+
+  function currentLimits() {
+    const effective = effectiveResources(game, target.getOverrides?.())
+    return {
+      memHighBytes: parseSystemdBytes(effective.memoryHigh ?? undefined),
+      memMaxBytes: parseSystemdBytes(effective.memoryMax ?? undefined),
+      cpuQuotaPct: effective.cpuQuotaPct,
+      hostCpus,
+      hostMemBytes,
+    }
   }
 
   function recordError(line: string, ts: number): void {
@@ -171,7 +183,7 @@ export function createRealMetricsSampler(logger: Logger, target: MetricsTarget):
       const cpuStat = parseKeyedStat(cpuStatRaw)
       const usageUsec = cpuStat.get('usage_usec') ?? null
       const curr = usageUsec === null ? null : { usageUsec, atMs: now }
-      const cpuPct = curr ? cpuPercent(prevCpu, curr, limits.hostCpus) : null
+      const cpuPct = curr ? cpuPercent(prevCpu, curr, hostCpus) : null
 
       // throttled_usec only exists once a CPU quota is in play; without
       // one there is nothing to be throttled by, so null (unknown) is
@@ -231,7 +243,7 @@ export function createRealMetricsSampler(logger: Logger, target: MetricsTarget):
       const cutoff = Date.now() - HOUR_MS
       return {
         running,
-        limits,
+        limits: currentLimits(),
         current: history.length > 0 ? history[history.length - 1]! : null,
         history: [...history],
         errors: {

@@ -11,6 +11,7 @@ import {
   playersResponseSchema,
   publicAccessConsoleSchema,
   publicAccessStatusSchema,
+  resourcesResponseSchema,
   restorePreviewSchema,
   scheduleSchema,
   schedulesResponseSchema,
@@ -33,6 +34,8 @@ import {
   type PlayersResponse,
   type PublicAccessConsole,
   type PublicAccessStatus,
+  type ResourcesPatch,
+  type ResourcesResponse,
   type RestorePreview,
   type Schedule,
   type ScheduleRun,
@@ -166,6 +169,12 @@ export const api = {
     request('GET', `${apiScope()}/settings/raw`, z.object({ content: z.string() })),
   updateRawSettings: (content: string): Promise<unknown> =>
     request('PUT', `${apiScope()}/settings/raw`, okSchema, { content }),
+
+  // resource limits (memory caps + CPU quota over the game defaults)
+  resources: (): Promise<ResourcesResponse> =>
+    request('GET', `${apiScope()}/resources`, resourcesResponseSchema),
+  updateResources: (patch: ResourcesPatch): Promise<unknown> =>
+    request('PUT', `${apiScope()}/resources`, okSchema, patch),
 
   // updates / steamcmd
   updateState: (): Promise<UpdateState> => request('GET', `${apiScope()}/updates`, updateStateSchema),

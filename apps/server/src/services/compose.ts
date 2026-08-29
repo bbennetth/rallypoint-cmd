@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { gameBySlug } from '@rallypoint-cmd/shared'
+import { gameBySlug, type ResourceOverrides } from '@rallypoint-cmd/shared'
 import type { Env } from '../env.js'
 import type { Logger } from '../logger.js'
 import type { Db } from '../db/client.js'
@@ -67,6 +67,16 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
     const longOps = new LongOpRunner()
     const worldLock = new WorldLock()
 
+    // In-memory copy of the row's resource overrides, mutated when the
+    // resources route saves — the metrics samplers read it per snapshot,
+    // so new ceilings show up without a panel restart.
+    let resourceOverrides: ResourceOverrides = {
+      memoryHigh: row.memoryHigh ?? null,
+      memoryMax: row.memoryMax ?? null,
+      cpuQuotaPct: row.cpuQuotaPct ?? null,
+    }
+    const getResourceOverrides = (): ResourceOverrides => resourceOverrides
+
     // Per-server pending-restart flag + backup subdir, namespaced by id.
     const stateKey = `pendingRestart:${row.id}`
     const backupDir = path.join(env.PANEL_BACKUP_DIR, row.id)
@@ -95,7 +105,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
 
     const base =
       env.PANEL_MODE === 'mock'
-        ? createFakeInstanceServices(env, logger, row.installDir, game)
+        ? createFakeInstanceServices(env, logger, row.installDir, game, getResourceOverrides)
         : (() => {
             const journal = createRealJournal(logger, row.unitName)
             journal.start()
@@ -113,6 +123,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
               game,
               query,
               journal,
+              getOverrides: getResourceOverrides,
             })
             metrics.start()
             return {
@@ -169,6 +180,10 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
       mods,
       longOps,
       worldLock,
+      getResourceOverrides,
+      setResourceOverrides: (overrides) => {
+        resourceOverrides = overrides
+      },
       dispose: () => base.dispose(),
     }
   }
