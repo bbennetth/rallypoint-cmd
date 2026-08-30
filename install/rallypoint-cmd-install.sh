@@ -71,7 +71,11 @@ var_admin_user="${var_admin_user:-admin}"
 msg_info "Configuring Rallypoint cmd"
 # Alphanumeric only: these land in an env file that is sourced, so any
 # shell metacharacter would have to be escaped.
-[[ -n "${var_admin_password:-}" ]] || var_admin_password="$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 16)"
+generated_password=""
+if [[ -z "${var_admin_password:-}" ]]; then
+  var_admin_password="$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 16)"
+  generated_password="yes"
+fi
 PANEL_PEPPER="$(openssl rand -base64 48 | tr -dc 'a-zA-Z0-9' | head -c 32)"
 
 cat <<EOF >/etc/rallypoint-cmd/panel.env
@@ -96,6 +100,22 @@ TRUSTED_PROXY=false
 EOF
 chmod 0640 /etc/rallypoint-cmd/panel.env
 msg_ok "Configured Rallypoint cmd"
+
+# Surface the generated credentials: they exist only inside the container,
+# so the host-side closing banner cannot print them. Only echo a password
+# this script generated itself — never one the caller supplied.
+if [[ -n "$generated_password" ]]; then
+  {
+    echo "Rallypoint-cmd panel credentials"
+    echo "Username: ${var_admin_user}"
+    echo "Password: ${var_admin_password}"
+  } >~/rallypoint-cmd.creds
+  chmod 0600 ~/rallypoint-cmd.creds
+  echo -e "${INFO}${YW}Panel admin login (temporary password — change it after first sign-in):${CL}"
+  echo -e "${TAB3}Username: ${BGN}${var_admin_user}${CL}"
+  echo -e "${TAB3}Password: ${BGN}${var_admin_password}${CL}"
+  echo -e "${TAB3}Also saved to ${BGN}~/rallypoint-cmd.creds${CL} inside the container"
+fi
 
 msg_info "Creating Service"
 install -m 0644 /opt/rallypoint-cmd/deploy/systemd/rallypoint-cmd.service /etc/systemd/system/rallypoint-cmd.service
