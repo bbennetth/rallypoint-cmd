@@ -94,7 +94,7 @@ export type UnbanRequest = z.infer<typeof unbanRequestSchema>
 // ---------------------------------------------------------------------------
 // Long-running operations (steamcmd install/update, restore)
 
-export const longOpKindSchema = z.enum(['install', 'update', 'validate', 'restore', 'backup', 'panel_update', 'public_access', 'delete_game_files', 'delete_backup_dir'])
+export const longOpKindSchema = z.enum(['install', 'update', 'validate', 'restore', 'backup', 'panel_update', 'public_access', 'delete_game_files', 'delete_backup_dir', 'wine_update'])
 export type LongOpKind = z.infer<typeof longOpKindSchema>
 
 export const longOpStatusSchema = z.enum(['running', 'succeeded', 'failed'])
@@ -146,6 +146,21 @@ export const panelUpdateInfoSchema = z.object({
   checkedAtMs: z.number().int().nonnegative().nullable(),
 })
 export type PanelUpdateInfo = z.infer<typeof panelUpdateInfoSchema>
+
+// --- wine updater (Debian wine -> WineHQ staging) ---------------------------
+
+// Windows-platform games (Enshrouded) run under Wine. Debian's wine lacks
+// esync/fsync, so the panel can upgrade the CT to WineHQ staging — the same
+// work install/rallypoint-cmd-install.sh does at CT creation time.
+export const wineStatusSchema = z.object({
+  installed: z.boolean(),
+  // e.g. "wine-10.0 (Staging)"; null when wine is absent or unreadable.
+  version: z.string().nullable(),
+  staging: z.boolean(),
+  // False when the CT's Debian codename has no WineHQ repo we support.
+  upgradeSupported: z.boolean(),
+})
+export type WineStatus = z.infer<typeof wineStatusSchema>
 
 // --- host info (read-only) --------------------------------------------------
 

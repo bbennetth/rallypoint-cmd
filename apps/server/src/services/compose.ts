@@ -6,6 +6,7 @@ import type { Db } from '../db/client.js'
 import { backups, schedules, servers, type ServerRow } from '../db/schema/index.js'
 import type { SchedulerService } from './scheduler.js'
 import type { PanelUpdateService } from './panel-update.js'
+import type { WineUpdateService } from './wine-update.js'
 import type { PublicAccessService } from './public-access.js'
 import type { ServerInstance, Services } from './types.js'
 import { LongOpRunner } from './long-op.js'
@@ -24,6 +25,7 @@ import { contractFor } from './backup-contracts.js'
 import { createModsService } from './mods.js'
 import { createScheduler } from './scheduler.js'
 import { createFakePanelUpdate, createRealPanelUpdate } from './panel-update.js'
+import { createFakeWineUpdate, createRealWineUpdate } from './wine-update.js'
 import { createFakePublicAccess, createRealPublicAccess } from './public-access.js'
 import { createFakeUnitProvisioner, createRealUnitProvisioner, type UnitProvisioner } from './unit-provision.js'
 import { createNullBackup, createNullMods, createNullQuery, createNullSettings } from './stubs.js'
@@ -46,6 +48,9 @@ export interface ComposedServices {
   instances: InstanceManager
   scheduler: SchedulerService
   panelUpdate: PanelUpdateService
+  // Upgrades the CT's Wine to WineHQ staging (esync/fsync) for
+  // Windows-platform game servers. Panel-scoped, like panelUpdate.
+  wineUpdate: WineUpdateService
   publicAccess: PublicAccessService
   // Provisions/deprovisions the systemd unit (start.sh + drop-in) for a
   // game slug, rendered from the game registry.
@@ -216,6 +221,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
 
   const scheduler = createScheduler({ env, db, logger, getInstance: (id) => instanceMap.get(id) })
   const panelUpdate = env.PANEL_MODE === 'mock' ? createFakePanelUpdate(env) : createRealPanelUpdate({ env, db, logger })
+  const wineUpdate = env.PANEL_MODE === 'mock' ? createFakeWineUpdate(env) : createRealWineUpdate({ env, logger })
   const publicAccess =
     env.PANEL_MODE === 'mock' ? createFakePublicAccess(instances) : createRealPublicAccess({ db, logger, instances })
   const unitProvisioner =
@@ -231,6 +237,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
     instances,
     scheduler,
     panelUpdate,
+    wineUpdate,
     publicAccess,
     unitProvisioner,
     longOps: panelLongOps,

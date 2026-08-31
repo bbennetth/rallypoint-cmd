@@ -23,6 +23,7 @@ describe('renderStartScript', () => {
     // Native servers get the game's own lib dirs on the search path.
     expect(script).toContain('LD_LIBRARY_PATH="/opt/games/palworld:/opt/games/palworld/linux64:')
     expect(script).not.toContain('WINEPREFIX')
+    expect(script).not.toContain('WINEESYNC')
   })
 
   it('wraps a Windows-only server in Wine with a run-time loader lookup', () => {
@@ -33,6 +34,10 @@ describe('renderStartScript', () => {
     expect(script).toContain('for c in wine64 wine; do')
     expect(script).not.toContain('/usr/bin/wine64')
     expect(script).toContain('exec "$WINE_BIN" ./enshrouded_server.exe')
+    // esync/fsync: without them every Wine sync primitive round-trips
+    // through the single-threaded wineserver.
+    expect(script).toContain('export WINEESYNC=1')
+    expect(script).toContain('export WINEFSYNC=1')
   })
 
   it('renders every registry game without an unresolved placeholder', () => {

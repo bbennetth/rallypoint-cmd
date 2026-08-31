@@ -7,9 +7,10 @@ import {
   type PanelHost,
   type PanelStorage,
   type PanelUpdateInfo,
+  type WineStatus,
 } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
-import { useLongOp } from '../lib/useEventSource.js'
+import { useLongOp, useSseLines } from '../lib/useEventSource.js'
 import { formatBytes, formatDateTime } from '../lib/format.js'
 import { Badge, Button, Card, inputClass, Spinner } from '../ui/primitives.js'
 import { Banner } from '../ui/Banner.js'
@@ -23,6 +24,19 @@ import { ProgressBar } from '../ui/ProgressBar.js'
 // sits in the nav) whether or not any game server is registered.
 
 export function ManagementPage() {
+  // Wine only matters if something here actually runs under it — join the
+  // registered servers' game slugs against the GAMES registry and look for
+  // a Windows-platform game.
+  const [hasWindowsServer, setHasWindowsServer] = useState(false)
+  useEffect(() => {
+    api
+      .servers()
+      .then((r) =>
+        setHasWindowsServer(r.servers.some((s) => GAMES[s.gameSlug]?.platform === 'windows')),
+      )
+      .catch(() => {})
+  }, [])
+
   return (
     <div className="cmd-wide space-y-6">
       <div className="pg-head">
@@ -30,6 +44,8 @@ export function ManagementPage() {
       </div>
 
       <PanelUpdateCard />
+
+      {hasWindowsServer && <WineCard />}
 
       <HostCard />
 
@@ -245,6 +261,152 @@ function PanelUpdateCard() {
           <Button variant="ghost" disabled={checking} onClick={() => check(true)}>
             {checking ? <Spinner /> : 'Check now'}
           </Button>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Wine: only relevant when a Windows-platform game (Enshrouded and
+// friends) is registered — those servers run under Wine, and the WineHQ
+// *staging* branch is the one that ships esync/fsync. Plain Wine falls
+// back to poll-based synchronisation, which starves the game's tick.
+// Unlike the panel update, upgrading Wine does NOT restart the panel.
+
+function wineErrorMessage(e: unknown): string {
+  if (!(e instanceof ApiError)) return 'Upgrade failed to start'
+  if (e.code === 'unit_active') return 'Stop the Windows game server(s) before upgrading Wine.'
+  if (e.code === 'world_busy' || e.code === 'op_running')
+    return 'Another operation is already running — try again once it finishes.'
+  return e.message
+}
+
+function WineCard() {
+  const [status, setStatus] = useState<WineStatus | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [ok, setOk] = useState<string | null>(null)
+  const [activeOp, setActiveOp] = useState<LongOp | null>(null)
+  const { progress, doneOp, reset } = useLongOp(activeOp !== null, '/api/panel/stream')
+  const { lines, clear } = useSseLines('/api/panel/stream', 'log', {
+    enabled: activeOp !== null,
+  })
+
+  async function load() {
+    try {
+      setStatus(await api.wineStatus())
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Failed to load Wine status')
+    }
+  }
+  useEffect(() => {
+    void load()
+    // Re-attach to an upgrade already in flight (navigation, reload).
+    api
+      .panelOp()
+      .then((s) => {
+        if (s.op?.status === 'running' && s.op.kind === 'wine_update') setActiveOp(s.op)
+      })
+      .catch(() => {})
+  }, [])
+
+  // Op finished: the panel and the games kept running either way, so a
+  // failure is simply retryable — surface it and refresh the version.
+  useEffect(() => {
+    if (!doneOp || !activeOp || doneOp.id !== activeOp.id) return
+    if (doneOp.status === 'failed') {
+      setErr(`Wine upgrade failed: ${doneOp.error ?? 'unknown error'} — safe to retry.`)
+      setOk(null)
+    } else {
+      setErr(null)
+      setOk('Wine upgraded — restart the Windows game server(s) to pick up esync/fsync.')
+    }
+    setActiveOp(null)
+    reset()
+    void load()
+  }, [doneOp, activeOp, reset])
+
+  async function upgrade() {
+    setErr(null)
+    setOk(null)
+    clear()
+    try {
+      setActiveOp(await api.runWineUpgrade())
+    } catch (e) {
+      setErr(wineErrorMessage(e))
+    }
+  }
+
+  const running = activeOp !== null
+
+  return (
+    <Card
+      title={
+        <span className="flex items-center gap-3">
+          Wine
+          {status?.staging && <Badge tone="good">Staging</Badge>}
+        </span>
+      }
+      actions={
+        <span className="meta">
+          {status ? (status.installed ? (status.version ?? 'installed') : 'not installed') : ''}
+        </span>
+      }
+    >
+      {err && (
+        <div className="mb-3">
+          <Banner tone="bad">{err}</Banner>
+        </div>
+      )}
+      {ok && (
+        <div className="mb-3">
+          <Banner tone="ok">{ok}</Banner>
+        </div>
+      )}
+      {!status ? (
+        <p className="cmd-empty">Loading…</p>
+      ) : (
+        <div className="space-y-3">
+          <dl className="space-y-2 text-sm">
+            <div className="flex justify-between gap-4">
+              <dt className="eyebrow">Version</dt>
+              <dd>{status.installed ? (status.version ?? 'unknown') : 'not installed'}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="eyebrow">Branch</dt>
+              <dd>{status.staging ? 'WineHQ staging' : 'stable / distro'}</dd>
+            </div>
+          </dl>
+
+          {running && (
+            <div className="cmd-op">
+              <ProgressBar
+                value={progress}
+                label="Upgrading Wine…"
+                right={progress != null ? `${progress.toFixed(0)}%` : '…'}
+              />
+            </div>
+          )}
+          {running && lines.length > 0 && <LogPane lines={lines} maxHeight={200} />}
+
+          {!status.staging && status.upgradeSupported && (
+            <div className="flex gap-2">
+              <Button variant="primary" disabled={running} onClick={upgrade}>
+                {running ? <Spinner /> : null} Upgrade to WineHQ staging
+              </Button>
+            </div>
+          )}
+          {!status.staging && !status.upgradeSupported && (
+            <p className="cmd-note">
+              This OS release isn&apos;t supported by the WineHQ repository, so the panel can&apos;t
+              install the staging build here.
+            </p>
+          )}
+
+          <p className="cmd-note">
+            WineHQ staging enables esync/fsync, which cuts tick starvation for Windows-only servers
+            like Enshrouded. The panel keeps running through the upgrade — no restart needed.
+          </p>
         </div>
       )}
     </Card>

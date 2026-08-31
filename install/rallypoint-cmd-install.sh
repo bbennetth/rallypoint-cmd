@@ -34,15 +34,62 @@ msg_ok "Installed Dependencies"
 # wine32; later releases ship a single multi-arch wine), so try the split
 # set first and fall back. Fail loudly: a silent miss only surfaces later
 # as "exec: wine: not found" when a Windows-only server starts.
-msg_info "Installing Wine"
-$STD apt install -y wine wine64 wine32:i386 ||
-  $STD apt install -y wine wine32:i386 ||
-  $STD apt install -y wine
+#
+# Debian's own wine is built without esync/fsync, so WINEESYNC/WINEFSYNC in
+# the generated start.sh are ignored and wineserver becomes a contention
+# point that starves the game's tick loop. WineHQ's staging build has both.
+# i386 multiarch (enabled above with dpkg --add-architecture i386) is a hard
+# requirement for the winehq packages.
+#
+# NOTE: the same block exists in ct/rallypoint-cmd.sh update_script(), so
+# existing CTs get the upgrade on their next panel update. The duplication is
+# deliberate: the two scripts are delivered to the CT separately.
+install_winehq_staging() {
+  local codename=""
+  # shellcheck disable=SC1091 # present on every Debian CT
+  if [[ -r /etc/os-release ]]; then
+    codename="$(. /etc/os-release && echo "${VERSION_CODENAME:-}")"
+  fi
+  case "$codename" in
+  bookworm | trixie) ;;
+  *) return 1 ;;
+  esac
+
+  mkdir -p /etc/apt/keyrings || return 1
+  curl -fsSL https://dl.winehq.org/wine-builds/winehq.key -o /etc/apt/keyrings/winehq-archive.key || return 1
+  curl -fsSL "https://dl.winehq.org/wine-builds/debian/dists/${codename}/winehq-${codename}.sources" \
+    -o /etc/apt/sources.list.d/winehq.sources || return 1
+  $STD apt update || return 1
+  $STD apt install -y --install-recommends winehq-staging || return 1
+  return 0
+}
+
+msg_info "Installing Wine (WineHQ staging)"
+WINEHQ_OK=0
+if install_winehq_staging; then
+  WINEHQ_OK=1
+  msg_ok "Installed WineHQ staging Wine (esync/fsync enabled)"
+else
+  # Leave apt in a working state for every later apt call in this script.
+  rm -f /etc/apt/sources.list.d/winehq.sources || true
+  $STD apt update || true
+  msg_error "WineHQ staging unavailable — falling back to Debian wine (no esync/fsync)."
+fi
+
+if [[ "$WINEHQ_OK" -eq 0 ]]; then
+  msg_info "Installing Wine"
+  $STD apt install -y wine wine64 wine32:i386 ||
+    $STD apt install -y wine wine32:i386 ||
+    $STD apt install -y wine
+  msg_ok "Installed Wine"
+fi
+
+# Safety net for both paths: winehq-staging provides /usr/bin/wine, so this
+# check passes whichever branch ran above.
 if ! command -v wine64 >/dev/null 2>&1 && ! command -v wine >/dev/null 2>&1; then
   msg_error "Wine did not install — Windows-only servers (Enshrouded) will not start."
   exit 1
 fi
-msg_ok "Installed Wine"
 
 NODE_VERSION="22" setup_nodejs
 

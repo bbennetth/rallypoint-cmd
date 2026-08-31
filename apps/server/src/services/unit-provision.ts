@@ -53,6 +53,14 @@ cd "${installDir}"
 export HOME="${installDir}"
 export WINEPREFIX="${installDir}/.wine"
 export WINEDEBUG=-all
+# Opt in to esync/fsync where the installed Wine supports them (staging
+# and Proton-derived builds; plain Debian Wine ignores both, so they are
+# safe to export unconditionally). Without them every Windows sync
+# primitive (mutex/event/semaphore) is a round trip to the single-threaded
+# wineserver process — the dominant Wine overhead for heavily threaded
+# servers like Enshrouded, and a direct cause of tick starvation.
+export WINEESYNC=1
+export WINEFSYNC=1
 WINE_BIN="\${WINE_BIN:-}"
 if [ -z "$WINE_BIN" ]; then
   for c in wine64 wine; do
