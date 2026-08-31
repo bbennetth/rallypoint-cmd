@@ -59,7 +59,7 @@ function navItems(
     { to: base, label: 'Dashboard', icon: 'grid', end: true },
     { to: `${base}/console`, label: 'Console', icon: 'terminal' },
     { to: `${base}/monitoring`, label: 'Monitoring', icon: 'pulse' },
-    ...(caps && caps.query !== 'none'
+    ...(caps && caps.players !== 'none'
       ? [{ to: `${base}/players`, label: 'Players', icon: 'users' } as const]
       : []),
     ...(game && game.settingsAdapter !== 'none'

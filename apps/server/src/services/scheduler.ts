@@ -65,7 +65,7 @@ export function createScheduler(deps: SchedulerDeps): SchedulerService {
     // or is down).
     for (const step of [...parsed.announceSteps].sort((a, b) => b.secondsBefore - a.secondsBefore)) {
       try {
-        await inst.query.announce(step.message)
+        await inst.admin.announce(step.message)
       } catch {
         // game down or no query capability — nothing to announce to.
       }
@@ -73,7 +73,7 @@ export function createScheduler(deps: SchedulerDeps): SchedulerService {
     }
     if (parsed.saveBeforeStop) {
       try {
-        await inst.query.save()
+        await inst.admin.save()
       } catch {
         // cold restart is fine
       }

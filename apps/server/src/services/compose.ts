@@ -26,7 +26,7 @@ import { createScheduler } from './scheduler.js'
 import { createFakePanelUpdate, createRealPanelUpdate } from './panel-update.js'
 import { createFakePublicAccess, createRealPublicAccess } from './public-access.js'
 import { createFakeUnitProvisioner, createRealUnitProvisioner, type UnitProvisioner } from './unit-provision.js'
-import { createNullBackup, createNullMods, createNullQuery, createNullSettings } from './stubs.js'
+import { createNullAdmin, createNullBackup, createNullMods, createNullQuery, createNullSettings } from './stubs.js'
 import path from 'node:path'
 
 // Composition root: one set of instance services per managed server row
@@ -109,12 +109,18 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
         : (() => {
             const journal = createRealJournal(logger, row.unitName)
             journal.start()
-            const query =
-              game.capabilities.query === 'pal-rest'
+            // Palworld's REST client serves both the read-side query and
+            // the admin channel — one instance wired into both slots.
+            const palRest =
+              game.capabilities.query === 'pal-rest' || game.capabilities.players === 'pal-rest'
                 ? createRealPalRest(logger, row.installDir)
-                : game.capabilities.query === 'a2s'
-                  ? createA2sQuery(game.ports.find((p) => p.name === 'query')?.port ?? 0)
-                  : createNullQuery(game)
+                : null
+            const query =
+              palRest ??
+              (game.capabilities.query === 'a2s'
+                ? createA2sQuery(game.ports.find((p) => p.name === 'query')?.port ?? 0)
+                : createNullQuery(game))
+            const admin = game.capabilities.players === 'pal-rest' && palRest ? palRest : createNullAdmin(game)
             // Samples the unit's cgroup on its own timer from panel
             // start, so the history window is already filled by the time
             // someone opens the Monitoring page to ask what just happened.
@@ -133,6 +139,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
                 installedProbe: game.installedProbe,
               }),
               query,
+              admin,
               journal,
               metrics,
               steamcmd: createRealSteamCmd(env, logger, {
@@ -153,7 +160,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
           db,
           logger,
           gameControl: base.gameControl,
-          query: base.query,
+          admin: base.admin,
           steamcmd: base.steamcmd,
           settings,
           serverId: row.id,
@@ -172,6 +179,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
       game,
       gameControl: base.gameControl,
       query: base.query,
+      admin: base.admin,
       journal: base.journal,
       metrics: base.metrics,
       steamcmd: base.steamcmd,
@@ -239,6 +247,7 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
       instance,
       gameControl: instance.gameControl,
       query: instance.query,
+      admin: instance.admin,
       journal: instance.journal,
       metrics: instance.metrics,
       steamcmd: instance.steamcmd,

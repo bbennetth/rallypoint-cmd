@@ -28,17 +28,29 @@ describe('game registry', () => {
   })
 
   it('capability gates are consistent', () => {
-    // Every world-capable game needs a matching contract in
-    // apps/server backup-contracts.ts; every settings adapter belongs to
-    // exactly one game today.
-    const ADAPTER_OWNER: Record<string, string> = {
+    // Every world-capable game needs a matching contract in apps/server
+    // backup-contracts.ts (enforced by a test there); the game-specific
+    // settings adapters belong to exactly one game.
+    const EXCLUSIVE_ADAPTER_OWNER: Record<string, string> = {
       'palworld-ini': 'palworld',
       'enshrouded-json': 'enshrouded',
     }
     for (const game of entries) {
-      if (game.capabilities.world) expect(['palworld', 'enshrouded']).toContain(game.slug)
-      if (game.capabilities.players) expect(game.capabilities.query).not.toBe('none')
-      if (game.settingsAdapter !== 'none') expect(game.slug).toBe(ADAPTER_OWNER[game.settingsAdapter])
+      // Protocol-based admin channels need their port declared — compose
+      // wires the client to the named port.
+      if (game.capabilities.players === 'rcon' || game.capabilities.players === 'webrcon') {
+        expect(game.ports.some((p) => p.name === 'rcon' && p.proto === 'tcp')).toBe(true)
+      }
+      if (game.capabilities.players === 'telnet') {
+        expect(game.ports.some((p) => p.name === 'telnet' && p.proto === 'tcp')).toBe(true)
+      }
+      if (game.capabilities.query === 'a2s') {
+        expect(game.ports.some((p) => p.name === 'query' && p.proto === 'udp')).toBe(true)
+      }
+      const owner = EXCLUSIVE_ADAPTER_OWNER[game.settingsAdapter]
+      if (owner) expect(game.slug).toBe(owner)
+      // launch-conf files are written by the launch-conf machinery only.
+      if (game.launchConfFile) expect(['launch-conf', 'source-cfg']).toContain(game.settingsAdapter)
       // Windows-only servers run under Wine and exec a .exe.
       if (game.platform === 'windows') expect(game.startCommand.bin.endsWith('.exe')).toBe(true)
       expect(game.installedProbe.startsWith('/')).toBe(false)

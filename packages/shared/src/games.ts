@@ -8,8 +8,21 @@
 // (no Steam account) and is either a native Linux dedicated server or a
 // Windows-only one run under Wine (`platform: 'windows'`).
 
-export type SettingsAdapterKind = 'palworld-ini' | 'enshrouded-json' | 'none'
-export type QueryKind = 'pal-rest' | 'a2s' | 'none'
+export type SettingsAdapterKind =
+  | 'palworld-ini' // Palworld PalWorldSettings.ini (UE tuple line)
+  | 'enshrouded-json' // Enshrouded enshrouded_server.json
+  | 'sectioned-ini' // [Section] Key=Value files (ARK GameUserSettings.ini)
+  | 'xml-properties' // flat <property name= value=/> XML (7DTD serverconfig.xml)
+  | 'keyvalue-ini' // flat Key=Value lines (Project Zomboid server ini)
+  | 'source-cfg' // "cvar value" lines (Source server.cfg, Rust server.cfg)
+  | 'launch-conf' // panel-owned launch-arg file sourced by start.sh (Valheim)
+  | 'unturned-commands' // Unturned Commands.dat ("command value" lines)
+  | 'none'
+export type QueryKind = 'pal-rest' | 'a2s' | 'satisfactory-lwq' | 'none'
+// How the panel administers players (list/kick/ban/announce/save).
+// 'rcon' = Source RCON over TCP; 'webrcon' = Rust's WebSocket RCON;
+// 'telnet' = 7 Days to Die's line-based telnet console.
+export type PlayersKind = 'pal-rest' | 'rcon' | 'webrcon' | 'telnet' | 'none'
 export type ModsKind = 'ue-paks' | 'none'
 
 export interface GamePort {
@@ -42,9 +55,14 @@ export interface GameDef {
   // File (relative to the install dir) whose presence means "installed".
   installedProbe: string
   settingsAdapter: SettingsAdapterKind
+  // Panel-owned launch-arg file (relative to the install dir) sourced by
+  // the generated start.sh when present. Written only by the launch-conf
+  // settings machinery, which enforces a strict value charset — start.sh
+  // dot-sources this file, so free-form content must never reach it.
+  launchConfFile?: string
   capabilities: {
     query: QueryKind
-    players: boolean
+    players: PlayersKind
     mods: ModsKind
     // Palworld-style named-world semantics (32-hex world id) — gates the
     // backup/restore engine, whose archive contract assumes them.
@@ -62,7 +80,7 @@ export interface GameDef {
   supportLevel: 'full' | 'basic'
 }
 
-const BASIC_CAPS = { query: 'none', players: false, mods: 'none', world: false } as const
+const BASIC_CAPS = { query: 'none', players: 'none', mods: 'none', world: false } as const
 
 export const GAMES: Record<string, GameDef> = {
   palworld: {
@@ -84,7 +102,7 @@ export const GAMES: Record<string, GameDef> = {
     savePaths: ['Pal/Saved/SaveGames/0'],
     installedProbe: 'PalServer.sh',
     settingsAdapter: 'palworld-ini',
-    capabilities: { query: 'pal-rest', players: true, mods: 'ue-paks', world: true },
+    capabilities: { query: 'pal-rest', players: 'pal-rest', mods: 'ue-paks', world: true },
     diskEstimateGb: 12,
     supportLevel: 'full',
   },
@@ -254,7 +272,7 @@ export const GAMES: Record<string, GameDef> = {
     settingsAdapter: 'enshrouded-json',
     // No admin API and no official mod system, but the Steam query port
     // answers A2S_INFO — read-only name/version/player counts.
-    capabilities: { query: 'a2s', players: false, mods: 'none', world: true },
+    capabilities: { query: 'a2s', players: 'none', mods: 'none', world: true },
     // The server announces tick starvation as "server overloaded" and
     // reports save trouble separately; both are what a player actually
     // feels, so they lead the list ahead of the generic patterns.
@@ -292,6 +310,40 @@ export function gameBySlug(slug: string): GameDef | undefined {
 // join: true overrides it (Enshrouded joins over its query port).
 export function joinPort(ports: { name: string; port: number; join?: boolean }[]): number | null {
   return (ports.find((p) => p.join) ?? ports.find((p) => p.name === 'game'))?.port ?? null
+}
+
+// Which player-admin actions a game's admin channel actually supports.
+// Drives the Players page UI and per-endpoint API gating — a capability
+// kind says how the panel talks to the game; this says what it can say.
+export interface PlayerAdminFeatures {
+  list: boolean
+  kick: boolean
+  ban: boolean
+  unban: boolean
+  announce: boolean
+  save: boolean
+}
+
+// Per-slug deviations from "everything works". Source games (TF2/CS2)
+// have no console command to force a save — there is no world to save.
+const ADMIN_FEATURE_OVERRIDES: Record<string, Partial<PlayerAdminFeatures>> = {
+  'team-fortress-2': { save: false },
+  'counter-strike-2': { save: false },
+}
+
+export function playerAdminFeatures(game: GameDef): PlayerAdminFeatures {
+  if (game.capabilities.players === 'none') {
+    return { list: false, kick: false, ban: false, unban: false, announce: false, save: false }
+  }
+  return {
+    list: true,
+    kick: true,
+    ban: true,
+    unban: true,
+    announce: true,
+    save: true,
+    ...ADMIN_FEATURE_OVERRIDES[game.slug],
+  }
 }
 
 export function appManifestFor(steamAppId: number): string {

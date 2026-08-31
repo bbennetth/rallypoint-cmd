@@ -18,8 +18,8 @@ import {
 } from '@rallypoint-cmd/shared'
 import type { Env } from '../../env.js'
 import type { Logger } from '../../logger.js'
-import type { GameControl, GameQuery, Journal, MetricsSampler, OpSink, SteamCmd, SystemdStatus } from '../types.js'
-import { createNullQuery } from '../stubs.js'
+import type { GameControl, GameQuery, Journal, MetricsSampler, OpSink, PlayerAdmin, SteamCmd, SystemdStatus } from '../types.js'
+import { createNullAdmin, createNullQuery } from '../stubs.js'
 
 // Fake implementations of every game-facing service, driven by one
 // in-memory world per server instance. Lets the entire panel run (and be
@@ -242,6 +242,7 @@ const FAKE_PLAYERS: Player[] = [
 export interface FakeInstanceServices {
   gameControl: GameControl
   query: GameQuery
+  admin: PlayerAdmin
   journal: Journal
   metrics: MetricsSampler
   steamcmd: SteamCmd
@@ -413,7 +414,7 @@ export function createFakeInstanceServices(
     if (world.state !== 'active') throw new Error(`${game.name} admin API is unreachable (game down)`)
   }
 
-  const palQuery: GameQuery = {
+  const palQuery: GameQuery & PlayerAdmin = {
     reachable: () => Promise.resolve(world.state === 'active'),
     info: (): Promise<PalServerInfo> => {
       requireUp()
@@ -497,6 +498,7 @@ export function createFakeInstanceServices(
   return {
     gameControl,
     query: game.capabilities.query === 'pal-rest' ? palQuery : createNullQuery(game),
+    admin: game.capabilities.players === 'pal-rest' ? palQuery : createNullAdmin(game),
     journal,
     metrics,
     steamcmd,

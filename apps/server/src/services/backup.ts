@@ -12,7 +12,7 @@ import type { Db } from '../db/client.js'
 import type { Env } from '../env.js'
 import type { Logger } from '../logger.js'
 import { backups } from '../db/schema/index.js'
-import type { GameControl, GameQuery, OpSink, SteamCmd } from './types.js'
+import type { GameControl, OpSink, PlayerAdmin, SteamCmd } from './types.js'
 import type { SettingsService } from './settings-ini.js'
 import type { WorldContract } from './backup-contracts.js'
 import { assertDiskFloor } from './disk.js'
@@ -119,7 +119,7 @@ interface BackupDeps {
   db: Db
   logger: Logger
   gameControl: GameControl
-  query: GameQuery
+  admin: PlayerAdmin
   steamcmd: SteamCmd
   settings: SettingsService
   // Instance scoping: which server's saves/rows this engine owns.
@@ -245,7 +245,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
       // is fine too — it captures the latest on-disk state.
       say('[backup] Requesting world save flush...')
       try {
-        await deps.query.save()
+        await deps.admin.save()
         // The game flushes asynchronously; give it a moment.
         await new Promise((r) => setTimeout(r, 2000))
       } catch {

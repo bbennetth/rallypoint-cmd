@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import type { GameDef } from '@rallypoint-cmd/shared'
 import type { Db } from '../db/client.js'
 import { panelState } from '../db/schema/index.js'
-import type { GameQuery } from './types.js'
+import type { GameQuery, PlayerAdmin } from './types.js'
 import { IniParseError, type SettingsService } from './settings-ini.js'
 import { BackupError, type BackupService } from './backup.js'
 import { ModError, type ModsService } from './mods.js'
@@ -13,13 +13,21 @@ import { ModError, type ModsService } from './mods.js'
 
 export function createNullQuery(game: GameDef): GameQuery {
   const unavailable = (): never => {
-    throw new Error(`${game.name} has no admin/query API.`)
+    throw new Error(`${game.name} has no status/query API.`)
   }
   return {
     reachable: () => Promise.resolve(false),
     info: unavailable,
-    players: unavailable,
     metrics: unavailable,
+  }
+}
+
+export function createNullAdmin(game: GameDef): PlayerAdmin {
+  const unavailable = (): never => {
+    throw new Error(`${game.name} has no player-admin channel.`)
+  }
+  return {
+    players: unavailable,
     announce: unavailable,
     kick: unavailable,
     ban: unavailable,
