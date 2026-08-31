@@ -62,6 +62,9 @@ export const serverStatusSchema = z.object({
   world: z.object({
     // 32-hex dir under Pal/Saved/SaveGames/0/; null before first boot.
     id: z.string().nullable(),
+    // Epoch ms of the newest file in the live save dir — when the game
+    // last wrote a save. Null before the first save (or when unknown).
+    lastSavedAtMs: z.number().int().nonnegative().nullable(),
   }),
   systemd: z.object({
     activeState: z.string(),

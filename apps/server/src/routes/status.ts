@@ -4,6 +4,7 @@ import type { HonoApp } from '../context.js'
 import { requireSession } from '../middleware/session.js'
 import { dedupeDisks, diskUsage } from '../services/disk.js'
 import { contractFor } from '../services/backup-contracts.js'
+import { newestSaveMtimeMs } from '../services/world.js'
 
 export const statusRoutes = new Hono<HonoApp>()
 
@@ -43,6 +44,19 @@ statusRoutes.get('/status', requireSession, async (c) => {
     }
   }
 
+  // World identity + last-save time from the live save dir (newest file
+  // mtime, skipping the game's internal-backup dirs).
+  function worldStatus(): ServerStatus['world'] {
+    if (!systemd.installed || !instance.game.capabilities.world) return { id: null, lastSavedAtMs: null }
+    const contract = contractFor(instance.game)
+    const live = contract.resolveLive(instance.installDir)
+    if (!live) return { id: null, lastSavedAtMs: null }
+    return {
+      id: live.worldId,
+      lastSavedAtMs: newestSaveMtimeMs(live.saveDir, contract.internalBackupDirs),
+    }
+  }
+
   const dedupedDisks = dedupeDisks(
     (
       await Promise.all([diskUsage('game', instance.installDir), diskUsage('backups', env.PANEL_BACKUP_DIR)])
@@ -53,12 +67,7 @@ statusRoutes.get('/status', requireSession, async (c) => {
     lifecycle,
     pendingRestart: settings.getPendingRestart(),
     buildId,
-    world: {
-      id:
-        systemd.installed && instance.game.capabilities.world
-          ? (contractFor(instance.game).resolveLive(instance.installDir)?.worldId ?? null)
-          : null,
-    },
+    world: worldStatus(),
     systemd: {
       activeState: systemd.activeState,
       subState: systemd.subState,

@@ -27,6 +27,15 @@ export function formatSince(ms: number | null | undefined): string {
   return formatUptime(Math.floor((Date.now() - ms) / 1000))
 }
 
+// Relative "x ago" label; sub-minute (and clock-skewed future) times
+// read as "just now" rather than "0m ago" / "—".
+export function formatAgo(ms: number | null | undefined): string {
+  if (ms == null) return '—'
+  const seconds = Math.floor((Date.now() - ms) / 1000)
+  if (seconds < 60) return 'just now'
+  return `${formatUptime(seconds)} ago`
+}
+
 export function formatDateTime(ms: number | null | undefined): string {
   if (ms == null) return '—'
   return new Date(ms).toLocaleString()
