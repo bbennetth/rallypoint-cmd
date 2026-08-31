@@ -39,6 +39,15 @@ publicAccessRoutes.post('/api/public-access/disable', requireSession, async (c) 
   return c.json({ ok: true as const })
 })
 
+// Destructive: stop the agent and remove its secret so the next enable
+// re-claims a fresh agent — the recovery path when the agent was deleted
+// on playit.gg or its secret was revoked.
+publicAccessRoutes.post('/api/public-access/reset', requireSession, async (c) => {
+  const { publicAccess } = c.get('composed')
+  await publicAccess.reset()
+  return c.json({ ok: true as const })
+})
+
 // Diagnostics: the panel↔playit trace (helper calls + api.playit.gg
 // exchanges, secret-redacted) and the agent's recent journal lines.
 publicAccessRoutes.get('/api/public-access/console', requireSession, async (c) => {

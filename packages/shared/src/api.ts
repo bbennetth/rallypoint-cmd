@@ -162,6 +162,9 @@ export const publicAccessStatusSchema = z.object({
   pendingClaim: z.object({ code: z.string(), url: z.string() }).nullable(),
   // game port being exposed (from PalWorldSettings PublicPort)
   gamePort: z.number().int().nullable(),
+  // the stored secret was rejected by api.playit.gg (agent deleted or
+  // revoked) — a reset + re-claim is needed
+  secretInvalid: z.boolean().optional(),
 })
 export type PublicAccessStatus = z.infer<typeof publicAccessStatusSchema>
 

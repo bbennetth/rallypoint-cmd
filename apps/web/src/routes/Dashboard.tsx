@@ -207,6 +207,7 @@ function PublicAccessCard() {
   const [err, setErr] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [consoleOpen, setConsoleOpen] = useState(false)
+  const [resetArmed, setResetArmed] = useState(false)
   const [consoleData, setConsoleData] = useState<PublicAccessConsole | null>(null)
   // Public access is a panel-scoped op — stream from the panel long-op.
   const { lastLine, progress, doneOp, reset } = useLongOp(busy, '/api/panel/stream')
@@ -271,6 +272,25 @@ function PublicAccessCard() {
     }
   }
 
+  // Destructive: removes the agent secret. Two-click confirm; after reset
+  // the card falls back to "Enable public access", which re-runs the full
+  // claim flow against a fresh agent.
+  async function resetAgent() {
+    if (!resetArmed) {
+      setResetArmed(true)
+      setTimeout(() => setResetArmed(false), 4000)
+      return
+    }
+    setResetArmed(false)
+    setErr(null)
+    try {
+      await api.resetPublicAccess()
+      await load()
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Failed to reset the agent')
+    }
+  }
+
   const online = status?.running && status.address
 
   return (
@@ -297,12 +317,25 @@ function PublicAccessCard() {
               Disable
             </Button>
           )}
+          {status?.installed && status.claimed && !busy && (
+            <Button variant={resetArmed ? 'danger' : 'ghost'} onClick={resetAgent}>
+              {resetArmed ? 'Confirm reset' : 'Reset agent'}
+            </Button>
+          )}
         </div>
       }
     >
       {err && (
         <div className="mb-3">
           <Banner tone="bad">{err}</Banner>
+        </div>
+      )}
+      {status?.secretInvalid && !busy && (
+        <div className="mb-3">
+          <Banner tone="bad">
+            This agent is no longer valid on playit.gg (deleted or revoked). Use “Reset agent”,
+            then enable public access again to re-create it.
+          </Banner>
         </div>
       )}
       {!status ? (

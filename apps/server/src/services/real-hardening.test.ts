@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { parseSystemdTimestamp } from './game-control.real.js'
 import { decideSteamcmdOutcome, steamcmdArgs } from './steamcmd.real.js'
 import { isNewerVersion } from './panel-update.js'
-import { extractTunnelAddress, PlayitTrace, readGamePort } from './public-access.js'
+import {
+  createFakePublicAccess,
+  extractTunnelAddress,
+  PlayitTrace,
+  readGamePort,
+} from './public-access.js'
 import { parseA2sInfo } from './a2s.real.js'
 
 describe('parseSystemdTimestamp', () => {
@@ -140,6 +145,33 @@ describe('extractTunnelAddress (playit tunnels-list parsing)', () => {
     ).toBeNull()
     expect(extractTunnelAddress(null, 8211)).toBeNull()
     expect(extractTunnelAddress({ nope: true }, 8211)).toBeNull()
+  })
+})
+
+describe('public access reset (re-create the playit agent)', () => {
+  const sink = { line: () => {}, progress: () => {} }
+
+  it('reset drops the claim so enable re-runs the full claim flow', async () => {
+    const svc = createFakePublicAccess()
+    await svc.enable(sink)
+    let s = await svc.status()
+    expect(s.claimed).toBe(true)
+    expect(s.running).toBe(true)
+    expect(s.address).not.toBeNull()
+
+    await svc.reset()
+    s = await svc.status()
+    expect(s.installed).toBe(true) // the binary stays; only the secret goes
+    expect(s.claimed).toBe(false)
+    expect(s.running).toBe(false)
+    expect(s.address).toBeNull()
+    expect(s.pendingClaim).toBeNull()
+
+    // Enable again = complete re-create path.
+    await svc.enable(sink)
+    s = await svc.status()
+    expect(s.claimed).toBe(true)
+    expect(s.address).not.toBeNull()
   })
 })
 

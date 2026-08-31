@@ -187,6 +187,10 @@ Details worth knowing:
   panel's logs — the diagnostics trace redacts it.
 - **Disable** stops the agent; the Console toggle on the card shows the panel↔playit exchange and
   the agent's journal for debugging.
+- **Reset agent** (two-click confirm) stops the agent and deletes its secret. Use it when the
+  agent was deleted on playit.gg or its secret was revoked — the card flags this with an
+  "agent is no longer valid" banner. After a reset, **Enable public access** re-runs the full
+  claim flow and re-creates the agent.
 
 If you'd rather port-forward: forward the game's UDP port(s) from the table in
 `packages/shared/src/games.ts` straight to the CT — the panel plays no part in that path.
