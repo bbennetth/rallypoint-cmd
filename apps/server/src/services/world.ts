@@ -64,3 +64,40 @@ function findDirCaseInsensitive(saveRoot: string, worldId: string): string | nul
 export function saveDirFor(palDir: string, worldId: string): string {
   return path.join(palDir, PAL_SAVE_ROOT, worldId)
 }
+
+// Newest file mtime under a save dir — "when did the game last write a
+// save". Skips the game's own internal-backup dirs at the top level and
+// bounds the walk so a pathological tree can't stall the status route.
+const MTIME_MAX_DEPTH = 4
+const MTIME_MAX_ENTRIES = 2000
+
+export function newestSaveMtimeMs(saveDir: string, excludeTopDirs: readonly string[] = []): number | null {
+  let newest: number | null = null
+  let budget = MTIME_MAX_ENTRIES
+  const walk = (dir: string, depth: number, top: boolean): void => {
+    if (depth > MTIME_MAX_DEPTH || budget <= 0) return
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      if (budget-- <= 0) return
+      if (top && e.isDirectory() && excludeTopDirs.includes(e.name)) continue
+      const p = path.join(dir, e.name)
+      if (e.isDirectory()) {
+        walk(p, depth + 1, false)
+      } else if (e.isFile()) {
+        try {
+          const m = fs.statSync(p).mtimeMs
+          if (newest === null || m > newest) newest = m
+        } catch {
+          // raced with a save-file swap — skip
+        }
+      }
+    }
+  }
+  walk(saveDir, 0, true)
+  return newest === null ? null : Math.floor(newest)
+}

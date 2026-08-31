@@ -1,4 +1,8 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { newestSaveMtimeMs } from './world.js'
 import { parseSystemdTimestamp } from './game-control.real.js'
 import { decideSteamcmdOutcome, steamcmdArgs } from './steamcmd.real.js'
 import { isNewerVersion } from './panel-update.js'
@@ -145,6 +149,40 @@ describe('extractTunnelAddress (playit tunnels-list parsing)', () => {
     ).toBeNull()
     expect(extractTunnelAddress(null, 8211)).toBeNull()
     expect(extractTunnelAddress({ nope: true }, 8211)).toBeNull()
+  })
+})
+
+describe('newestSaveMtimeMs (world last-saved time)', () => {
+  it('returns the newest file mtime, skipping excluded top-level dirs', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rp-mtime-'))
+    try {
+      fs.writeFileSync(path.join(dir, 'Level.sav'), 'x')
+      fs.mkdirSync(path.join(dir, 'Players'))
+      fs.writeFileSync(path.join(dir, 'Players', 'p1.sav'), 'x')
+      fs.mkdirSync(path.join(dir, 'backup'))
+      fs.writeFileSync(path.join(dir, 'backup', 'old.sav'), 'x')
+      const now = Date.now()
+      fs.utimesSync(path.join(dir, 'Level.sav'), new Date(now - 60_000), new Date(now - 60_000))
+      fs.utimesSync(path.join(dir, 'Players', 'p1.sav'), new Date(now - 5_000), new Date(now - 5_000))
+      // Excluded internal-backup dir holds the newest file — must not win.
+      fs.utimesSync(path.join(dir, 'backup', 'old.sav'), new Date(now), new Date(now))
+
+      const got = newestSaveMtimeMs(dir, ['backup'])
+      expect(got).not.toBeNull()
+      expect(Math.abs(got! - (now - 5_000))).toBeLessThan(1500)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('returns null for a missing or empty dir', () => {
+    expect(newestSaveMtimeMs('/nonexistent/rp-test')).toBeNull()
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rp-mtime-empty-'))
+    try {
+      expect(newestSaveMtimeMs(dir)).toBeNull()
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 

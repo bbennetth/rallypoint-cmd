@@ -5,7 +5,7 @@ import { api, ApiError } from '../lib/api.js'
 import { usePoll } from '../lib/usePoll.js'
 import { useLongOp } from '../lib/useEventSource.js'
 import { useCurrentGame } from '../lib/useCurrentGame.js'
-import { formatBytes, formatUptime } from '../lib/format.js'
+import { formatAgo, formatBytes, formatDateTime, formatUptime } from '../lib/format.js'
 import { Badge, Button, Card, Spinner, Stat } from '../ui/primitives.js'
 import { Banner } from '../ui/Banner.js'
 import { ProgressBar } from '../ui/ProgressBar.js'
@@ -154,6 +154,14 @@ export function DashboardPage() {
           <dl className="space-y-2 text-sm">
             <Row k="Name" v={status.rest.info?.servername ?? '—'} />
             <Row k="World ID" v={status.world.id ?? '—'} mono />
+            <Row
+              k="Last saved"
+              v={
+                status.world.lastSavedAtMs != null
+                  ? `${formatAgo(status.world.lastSavedAtMs)} (${formatDateTime(status.world.lastSavedAtMs)})`
+                  : '—'
+              }
+            />
             <Row k="Version" v={status.rest.info?.version ?? '—'} />
             <Row k="systemd" v={`${status.systemd.activeState} / ${status.systemd.subState}`} />
             <Row k="REST API" v={status.rest.reachable ? 'reachable' : 'unreachable'} />

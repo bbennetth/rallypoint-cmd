@@ -115,7 +115,7 @@ describe('server status contract', () => {
       lifecycle: 'not_installed',
       pendingRestart: false,
       buildId: null,
-      world: { id: null },
+      world: { id: null, lastSavedAtMs: null },
       systemd: {
         activeState: 'inactive',
         subState: 'dead',
