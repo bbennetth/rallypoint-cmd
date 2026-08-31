@@ -190,6 +190,8 @@ export const api = {
     request('POST', `/api/public-access/enable${serverQuery()}`, longOpSchema),
   disablePublicAccess: (): Promise<unknown> =>
     request('POST', '/api/public-access/disable', okSchema),
+  resetPublicAccess: (): Promise<unknown> =>
+    request('POST', '/api/public-access/reset', okSchema),
   publicAccessConsole: (): Promise<PublicAccessConsole> =>
     request('GET', '/api/public-access/console', publicAccessConsoleSchema),
 

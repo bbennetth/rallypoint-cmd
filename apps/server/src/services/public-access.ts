@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { eq } from 'drizzle-orm'
+import { eq, like } from 'drizzle-orm'
 import { joinPort, type PublicAccessConsole, type PublicAccessStatus } from '@rallypoint-cmd/shared'
 import type { Db } from '../db/client.js'
 import type { Logger } from '../logger.js'
@@ -44,6 +44,10 @@ export interface PublicAccessService {
   // for approval, start the agent.
   enable(sink: OpSink, serverId?: string): Promise<void>
   disable(): Promise<void>
+  // Destructive: stop the agent and remove its secret so the enable flow
+  // re-creates (re-claims) it — the recovery path when the agent was
+  // deleted on playit.gg or its secret was revoked.
+  reset(): Promise<void>
   // Diagnostics: panel↔playit trace (helper calls + API exchanges) and
   // the agent's recent journal.
   console(): Promise<PublicAccessConsole>
@@ -141,6 +145,9 @@ interface Deps {
 export function createRealPublicAccess(deps: Deps): PublicAccessService {
   const { db, logger, instances } = deps
   let pendingClaim: { code: string; url: string } | null = null
+  // Sticky until the next successful API exchange or a reset: set when
+  // api.playit.gg rejects the stored secret (agent deleted/revoked).
+  let secretInvalid = false
   const trace = new PlayitTrace()
 
   // Runs one agent operation, tracing the outcome. The trace is
@@ -187,9 +194,11 @@ export function createRealPublicAccess(deps: Deps): PublicAccessService {
         signal: AbortSignal.timeout(10_000),
       })
       if (!res.ok) {
+        if (res.status === 401 || res.status === 403) secretInvalid = true
         trace.add('api', `POST /tunnels/list → HTTP ${res.status} ${(await res.text()).slice(0, 300)}`)
         return null
       }
+      secretInvalid = false
       const body: unknown = await res.json()
       const address = extractTunnelAddress(body, gamePort)
       if (address === null) {
@@ -240,16 +249,19 @@ export function createRealPublicAccess(deps: Deps): PublicAccessService {
         address,
         pendingClaim,
         gamePort,
+        secretInvalid,
       }
     },
 
     async enable(sink, serverId): Promise<void> {
-      const s = await agentStatus()
+      let s = await agentStatus()
       if (!s.installed) {
         sink.line('[public-access] Installing the playit agent (apt)...')
         sink.progress(5)
         const inst = await step('install', () => playit.install())
         if (inst === null) throw new Error('playit agent installation failed (see panel logs).')
+        // install() can leave a stale pre-install view of claimed/running
+        s = await agentStatus()
       }
       sink.progress(20)
 
@@ -291,6 +303,15 @@ export function createRealPublicAccess(deps: Deps): PublicAccessService {
     async disable(): Promise<void> {
       const res = await step('stop', () => playit.stop())
       if (res === null) throw new Error('Failed to stop the playit agent.')
+    },
+
+    async reset(): Promise<void> {
+      const res = await step('reset', () => playit.reset())
+      if (res === null) throw new Error('Failed to reset the playit agent.')
+      pendingClaim = null
+      secretInvalid = false
+      // Drop cached addresses for every port — they belong to the old agent.
+      db.delete(panelState).where(like(panelState.key, 'public_access_address:%')).run()
     },
 
     async console(): Promise<PublicAccessConsole> {
@@ -349,6 +370,14 @@ export function createFakePublicAccess(instances?: InstancePortSource): PublicAc
     disable() {
       state.running = false
       fakeTrace.add('helper', '$ playit-helper stop → ok')
+      return Promise.resolve()
+    },
+    reset() {
+      state.running = false
+      state.claimed = false
+      state.address = null
+      state.pendingClaim = null
+      fakeTrace.add('helper', '$ playit-helper reset → ok: secret removed')
       return Promise.resolve()
     },
     console() {
