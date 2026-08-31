@@ -2,7 +2,14 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Hono, type Context } from 'hono'
 import { eq } from 'drizzle-orm'
-import { gameBySlug, panelStorageSchema, storageDeleteRequestSchema, templateUnitFor } from '@rallypoint-cmd/shared'
+import os from 'node:os'
+import {
+  gameBySlug,
+  panelHostSchema,
+  panelStorageSchema,
+  storageDeleteRequestSchema,
+  templateUnitFor,
+} from '@rallypoint-cmd/shared'
 import type { HonoApp } from '../context.js'
 import { ApiError, errors } from '../errors.js'
 import { requireSession } from '../middleware/session.js'
@@ -37,6 +44,23 @@ async function listDirNames(root: string): Promise<string[]> {
     return []
   }
 }
+
+// Read-only host facts. The governor lives on the Proxmox host — inside
+// an unprivileged CT the sysfs file is readable but not writable, so the
+// panel can only display it (the UI ships the how-to for changing it on
+// the host). A powersave governor is a common cause of game-tick
+// overruns ("Bad Performance") despite low average CPU load.
+const GOVERNOR_FILE = '/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor'
+
+managementRoutes.get('/api/panel/host', requireSession, (c) => {
+  let cpuGovernor: string | null = null
+  try {
+    cpuGovernor = fs.readFileSync(GOVERNOR_FILE, 'utf8').trim() || null
+  } catch {
+    // cpufreq not exposed (some VMs / non-Linux dev machines)
+  }
+  return c.json(panelHostSchema.parse({ cpuGovernor, cpuCount: os.cpus().length }))
+})
 
 managementRoutes.get('/api/panel/storage', requireSession, async (c) => {
   const env = c.get('env')

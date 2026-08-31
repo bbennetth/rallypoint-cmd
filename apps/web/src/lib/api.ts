@@ -5,6 +5,7 @@ import {
   metricsSnapshotSchema,
   modsResponseSchema,
   modUploadResultSchema,
+  panelHostSchema,
   panelOpStateSchema,
   panelStorageSchema,
   panelUpdateInfoSchema,
@@ -29,6 +30,7 @@ import {
   type ModsResponse,
   type ModUploadResult,
   type PanelOpState,
+  type PanelHost,
   type PanelStorage,
   type PanelUpdateInfo,
   type PlayersResponse,
@@ -208,6 +210,7 @@ export const api = {
     ),
 
   // management / storage
+  panelHost: (): Promise<PanelHost> => request('GET', '/api/panel/host', panelHostSchema),
   panelStorage: (): Promise<PanelStorage> =>
     request('GET', '/api/panel/storage', panelStorageSchema),
   panelOp: (): Promise<PanelOpState> => request('GET', '/api/panel/op', panelOpStateSchema),
