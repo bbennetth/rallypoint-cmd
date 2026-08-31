@@ -25,6 +25,7 @@ import { backupRoutes } from './routes/backups.js'
 import { modRoutes } from './routes/mods.js'
 import { scheduleRoutes } from './routes/schedules.js'
 import { panelUpdateRoutes } from './routes/panel-update.js'
+import { wineRoutes } from './routes/wine.js'
 import { publicAccessRoutes } from './routes/public-access.js'
 import { managementRoutes } from './routes/management.js'
 import { createSpaRoutes } from './routes/spa.js'
@@ -92,6 +93,7 @@ export function buildApp(deps: BuildAppDeps): Hono<HonoApp> {
   app.route('/', authRoutes)
   app.route('/', serverRoutes)
   app.route('/', panelUpdateRoutes)
+  app.route('/', wineRoutes)
   app.route('/', publicAccessRoutes)
   app.route('/', managementRoutes)
 

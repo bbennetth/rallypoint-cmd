@@ -70,6 +70,11 @@ function update_script() {
     systemctl daemon-reload
     msg_ok "Updated Services"
 
+    # Wine upgrades are NOT done here: the panel's Management page has a
+    # Wine card that upgrades to WineHQ staging on demand (esync/fsync for
+    # Windows-only servers). Fresh installs get staging from
+    # install/rallypoint-cmd-install.sh.
+
     msg_info "Starting Panel"
     systemctl start rallypoint-cmd
     msg_ok "Started Panel"

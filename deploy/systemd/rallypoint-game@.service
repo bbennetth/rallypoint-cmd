@@ -15,7 +15,12 @@ ExecStart=/etc/rallypoint-cmd/games/%i/start.sh
 Restart=on-failure
 RestartSec=10
 OOMPolicy=stop
-LimitNOFILE=100000
+# Esync-capable Wine builds allocate one eventfd per Windows sync object,
+# so a Wine game can hold hundreds of thousands of fds; running out mid-
+# session kills the server. Native games are unaffected by the headroom.
+LimitNOFILE=1048576
+# Game ticks should win CPU over the panel/steamcmd during installs, updates and backups (default weight 100).
+CPUWeight=200
 SyslogIdentifier=rallypoint-game-%i
 
 # Game servers execute third-party binaries and load user-supplied mods,
