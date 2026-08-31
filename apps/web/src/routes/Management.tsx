@@ -4,6 +4,7 @@ import {
   type BackupDirEntry,
   type GameDirEntry,
   type LongOp,
+  type PanelHost,
   type PanelStorage,
   type PanelUpdateInfo,
 } from '@rallypoint-cmd/shared'
@@ -30,6 +31,8 @@ export function ManagementPage() {
 
       <PanelUpdateCard />
 
+      <HostCard />
+
       <StorageSection />
     </div>
   )
@@ -39,6 +42,100 @@ export function ManagementPage() {
 // the update as a panel-scoped long-op, then — because applying restarts
 // the panel — polls /api/health until the NEW version answers and reloads
 // the SPA. Independent of any game server's update flow.
+// Slow governors ramp CPU clocks lazily — game-server tick bursts start
+// on down-clocked cores and overrun their deadline ("Bad Performance"
+// log spam) even at low average load.
+const SLOW_GOVERNORS = ['powersave', 'conservative']
+
+// Read-only host facts. The governor is host-level (Proxmox), not
+// something the panel's container can change — so this card displays it
+// and, when it's a slow one, explains how to change it on the host.
+function HostCard() {
+  const [host, setHost] = useState<PanelHost | null>(null)
+  const [showHowTo, setShowHowTo] = useState(false)
+
+  useEffect(() => {
+    api.panelHost().then(setHost).catch(() => {
+      /* best-effort — the card just stays in its loading state */
+    })
+  }, [])
+
+  const governor = host?.cpuGovernor ?? null
+  const slow = governor !== null && SLOW_GOVERNORS.includes(governor)
+
+  return (
+    <Card
+      title={
+        <span className="flex items-center gap-3">
+          Host
+          {governor && <Badge tone={slow ? 'warn' : 'good'}>{governor}</Badge>}
+        </span>
+      }
+    >
+      {!host ? (
+        <p className="cmd-empty">Loading…</p>
+      ) : (
+        <div className="space-y-3">
+          <dl className="space-y-2 text-sm">
+            <div className="flex justify-between gap-4">
+              <dt className="eyebrow">CPU governor</dt>
+              <dd>{governor ?? 'not exposed'}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="eyebrow">CPUs</dt>
+              <dd>{host.cpuCount}</dd>
+            </div>
+          </dl>
+
+          {slow && (
+            <Banner tone="warn">
+              The host CPU governor is <code className="cmd-code">{governor}</code> — cores ramp up
+              slowly, which causes game tick overruns (e.g. Enshrouded&apos;s &ldquo;Bad
+              Performance&rdquo; warnings) even when average CPU load is low.{' '}
+              <button className="cmd-link" onClick={() => setShowHowTo((v) => !v)}>
+                {showHowTo ? 'Hide fix' : 'How to fix'}
+              </button>
+            </Banner>
+          )}
+
+          {slow && showHowTo && (
+            <div className="space-y-2 text-sm">
+              <p className="cmd-note">
+                The governor is set on the <strong>host</strong> (e.g. Proxmox), not in this
+                container — the panel can only read it. On the host, as root:
+              </p>
+              <pre className="cmd-code block overflow-x-auto p-3 text-xs">
+                {`# apply now (reverts on reboot)
+echo performance | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+
+# make it persistent
+cat > /etc/systemd/system/cpu-governor.service <<'EOF'
+[Unit]
+Description=Set CPU governor to performance
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'echo performance | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor'
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload && systemctl enable --now cpu-governor.service`}
+              </pre>
+              <p className="cmd-note">
+                If the governor was set deliberately (e.g. in{' '}
+                <code className="cmd-code">/etc/default/cpufrequtils</code>), change it there
+                instead. <code className="cmd-code">schedutil</code> is a good middle ground if you
+                want to keep some power saving. This page reflects the change on reload.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  )
+}
+
 function PanelUpdateCard() {
   const [info, setInfo] = useState<PanelUpdateInfo | null>(null)
   const [checking, setChecking] = useState(false)

@@ -147,6 +147,18 @@ export const panelUpdateInfoSchema = z.object({
 })
 export type PanelUpdateInfo = z.infer<typeof panelUpdateInfoSchema>
 
+// --- host info (read-only) --------------------------------------------------
+
+// The CPU frequency governor is host-level state the CT can read but not
+// change — the panel only displays it (with guidance), never sets it.
+export const panelHostSchema = z.object({
+  // e.g. "performance" | "powersave" | "schedutil"; null when cpufreq is
+  // not exposed (VMs without cpufreq, non-Linux dev machines).
+  cpuGovernor: z.string().nullable(),
+  cpuCount: z.number().int().positive(),
+})
+export type PanelHost = z.infer<typeof panelHostSchema>
+
 // --- public access (playit.gg) ---------------------------------------------
 
 export const publicAccessStatusSchema = z.object({
