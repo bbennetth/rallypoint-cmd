@@ -35,6 +35,17 @@ describe('renderStartScript', () => {
     expect(script).toContain('exec "$WINE_BIN" ./enshrouded_server.exe')
   })
 
+  it('sources the launch conf and appends $EXTRA_ARGS only for games that declare one', () => {
+    const withConf: GameDef = { ...(GAMES['valheim'] as GameDef), launchConfFile: 'rallypoint-launch.conf' }
+    const script = renderStartScript(withConf, '/opt/games/valheim')
+    expect(script).toContain('[ -f "./rallypoint-launch.conf" ] && . "./rallypoint-launch.conf"')
+    expect(script.trim().endsWith('$EXTRA_ARGS')).toBe(true)
+    // Games without a launch conf keep their exact pre-existing script.
+    const plain = renderStartScript(GAMES['valheim'] as GameDef, '/opt/games/valheim')
+    expect(plain).not.toContain('EXTRA_ARGS')
+    expect(plain).not.toContain('rallypoint-launch.conf')
+  })
+
   it('renders every registry game without an unresolved placeholder', () => {
     for (const game of Object.values(GAMES)) {
       const script = renderStartScript(game, `/opt/games/${game.slug}`)
