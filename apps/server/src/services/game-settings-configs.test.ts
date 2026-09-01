@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { GAMES } from '@rallypoint-cmd/shared'
 import { readAdminCreds } from './admin-creds.js'
-import { settingsConfigForSlug } from './game-settings-configs.js'
+import { launchConfConfigFor, settingsConfigForSlug } from './game-settings-configs.js'
 import { launchConfFormat, type SettingsDoc } from './settings-formats.js'
 
 // The invariants are the panel's grip on each game: they are what makes
@@ -171,6 +171,24 @@ describe('Source cfg invariants', () => {
   it.each(['team-fortress-2', 'counter-strike-2'])('%s fills in an rcon_password', (slug) => {
     const doc = applied(slug, 'hostname "Rallypoint"')
     expect(doc.entries.get('rcon_password')).toMatch(/^[A-Za-z0-9_-]{20,}$/)
+  })
+})
+
+describe('one home per credential', () => {
+  it('never manages an RCON password in two files for the same game', () => {
+    // Two files each generating their own secret means the server gets
+    // one password and the panel reads the other, so RCON silently fails.
+    for (const game of Object.values(GAMES)) {
+      const primary = settingsConfigForSlug(game.slug)
+      const launch = launchConfConfigFor(game)
+      if (!primary || !launch) continue
+      const secretish = (key: string): boolean => /password/i.test(key)
+      const inPrimary = primary.managedKeys.filter(secretish)
+      const inLaunch = launch.managedKeys.filter(secretish)
+      expect(inPrimary.length === 0 || inLaunch.length === 0, `${game.slug}: ${[...inPrimary, ...inLaunch]}`).toBe(
+        true,
+      )
+    }
   })
 })
 

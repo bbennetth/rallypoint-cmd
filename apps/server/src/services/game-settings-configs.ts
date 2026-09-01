@@ -130,9 +130,11 @@ function zomboidConfig(game: GameDef): GameSettingsConfig {
 }
 
 // --- Source dedicated servers (TF2, CS2) ------------------------------
-// server.cfg is executed at map load. CS2 additionally takes
-// +rcon_password on the command line, which the launch conf carries —
-// its cfg-exec timing for rcon has been unreliable across builds.
+// server.cfg is executed at map load and is the single home of the RCON
+// password. CS2 also accepts +rcon_password on the command line, but
+// setting it in both places means two generated secrets and no way to
+// know which one the server ended up with — a password the panel cannot
+// predict is worse than one that arrives at map load.
 
 function sourceConfig(game: GameDef, file: string): GameSettingsConfig {
   const format = keyValueFormat(SOURCE_CFG_DIALECT)
@@ -226,8 +228,9 @@ function rustConfig(game: GameDef): GameSettingsConfig {
   }
 }
 
-// The launch conf a game needs alongside its main settings file, when
-// the two are different files (Rust's and CS2's RCON credentials).
+// The launch conf a game needs alongside its main settings file. Only
+// Rust has one: its RCON convars are read from the command line and
+// ignored in server.cfg, so that is where the panel has to put them.
 export function launchConfConfigFor(game: GameDef): GameSettingsConfig | null {
   if (!game.launchConfFile || game.settingsAdapter === 'launch-conf') return null
   const rconPort = portOf(game, 'rcon', 28016)
@@ -237,16 +240,11 @@ export function launchConfConfigFor(game: GameDef): GameSettingsConfig | null {
     format: launchConfFormat,
     specs: {},
     categories: [],
-    managedKeys:
-      game.slug === 'rust' ? ['+rcon.port', '+rcon.password', '+rcon.web'] : ['+rcon_password'],
+    managedKeys: ['+rcon.port', '+rcon.password', '+rcon.web'],
     applyInvariants(doc) {
-      if (game.slug === 'rust') {
-        pin(doc, launchConfFormat, '+rcon.port', String(rconPort))
-        pin(doc, launchConfFormat, '+rcon.web', '1')
-        ensureSecret(doc, launchConfFormat, '+rcon.password')
-      } else {
-        ensureSecret(doc, launchConfFormat, '+rcon_password')
-      }
+      pin(doc, launchConfFormat, '+rcon.port', String(rconPort))
+      pin(doc, launchConfFormat, '+rcon.web', '1')
+      ensureSecret(doc, launchConfFormat, '+rcon.password')
     },
     seedContent: () => '',
   }

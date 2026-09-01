@@ -292,9 +292,6 @@ export const GAMES: Record<string, GameDef> = {
     savePaths: ['game/csgo/cfg'],
     installedProbe: 'game/bin/linuxsteamrt64/cs2',
     settingsAdapter: 'source-cfg',
-    // CS2's cfg-exec timing for rcon_password has been unreliable across
-    // builds, so the panel also passes it on the command line.
-    launchConfFile: 'rallypoint-launch.conf',
     capabilities: { query: 'a2s', players: 'rcon', mods: 'none', world: false },
     diskEstimateGb: 35,
     supportLevel: 'full',
