@@ -125,6 +125,43 @@ describe('writeStructured()', () => {
     expect(service.getPendingRestart()).toBe(true)
   })
 
+  it('switches the preset to Custom when a gameSettings value is edited', () => {
+    // The server ignores gameSettings.* under any other preset, so an
+    // edit that leaves "Default" in place is written and never applied.
+    service.writeStructured({ 'gameSettings.enemyDamageFactor': 1.5 })
+    expect(fileObj()['gameSettingsPreset']).toBe('Custom')
+  })
+
+  it('switches to Custom for an unknown-but-present gameSettings scalar too', () => {
+    service.writeStructured({ 'gameSettings.someFutureKey': '3' })
+    const obj = fileObj()
+    expect((obj['gameSettings'] as Record<string, unknown>)['someFutureKey']).toBe(3)
+    expect(obj['gameSettingsPreset']).toBe('Custom')
+  })
+
+  it('leaves the preset alone when no gameSettings value is edited', () => {
+    service.writeStructured({ slotCount: 8 })
+    expect(fileObj()['gameSettingsPreset']).toBe('Default')
+    service.writeStructured({ gameSettingsPreset: 'Hard' })
+    expect(fileObj()['gameSettingsPreset']).toBe('Hard')
+  })
+
+  it('accepts a patch that sets Custom and gameSettings values together', () => {
+    service.writeStructured({ gameSettingsPreset: 'Custom', 'gameSettings.playerHealthFactor': 2 })
+    const obj = fileObj()
+    expect(obj['gameSettingsPreset']).toBe('Custom')
+    expect((obj['gameSettings'] as Record<string, unknown>)['playerHealthFactor']).toBe(2)
+  })
+
+  it('refuses a patch that picks a non-Custom preset and edits gameSettings at once', () => {
+    expect(() =>
+      service.writeStructured({ gameSettingsPreset: 'Hard', 'gameSettings.playerHealthFactor': 2 }),
+    ).toThrow(JsonParseError)
+    // Nothing was written.
+    expect(fileObj()['gameSettingsPreset']).toBe('Default')
+    expect(service.getPendingRestart()).toBe(false)
+  })
+
   it('sets a user group password in place, preserving the rest of the group', () => {
     service.writeStructured({ 'userGroups.Admin.password': 'hunter2secret' })
     const obj = JSON.parse(fs.readFileSync(jsonPath, 'utf8'))
