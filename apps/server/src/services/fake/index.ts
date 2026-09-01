@@ -5,6 +5,7 @@ import { EventEmitter } from 'node:events'
 import {
   DEFAULT_ERROR_PATTERNS,
   compileErrorMatcher,
+  isErrorLine,
   effectiveResources,
   parseSystemdBytes,
   type GameDef,
@@ -268,6 +269,7 @@ function createFakeMetricsSampler(
   const history: MetricsSample[] = []
   const errors: MetricsErrorLine[] = []
   const matcher = compileErrorMatcher(game.logPatterns?.error ?? DEFAULT_ERROR_PATTERNS)
+  const ignore = compileErrorMatcher(game.logPatterns?.ignore ?? [])
   const memHighBytes = parseSystemdBytes(game.memoryHigh)
   const hostCpus = Math.max(1, os.cpus().length)
   const hostMemBytes = os.totalmem()
@@ -292,7 +294,7 @@ function createFakeMetricsSampler(
   let backfilled = false
 
   function recordError(line: string, ts: number): void {
-    if (!matcher?.test(line)) return
+    if (!isErrorLine(line, matcher, ignore)) return
     errors.push({ ts, line })
     if (errors.length > 100) errors.shift()
   }

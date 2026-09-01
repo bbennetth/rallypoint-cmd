@@ -110,6 +110,15 @@ export function compileErrorMatcher(patterns: readonly string[]): RegExp | null 
   return new RegExp(usable.map((p) => `(?:${p})`).join('|'), 'i')
 }
 
+// True when `line` should be surfaced on the Monitoring page: the error
+// matcher hits and the ignore matcher doesn't. Ignore wins — it exists
+// precisely for benign lines the error set also matches.
+export function isErrorLine(line: string, matcher: RegExp | null, ignore: RegExp | null): boolean {
+  if (!matcher?.test(line)) return false
+  if (ignore?.test(line)) return false
+  return true
+}
+
 // Parse a systemd byte quantity ("12G", "512M", "1.5G", "infinity") into
 // bytes. systemd uses power-of-two suffixes. Returns null for
 // `infinity`, an empty value, or anything unparseable — all of which

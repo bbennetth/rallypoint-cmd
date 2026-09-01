@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GAMES, DEFAULT_ERROR_PATTERNS, compileErrorMatcher, parseSystemdBytes } from '@rallypoint-cmd/shared'
+import { GAMES, DEFAULT_ERROR_PATTERNS, compileErrorMatcher, isErrorLine, parseSystemdBytes } from '@rallypoint-cmd/shared'
 import { cpuPercent, parseKeyedStat, parsePsiAvg10 } from './metrics.real.js'
 
 // The sampler's arithmetic and parsing, which is where a monitoring
@@ -131,5 +131,45 @@ describe('compileErrorMatcher', () => {
   it('returns null when nothing compiles', () => {
     expect(compileErrorMatcher(['oops('])).toBeNull()
     expect(compileErrorMatcher([])).toBeNull()
+  })
+})
+
+describe('isErrorLine', () => {
+  // Verbatim journal lines from an Enshrouded start under Wine — benign
+  // startup diagnostics that the broad \berrors?\b pattern would flag.
+  const XDG_LINE = 'error: XDG_RUNTIME_DIR is invalid or not set in the environment.'
+  const REGISTRY_LINE =
+    "[os] Query size of value 'DisplayVersion' in 'SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion' failed with error '2'."
+  const matcher = compileErrorMatcher(GAMES.enshrouded!.logPatterns!.error)!
+  const ignore = compileErrorMatcher(GAMES.enshrouded!.logPatterns!.ignore!)!
+
+  it('suppresses the known-benign Wine startup lines the error set would flag', () => {
+    // The error matcher alone must hit them — otherwise the ignore
+    // entries have gone vacuous and should be deleted.
+    expect(matcher.test(XDG_LINE)).toBe(true)
+    expect(matcher.test(REGISTRY_LINE)).toBe(true)
+    expect(isErrorLine(XDG_LINE, matcher, ignore)).toBe(false)
+    expect(isErrorLine(REGISTRY_LINE, matcher, ignore)).toBe(false)
+  })
+
+  it('still surfaces real trouble with the ignore matcher present', () => {
+    expect(isErrorLine('Server overloaded — simulation tick took 812ms', matcher, ignore)).toBe(true)
+    expect(isErrorLine('[save] saving failed: disk full', matcher, ignore)).toBe(true)
+  })
+
+  it('behaves like a plain matcher test when there is no ignore list', () => {
+    expect(isErrorLine(XDG_LINE, matcher, null)).toBe(true)
+    expect(isErrorLine('tick players=2 fps=59.8', matcher, null)).toBe(false)
+    expect(isErrorLine(XDG_LINE, null, null)).toBe(false)
+  })
+
+  it('every registry log pattern compiles individually', () => {
+    // compileErrorMatcher silently drops invalid patterns, so a typo in
+    // games.ts would otherwise fail open with no signal.
+    for (const game of Object.values(GAMES)) {
+      for (const p of [...(game.logPatterns?.error ?? []), ...(game.logPatterns?.ignore ?? [])]) {
+        expect(() => new RegExp(p), `${game.slug}: ${p}`).not.toThrow()
+      }
+    }
   })
 })

@@ -7,6 +7,7 @@ import {
   DEFAULT_ERROR_PATTERNS,
   compileErrorMatcher,
   effectiveResources,
+  isErrorLine,
   parseSystemdBytes,
   type GameDef,
   type MetricsErrorLine,
@@ -102,6 +103,7 @@ export function createRealMetricsSampler(logger: Logger, target: MetricsTarget):
   const history: MetricsSample[] = []
   const errors: MetricsErrorLine[] = []
   const matcher = compileErrorMatcher(game.logPatterns?.error ?? DEFAULT_ERROR_PATTERNS)
+  const ignore = compileErrorMatcher(game.logPatterns?.ignore ?? [])
 
   let timer: ReturnType<typeof setInterval> | null = null
   let unsubscribe: (() => void) | null = null
@@ -129,7 +131,7 @@ export function createRealMetricsSampler(logger: Logger, target: MetricsTarget):
   }
 
   function recordError(line: string, ts: number): void {
-    if (!matcher?.test(line)) return
+    if (!isErrorLine(line, matcher, ignore)) return
     errors.push({ ts, line })
     if (errors.length > ERRORS_MAX) errors.shift()
   }
