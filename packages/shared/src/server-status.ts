@@ -29,15 +29,17 @@ export const palServerInfoSchema = z
   .passthrough()
 export type PalServerInfo = z.infer<typeof palServerInfoSchema>
 
-// Subset of `GET /v1/api/metrics`. Player counts are the common core —
-// an A2S query (Enshrouded) supplies only those, so the REST-only
-// fields (fps, frametime, uptime) are optional.
+// Subset of `GET /v1/api/metrics`. Every field is optional because each
+// query adapter answers a different slice: the REST API supplies all of
+// them, an A2S query (Enshrouded) only the player counts, and
+// Satisfactory's lightweight query none at all. The UI renders a
+// missing field as `—`.
 export const palServerMetricsSchema = z
   .object({
     serverfps: z.number().optional(),
-    currentplayernum: z.number(),
+    currentplayernum: z.number().optional(),
     serverframetime: z.number().optional(),
-    maxplayernum: z.number(),
+    maxplayernum: z.number().optional(),
     uptime: z.number().optional(),
     days: z.number().optional(),
   })

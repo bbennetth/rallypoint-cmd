@@ -128,7 +128,11 @@ export function DashboardPage() {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Stat
             label="Players"
-            value={metrics ? `${metrics.currentplayernum}/${metrics.maxplayernum}` : '—'}
+            value={
+              metrics?.currentplayernum !== undefined && metrics.maxplayernum !== undefined
+                ? `${metrics.currentplayernum}/${metrics.maxplayernum}`
+                : '—'
+            }
           />
           <Stat label="Server FPS" value={metrics?.serverfps ?? '—'} />
           <Stat
