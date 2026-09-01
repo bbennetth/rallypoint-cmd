@@ -227,6 +227,27 @@ export function applyEnshroudedInvariants(obj: JsonObject, target: { gamePort: n
   obj['logDirectory'] = `./${ENSHROUDED_LOG_DIR}`
 }
 
+// The server only reads `gameSettings.*` when `gameSettingsPreset` is
+// "Custom"; under any other preset it loads that preset's built-in
+// values and ignores the object entirely, so an edited factor is written
+// to disk and then never takes effect. A structured write that touches a
+// gameSettings key therefore switches the preset to Custom, unless the
+// same patch explicitly picks another preset — that combination cannot
+// mean anything, so it is refused rather than silently resolved.
+const GAME_SETTINGS_KEY = 'gameSettings'
+const PRESET_KEY = 'gameSettingsPreset'
+const CUSTOM_PRESET = 'Custom'
+
+export function selectCustomPreset(obj: JsonObject, patch: Record<string, SettingValue>): void {
+  const requested = patch[PRESET_KEY]
+  if (requested !== undefined && String(requested) !== CUSTOM_PRESET) {
+    throw new JsonParseError(
+      `gameSettings values only apply when ${PRESET_KEY} is ${CUSTOM_PRESET}; either set the preset to ${CUSTOM_PRESET} or leave the gameSettings values unchanged.`,
+    )
+  }
+  obj[PRESET_KEY] = CUSTOM_PRESET
+}
+
 export function createEnshroudedSettings(env: Env, db: Db, target: JsonSettingsTarget): SettingsService {
   const jsonPath = path.join(target.installDir, ENSHROUDED_SERVER_JSON)
 
@@ -319,6 +340,7 @@ export function createEnshroudedSettings(env: Env, db: Db, target: JsonSettingsT
 
     writeStructured(values: Record<string, SettingValue>) {
       const obj = readObject()
+      let touchedGameSettings = false
       for (const [key, value] of Object.entries(values)) {
         if ((ENSHROUDED_MANAGED_KEYS as readonly string[]).includes(key)) {
           throw new JsonParseError(`${key} is panel-managed and cannot be edited`)
@@ -345,6 +367,7 @@ export function createEnshroudedSettings(env: Env, db: Db, target: JsonSettingsT
             throw new JsonParseError(`${key} must be a number`)
           }
           setPath(obj, key, coerced)
+          if (key.startsWith(`${GAME_SETTINGS_KEY}.`)) touchedGameSettings = true
         } else if (isScalar(getPath(obj, key))) {
           // Unknown-but-present scalar: accept a JSON scalar literal only
           // (mirrors the INI adapter's verbatim unknown-key rule).
@@ -361,10 +384,12 @@ export function createEnshroudedSettings(env: Env, db: Db, target: JsonSettingsT
             throw new JsonParseError(`${key}: value must be a JSON scalar literal`)
           }
           setPath(obj, key, parsed)
+          if (key.startsWith(`${GAME_SETTINGS_KEY}.`)) touchedGameSettings = true
         } else {
           throw new JsonParseError(`${key} is not a known setting and not present in the file`)
         }
       }
+      if (touchedGameSettings) selectCustomPreset(obj, values)
       writeObject(obj)
     },
 

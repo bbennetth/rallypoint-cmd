@@ -198,7 +198,7 @@ export const ENSHROUDED_KEY_SPECS: Record<string, EnshroudedKeySpec> = {
     kind: 'enum',
     category: 'Difficulty & Survival',
     enumValues: ['Default', 'Relaxed', 'Hard', 'Survival', 'Custom'],
-    label: 'Difficulty preset (gameSettings apply only when Custom)',
+    label: 'Difficulty preset (editing any gameSettings value switches this to Custom)',
   },
 
   // Difficulty & Survival
