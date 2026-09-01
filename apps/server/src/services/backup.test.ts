@@ -12,6 +12,7 @@ import { createFakeInstanceServices } from './fake/index.js'
 import { servers } from '../db/schema/index.js'
 import { createSettingsService } from './settings-ini.js'
 import {
+  PAL_INTERNAL_BACKUP_DIRS,
   copySaveTree,
   createBackupService,
   isSafeEntryPath,
@@ -156,7 +157,7 @@ describe('live-churn copy (the real-deploy backup fix)', () => {
     fs.mkdirSync(path.join(src, 'backup', 'world'), { recursive: true })
     fs.writeFileSync(path.join(src, 'backup', 'world', 'old.zip'), 'churny-zip')
 
-    const res = copySaveTree(src, dst)
+    const res = copySaveTree(src, dst, undefined, PAL_INTERNAL_BACKUP_DIRS)
     expect(res.skipped).toEqual([])
     expect(fs.existsSync(path.join(dst, 'Level.sav'))).toBe(true)
     expect(fs.existsSync(path.join(dst, 'Players', 'p1.sav'))).toBe(true)

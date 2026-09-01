@@ -163,16 +163,20 @@ export function walkFiles(
   return out
 }
 
-// Copy a live save tree file-by-file, tolerating churn: a running
-// Palworld server rotates files (esp. its own `backup/` zips, which we
-// exclude entirely — they're the game's internal backups, not world
-// state). fs.cpSync(recursive) aborts on the first ENOENT; this walks
-// and skips vanished files instead. Exported for direct unit testing.
+// Copy a live save tree file-by-file, tolerating churn: a running server
+// rotates files (esp. a game's own internal backup dir, which callers
+// exclude — those are the game's backups, not world state).
+// fs.cpSync(recursive) aborts on the first ENOENT; this walks and skips
+// vanished files instead. Exported for direct unit testing.
+//
+// `excludeTopDirs` defaults to nothing on purpose: exclusions are a
+// per-game fact and belong to the caller's WorldContract, so a new call
+// site can't silently inherit Palworld's.
 export function copySaveTree(
   srcRoot: string,
   destRoot: string,
   onProgress?: (copiedBytes: number, totalBytes: number) => void,
-  excludeTopDirs: readonly string[] = PAL_INTERNAL_BACKUP_DIRS,
+  excludeTopDirs: readonly string[] = [],
 ): { copiedBytes: number; skipped: string[] } {
   const files = walkFiles(srcRoot, '', excludeTopDirs)
   const totalBytes = files.reduce((a, f) => a + f.size, 0)
