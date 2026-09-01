@@ -26,7 +26,7 @@ export function sanitizeArg(value: string): string {
 // Message bodies are user text, so they are cleaned rather than
 // rejected: newlines collapse to spaces and quotes are stripped.
 export function sanitizeMessage(message: string): string {
-  return message.replace(/[\r\n\0]+/g, ' ').replace(/"/g, '').trim()
+  return message.replace(/[\r\n\0]+/g, ' ').replace(/[";]/g, '').trim()
 }
 
 function quoted(value: string): string {
@@ -83,8 +83,11 @@ export function parseZomboidPlayers(output: string): Player[] {
   const players: Player[] = []
   for (const raw of output.split(/\r?\n/)) {
     const line = raw.trim()
-    if (!line || /players connected/i.test(line)) continue
-    const name = line.startsWith('-') ? line.slice(1).trim() : line
+    // Only the dashed rows are players. Without this an error reply
+    // ("Unknown command") is listed as a player, complete with a kick
+    // button that would try to kick a sentence.
+    if (!line.startsWith('-')) continue
+    const name = line.slice(1).trim()
     if (!name) continue
     // PZ identifies players by username everywhere — there is no steamid
     // in this output, so the name is both ids.
@@ -113,8 +116,10 @@ const SOURCE: RconGame = {
   parse: parseStatus,
   list: 'status',
   kick: (userId) => `kickid ${sanitizeArg(userId)}`,
-  ban: (userId) => `banid 0 ${sanitizeArg(userId)} kick`,
-  unban: (userId) => `removeid ${sanitizeArg(userId)}`,
+  // banid/removeid only touch the in-memory list; without writeid the ban
+  // (or the lifting of one) is forgotten at the next restart.
+  ban: (userId) => `banid 0 ${sanitizeArg(userId)} kick; writeid`,
+  unban: (userId) => `removeid ${sanitizeArg(userId)}; writeid`,
   announce: (message) => `say ${sanitizeMessage(message)}`,
   save: null,
 }

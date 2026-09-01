@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { playerAdminFeatures, type Player } from '@rallypoint-cmd/shared'
+import { playerAdminFeatures, playerFields, type GameDef } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
 import { usePoll } from '../lib/usePoll.js'
 import { useCurrentGame } from '../lib/useCurrentGame.js'
@@ -8,14 +8,16 @@ import { DataTable } from '../ui/DataTable.js'
 
 // What a game reports about a player varies by admin protocol: Palworld's
 // REST API gives level and ping, an RCON `status` gives ping only, and
-// Project Zomboid gives nothing but a name. Columns a game can never fill
-// are dropped rather than rendered as a column of dashes.
-function columnsFor(rows: Player[]) {
-  const has = (field: 'level' | 'ping'): boolean => rows.some((r) => r[field] !== undefined)
+// Project Zomboid gives nothing but a name. Columns the game's protocol
+// can never fill are dropped — driven by the protocol rather than by the
+// rows in hand, so the table doesn't reshape itself as players come and
+// go (or show nothing at all on an empty server).
+function columnsFor(game: GameDef | undefined) {
+  const has = game ? playerFields(game) : { level: true, ping: true }
   return [
     { key: 'name', header: 'Name' },
-    ...(has('level') ? [{ key: 'level', header: 'Level' }] : []),
-    ...(has('ping') ? [{ key: 'ping', header: 'Ping' }] : []),
+    ...(has.level ? [{ key: 'level', header: 'Level' }] : []),
+    ...(has.ping ? [{ key: 'ping', header: 'Ping' }] : []),
     { key: 'userId', header: 'User ID', cellClassName: 'mono text-xs text-[var(--ink-mute)]' },
     { key: 'actions', header: 'Actions', align: 'right' as const },
   ]
@@ -46,7 +48,7 @@ export function PlayersPage() {
     ? playerAdminFeatures(game)
     : { list: true, kick: true, ban: true, unban: true, announce: true, save: true }
   const players = data?.players ?? []
-  const columns = columnsFor(players)
+  const columns = columnsFor(game)
   const showLevel = columns.some((c) => c.key === 'level')
   const showPing = columns.some((c) => c.key === 'ping')
 

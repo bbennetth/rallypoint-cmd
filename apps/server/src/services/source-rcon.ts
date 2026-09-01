@@ -26,6 +26,12 @@ const EXEC_ID = 2
 // how multi-packet replies are known to be complete.
 const SENTINEL_ID = 3
 
+// A real `status` or `listplayers` reply is a few KB. Anything past this
+// is a server misbehaving (or compromised), and the panel must not buffer
+// it — the 5s timeout alone would let a loopback peer stream hundreds of
+// megabytes into the process.
+const MAX_RESPONSE_BYTES = 512 * 1024
+
 export class RconError extends Error {}
 
 export interface RconPacket {
@@ -80,6 +86,7 @@ export function rconExec(
     const socket = net.createConnection({ host, port })
     socket.setNoDelay(true)
     let pending: Buffer = Buffer.alloc(0)
+    let received = 0
     let authed = false
     let sentinelSent = false
     let done = false
@@ -96,15 +103,20 @@ export function rconExec(
     }
 
     const timer = setTimeout(() => {
-      finish(new RconError(`RCON timed out after ${TIMEOUT_MS}ms`))
+      if (chunks.length > 0) finish(null, chunks.join(''))
+      else finish(new RconError(`RCON timed out after ${TIMEOUT_MS}ms`))
     }, TIMEOUT_MS)
 
     socket.on('error', (err) => {
       finish(new RconError(`RCON connection failed: ${err.message}`))
     })
     socket.on('close', () => {
-      // A clean close mid-command still means we never saw the sentinel.
-      finish(new RconError('RCON connection closed before the response completed'))
+      // The sentinel is a best-effort completion signal, not a guarantee:
+      // ARK and Project Zomboid reimplement RCON and need not echo it. If
+      // the command's output already arrived, that output IS the answer —
+      // discarding it would fail a request that actually succeeded.
+      if (chunks.length > 0) finish(null, chunks.join(''))
+      else finish(new RconError('RCON connection closed before the response completed'))
     })
 
     socket.on('connect', () => {
@@ -112,6 +124,11 @@ export function rconExec(
     })
 
     socket.on('data', (chunk: Buffer) => {
+      received += chunk.length
+      if (received > MAX_RESPONSE_BYTES) {
+        finish(new RconError('RCON response exceeded the size limit'))
+        return
+      }
       pending = Buffer.concat([pending, chunk])
       let packets: RconPacket[]
       try {
@@ -131,7 +148,11 @@ export function rconExec(
           }
           authed = true
           socket.write(encodePacket(EXEC_ID, SERVERDATA_EXECCOMMAND, command))
-          socket.write(encodePacket(SENTINEL_ID, SERVERDATA_EXECCOMMAND, ''))
+          // Valve's documented follow-up is an empty RESPONSE_VALUE, which
+          // srcds mirrors back once the real reply is complete. An empty
+          // EXECCOMMAND is a command dispatch, which non-Valve servers may
+          // simply refuse — hence the fallbacks above.
+          socket.write(encodePacket(SENTINEL_ID, SERVERDATA_RESPONSE_VALUE, ''))
           sentinelSent = true
           continue
         }

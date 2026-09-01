@@ -7,6 +7,7 @@ import {
   compileErrorMatcher,
   effectiveResources,
   parseSystemdBytes,
+  playerFields,
   type GameDef,
   type MetricsErrorLine,
   type MetricsSample,
@@ -505,14 +506,18 @@ export function createFakeInstanceServices(
   const protocolAdmin: PlayerAdmin = {
     players: () => {
       requireUp()
-      const kind = game.capabilities.players
+      // Report exactly the fields this game's real protocol reports, so
+      // mock mode shows the same columns production would — an ARK
+      // `listplayers` has no ping, and pretending otherwise would let a
+      // wrong column pass the e2e suite.
+      const fields = playerFields(game)
       return Promise.resolve(
         FAKE_PLAYERS.filter((p) => !banned.has(p.userId)).map((p) => ({
           name: p.name,
           playerId: p.playerId,
           userId: p.userId,
-          ...(p.ping !== undefined ? { ping: p.ping } : {}),
-          ...(kind === 'telnet' && p.level !== undefined ? { level: p.level } : {}),
+          ...(fields.ping && p.ping !== undefined ? { ping: p.ping } : {}),
+          ...(fields.level && p.level !== undefined ? { level: p.level } : {}),
         })),
       )
     },

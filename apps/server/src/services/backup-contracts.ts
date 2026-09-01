@@ -430,14 +430,21 @@ export const sevenDaysContract = saveDirContract({
   invalidReason: 'Archive has an empty Saves dir — nothing to restore.',
 })
 
-// Project Zomboid writes everything under ~/Zomboid: Saves/ is world
-// state, Logs/ is noise, and Server/ holds the ini the panel manages —
-// that rides along as a config file instead (so a restore re-applies it
-// through the settings adapter rather than clobbering the dir wholesale).
+// Project Zomboid writes everything under ~/Zomboid: Saves/ is the world,
+// db/ the player database, Logs/ noise, and Server/ the server config —
+// which includes `<name>_SandboxVars.lua` and `_spawnregions.lua`, the
+// operator's entire rule set.
+//
+// Server/ is archived rather than excluded, and deliberately so: restore
+// swaps the whole save root, so anything left OUT of the archive is
+// deleted from the live tree by the swap. Excluding Server/ here would
+// hand back the world with the sandbox rules silently reset to vanilla.
+// The ini additionally rides along as a config file so the panel's
+// managed keys are re-applied through the settings adapter on restore.
 export const zomboidContract = saveDirContract({
   gameSlug: 'project-zomboid',
   saveRoot: 'Zomboid',
-  internalBackupDirs: ['Logs', 'Server'],
+  internalBackupDirs: ['Logs'],
   configFiles: ['Zomboid/Server/rallypoint.ini'],
   settingsImportFile: 'rallypoint.ini',
   looksLikeSave: (dir) => isNonEmptyDir(path.join(dir, 'Saves')),

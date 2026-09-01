@@ -98,11 +98,17 @@ function sevenDaysConfig(game: GameDef): GameSettingsConfig {
     format: xmlPropertiesFormat,
     specs: SDTD_KEY_SPECS,
     categories: SDTD_SETTINGS_CATEGORIES,
-    managedKeys: ['TelnetEnabled', 'TelnetPort', 'TelnetPassword'],
+    managedKeys: ['TelnetEnabled', 'TelnetPort', 'TelnetPassword', 'SaveGameFolder', 'UserDataFolder'],
     applyInvariants(doc) {
       pin(doc, xmlPropertiesFormat, 'TelnetEnabled', 'true')
       pin(doc, xmlPropertiesFormat, 'TelnetPort', String(telnetPort))
       ensureSecret(doc, xmlPropertiesFormat, 'TelnetPassword')
+      // The backup contract reads a fixed save root, so the game must not
+      // be pointed somewhere else — a moved save dir would back up an
+      // empty tree and restore where the game no longer looks.
+      for (const key of ['SaveGameFolder', 'UserDataFolder']) {
+        if ((doc.entries.get(key) ?? '') !== '') xmlPropertiesFormat.set(doc, key, '')
+      }
     },
   }
 }
@@ -159,7 +165,9 @@ function sourceConfig(game: GameDef, file: string): GameSettingsConfig {
 
 function unturnedConfig(game: GameDef): GameSettingsConfig {
   const format = keyValueFormat(UNTURNED_DIALECT)
-  const gamePort = portOf(game, 'game', 27015)
+  // Unturned's `Port` setting is its query/base port; game traffic runs
+  // on Port + 1 (see the registry entry).
+  const basePort = portOf(game, 'query', 27015)
   return {
     slug: game.slug,
     file: 'Servers/rallypoint/Server/Commands.dat',
@@ -168,7 +176,7 @@ function unturnedConfig(game: GameDef): GameSettingsConfig {
     categories: UNTURNED_SETTINGS_CATEGORIES,
     managedKeys: ['port'],
     applyInvariants(doc) {
-      pin(doc, format, 'port', String(gamePort))
+      pin(doc, format, 'port', String(basePort))
     },
     seedContent: () => ['Name Rallypoint', 'MaxPlayers 24', ''].join('\n'),
   }
@@ -189,6 +197,19 @@ function valheimConfig(game: GameDef): GameSettingsConfig {
     categories: VALHEIM_SETTINGS_CATEGORIES,
     managedKeys: ['-port'],
     applyInvariants(doc) {
+      // `-crossplay` is a valueless flag: present means on. Rendering it
+      // as `-crossplay false` would switch crossplay ON, the opposite of
+      // what the operator asked for.
+      const crossplay = doc.entries.get('-crossplay')
+      if (crossplay !== undefined) {
+        if (crossplay === 'true' || crossplay === '') doc.entries.set('-crossplay', '')
+        else doc.entries.delete('-crossplay')
+      }
+      // A cleared value would otherwise emit a bare flag, and the NEXT
+      // flag would be read as its argument (`-name -world Dedicated`).
+      for (const [key, value] of [...doc.entries]) {
+        if (value === '' && key !== '-crossplay') doc.entries.delete(key)
+      }
       pin(doc, launchConfFormat, '-port', String(gamePort))
       // Valheim refuses to start with a password shorter than 5 chars,
       // and refuses one at all unless the server is listed publicly.
@@ -196,8 +217,12 @@ function valheimConfig(game: GameDef): GameSettingsConfig {
       if (password !== '' && password.length < 5) {
         throw new SettingsParseError('Valheim join passwords must be at least 5 characters (or empty).')
       }
-      if (password !== '' && (doc.entries.get('-world') ?? '') === password) {
-        throw new SettingsParseError('Valheim refuses a join password that matches the world name.')
+      const serverName = doc.entries.get('-name') ?? ''
+      const worldName = doc.entries.get('-world') ?? ''
+      if (password !== '' && (serverName.includes(password) || worldName.includes(password))) {
+        throw new SettingsParseError(
+          'Valheim refuses a join password that appears inside the server name or world name.',
+        )
       }
     },
     seedContent: () =>
@@ -228,23 +253,51 @@ function rustConfig(game: GameDef): GameSettingsConfig {
   }
 }
 
-// The launch conf a game needs alongside its main settings file. Only
-// Rust has one: its RCON convars are read from the command line and
-// ignored in server.cfg, so that is where the panel has to put them.
+// The launch conf a game needs alongside its main settings file, for
+// settings the game only accepts on the command line. Two games have one:
+// Rust (its RCON convars are ignored in server.cfg) and Project Zomboid
+// (its first-boot admin prompt has to be answered before there is a
+// console to answer it on).
+const LAUNCH_ONLY_INVARIANTS: Record<
+  string,
+  { managedKeys: readonly string[]; apply(doc: SettingsDoc, game: GameDef): void }
+> = {
+  rust: {
+    managedKeys: ['+rcon.port', '+rcon.password', '+rcon.web', '+server.queryport'],
+    apply(doc, game) {
+      pin(doc, launchConfFormat, '+rcon.port', String(portOf(game, 'rcon', 28016)))
+      pin(doc, launchConfFormat, '+rcon.web', '1')
+      ensureSecret(doc, launchConfFormat, '+rcon.password')
+      // Left unset, Rust derives this as max(server.port, rcon.port) + 1
+      // and the panel would query a port nothing is listening on.
+      pin(doc, launchConfFormat, '+server.queryport', String(portOf(game, 'query', 28017)))
+    },
+  },
+  'project-zomboid': {
+    managedKeys: ['-adminusername', '-adminpassword'],
+    apply(doc) {
+      // Answers the first-boot prompt that would otherwise hang the unit
+      // forever. Ignored by the game once the admin account exists. This
+      // is the game's admin *account*, distinct from its RCON password.
+      pin(doc, launchConfFormat, '-adminusername', 'admin')
+      ensureSecret(doc, launchConfFormat, '-adminpassword')
+    },
+  },
+}
+
 export function launchConfConfigFor(game: GameDef): GameSettingsConfig | null {
   if (!game.launchConfFile || game.settingsAdapter === 'launch-conf') return null
-  const rconPort = portOf(game, 'rcon', 28016)
+  const spec = LAUNCH_ONLY_INVARIANTS[game.slug]
+  if (!spec) return null
   return {
     slug: game.slug,
     file: game.launchConfFile,
     format: launchConfFormat,
     specs: {},
     categories: [],
-    managedKeys: ['+rcon.port', '+rcon.password', '+rcon.web'],
+    managedKeys: spec.managedKeys,
     applyInvariants(doc) {
-      pin(doc, launchConfFormat, '+rcon.port', String(rconPort))
-      pin(doc, launchConfFormat, '+rcon.web', '1')
-      ensureSecret(doc, launchConfFormat, '+rcon.password')
+      spec.apply(doc, game)
     },
     seedContent: () => '',
   }

@@ -29,6 +29,10 @@ export interface DocLine {
   // `sv_pure "1"`, say), which is exactly the churn callers were
   // promised would not happen.
   raw?: string
+  // The line's own terminator ('\r' for a CRLF file, '' for LF). Kept per
+  // line so a rewritten line kicks back the ending it had, rather than
+  // silently converting one line of a CRLF file to LF.
+  eol?: string
 }
 
 export interface SettingsDoc {
@@ -43,6 +47,29 @@ export interface SettingsFormat {
   serialize(doc: SettingsDoc): string
   // Set a key, rewriting its line in place or appending a new one.
   set(doc: SettingsDoc, key: string, raw: string): void
+}
+
+// A value carrying a line break would open a NEW line in the file, and
+// that line can define a second setting — including one the panel manages
+// (an injected `rcon_password` ahead of the panel's own, say). Every
+// format refuses such a value rather than writing it: the operator gets
+// an error instead of a config that silently means something else.
+export function assertValueSafe(key: string, raw: string, opts: { rejectQuote?: boolean } = {}): void {
+  if (/[\r\n\0]/.test(raw)) throw new SettingsFormatError(`${key} must not contain a line break`)
+  if (opts.rejectQuote && raw.includes('"')) {
+    throw new SettingsFormatError(`${key} must not contain a double quote`)
+  }
+}
+
+// Split a file into lines, keeping each line's terminator separately so
+// the parsers can match against clean text while serialize() restores the
+// original ending. Without this a CRLF file parses as zero settings,
+// because the line-oriented patterns below cannot match a trailing \r.
+function splitLines(content: string): { body: string; eol: string }[] {
+  return content.split('\n').map((line) => {
+    const eol = line.endsWith('\r') ? '\r' : ''
+    return { body: eol ? line.slice(0, -1) : line, eol }
+  })
 }
 
 function docFrom(lines: DocLine[]): SettingsDoc {
@@ -60,31 +87,37 @@ function unchanged(doc: SettingsDoc, line: DocLine): boolean {
 // Keys are addressed `Section/Key`, so two sections may carry the same
 // key name without colliding. ARK does not quote its string values.
 
+// Split at the LAST slash, not the first: UE section names contain
+// slashes of their own (`[/Script/Engine.GameSession]`), so splitting at
+// the first one would write the section back into the key name.
+function sectionOf(key: string): string {
+  return key.includes('/') ? key.slice(0, key.lastIndexOf('/')) : ''
+}
+
 function renderSectionedLine(key: string, raw: string): string {
-  const bare = key.slice(key.indexOf('/') + 1)
-  return `${bare}=${raw}`
+  return `${key.slice(key.lastIndexOf('/') + 1)}=${raw}`
 }
 
 export const sectionedIniFormat: SettingsFormat = {
   parse(content) {
     const doc = docFrom([])
     let section = ''
-    for (const text of content.split('\n')) {
+    for (const { body: text, eol } of splitLines(content)) {
       const trimmed = text.trim()
       const sectionMatch = /^\[(.+)\]$/.exec(trimmed)
       if (sectionMatch) {
         section = sectionMatch[1]!.trim()
-        doc.lines.push({ text })
+        doc.lines.push({ text, eol })
         continue
       }
       // `;` and `#` both start comments in the UE ini dialect.
       if (!trimmed || trimmed.startsWith(';') || trimmed.startsWith('#')) {
-        doc.lines.push({ text })
+        doc.lines.push({ text, eol })
         continue
       }
       const eq = text.indexOf('=')
       if (eq < 0) {
-        doc.lines.push({ text })
+        doc.lines.push({ text, eol })
         continue
       }
       const name = text.slice(0, eq).trim()
@@ -92,29 +125,34 @@ export const sectionedIniFormat: SettingsFormat = {
       // A repeated key (ARK allows some) keeps the first; later ones stay
       // as unowned text so they round-trip untouched.
       if (doc.entries.has(key)) {
-        doc.lines.push({ text })
+        doc.lines.push({ text, eol })
         continue
       }
       const raw = text.slice(eq + 1).trim()
       doc.entries.set(key, raw)
-      doc.lines.push({ text, key, raw })
+      doc.lines.push({ text, key, raw, eol })
     }
     return doc
   },
 
   serialize(doc) {
     return doc.lines
-      .map((l) => (l.key && !unchanged(doc, l) ? renderSectionedLine(l.key, doc.entries.get(l.key)!) : l.text))
+      .map((l) =>
+        l.key && !unchanged(doc, l)
+          ? `${renderSectionedLine(l.key, doc.entries.get(l.key)!)}${l.eol ?? ''}`
+          : `${l.text}${l.eol ?? ''}`,
+      )
       .join('\n')
   },
 
   set(doc, key, raw) {
+    assertValueSafe(key, raw)
     if (doc.entries.has(key)) {
       doc.entries.set(key, raw)
       return
     }
     doc.entries.set(key, raw)
-    const section = key.includes('/') ? key.slice(0, key.indexOf('/')) : ''
+    const section = sectionOf(key)
     // Append under the key's own section, after that section's last line.
     let insertAt = -1
     let current = ''
@@ -154,7 +192,7 @@ function xmlUnescape(value: string): string {
 export const xmlPropertiesFormat: SettingsFormat = {
   parse(content) {
     const doc = docFrom([])
-    for (const text of content.split('\n')) {
+    for (const { body: text, eol } of splitLines(content)) {
       const m = XML_PROPERTY.exec(text)
       if (!m) {
         // A property opened but not closed on this line would be silently
@@ -162,17 +200,17 @@ export const xmlPropertiesFormat: SettingsFormat = {
         if (/<property\b/.test(text) && !/\/?>/.test(text)) {
           throw new SettingsFormatError('serverconfig.xml has a property spanning multiple lines — edit it by hand')
         }
-        doc.lines.push({ text })
+        doc.lines.push({ text, eol })
         continue
       }
       const key = m[2]!
       if (doc.entries.has(key)) {
-        doc.lines.push({ text })
+        doc.lines.push({ text, eol })
         continue
       }
       const raw = xmlUnescape(m[4]!)
       doc.entries.set(key, raw)
-      doc.lines.push({ text, key, raw })
+      doc.lines.push({ text, key, raw, eol })
     }
     return doc
   },
@@ -180,15 +218,17 @@ export const xmlPropertiesFormat: SettingsFormat = {
   serialize(doc) {
     return doc.lines
       .map((line) => {
-        if (!line.key || unchanged(doc, line)) return line.text
+        const eol = line.eol ?? ''
+        if (!line.key || unchanged(doc, line)) return `${line.text}${eol}`
         const m = XML_PROPERTY.exec(line.text)
-        if (!m) return line.text
-        return `${m[1]}${m[2]}${m[3]}${xmlEscape(doc.entries.get(line.key)!)}${m[5]}`
+        if (!m) return `${line.text}${eol}`
+        return `${m[1]}${m[2]}${m[3]}${xmlEscape(doc.entries.get(line.key)!)}${m[5]}${eol}`
       })
       .join('\n')
   },
 
   set(doc, key, raw) {
+    assertValueSafe(key, raw)
     const existed = doc.entries.has(key)
     doc.entries.set(key, raw)
     if (existed) return
@@ -249,17 +289,17 @@ export function keyValueFormat(dialect: KeyValueDialect): SettingsFormat {
     if (dialect.separator === '=') return `${key}=${raw}`
     // A quoted value keeps spaces intact; an empty one still needs the
     // quotes so the command parses.
-    const value = dialect.quoteValues || raw.includes(' ') || raw === '' ? `"${raw.replace(/"/g, '')}"` : raw
+    const value = dialect.quoteValues || raw.includes(' ') || raw === '' ? `"${raw}"` : raw
     return `${key} ${value}`
   }
 
   return {
     parse(content) {
       const doc = docFrom([])
-      for (const text of content.split('\n')) {
+      for (const { body: text, eol } of splitLines(content)) {
         const trimmed = text.trim()
         if (!trimmed || dialect.commentPrefixes.some((p) => trimmed.startsWith(p))) {
-          doc.lines.push({ text })
+          doc.lines.push({ text, eol })
           continue
         }
         let name: string
@@ -267,7 +307,7 @@ export function keyValueFormat(dialect: KeyValueDialect): SettingsFormat {
         if (dialect.separator === '=') {
           const eq = text.indexOf('=')
           if (eq < 0) {
-            doc.lines.push({ text })
+            doc.lines.push({ text, eol })
             continue
           }
           name = text.slice(0, eq).trim()
@@ -275,7 +315,7 @@ export function keyValueFormat(dialect: KeyValueDialect): SettingsFormat {
         } else {
           const m = /^\s*(\S+)\s*(.*)$/.exec(text)
           if (!m || !m[1]) {
-            doc.lines.push({ text })
+            doc.lines.push({ text, eol })
             continue
           }
           name = m[1]
@@ -283,11 +323,11 @@ export function keyValueFormat(dialect: KeyValueDialect): SettingsFormat {
         }
         const key = normalize(name)
         if (doc.entries.has(key)) {
-          doc.lines.push({ text })
+          doc.lines.push({ text, eol })
           continue
         }
         doc.entries.set(key, value)
-        doc.lines.push({ text, key, raw: value })
+        doc.lines.push({ text, key, raw: value, eol })
       }
       return doc
     },
@@ -295,18 +335,20 @@ export function keyValueFormat(dialect: KeyValueDialect): SettingsFormat {
     serialize(doc) {
       return doc.lines
         .map((line) => {
-          if (!line.key || unchanged(doc, line)) return line.text
+          const eol = line.eol ?? ''
+          if (!line.key || unchanged(doc, line)) return `${line.text}${eol}`
           // Keep the key's original spelling from the source line.
           const original =
             dialect.separator === '='
               ? line.text.slice(0, line.text.indexOf('=')).trim()
               : (/^\s*(\S+)/.exec(line.text)?.[1] ?? line.key)
-          return renderLine(original, doc.entries.get(line.key)!)
+          return `${renderLine(original, doc.entries.get(line.key)!)}${eol}`
         })
         .join('\n')
     },
 
     set(doc, key, raw) {
+      assertValueSafe(key, raw, { rejectQuote: dialect.quoteValues })
       const normalized = normalize(key)
       const existed = doc.entries.has(normalized)
       doc.entries.set(normalized, raw)

@@ -61,8 +61,10 @@ export function rustExec(port: number, password: string, command: string): Promi
     let socket: WebSocket
     try {
       socket = new WebSocket(`ws://127.0.0.1:${port}/${encodeURIComponent(password)}`)
-    } catch (err) {
-      reject(new WebrconError(`Rust RCON connect failed: ${(err as Error).message}`))
+    } catch {
+      // Deliberately not including the underlying message: the password
+      // is in the URL, and URL errors quote the URL.
+      reject(new WebrconError('Rust RCON connect failed (bad port or password?)'))
       return
     }
     let done = false
@@ -119,13 +121,15 @@ export function createRustWebrcon(getCreds: () => RconCreds): PlayerAdmin {
   return {
     players: async () => parsePlayerList(await exec('playerlist')),
     announce: async (message) => {
-      await exec(`say ${sanitizeMessage(message)}`)
+      await exec(`say "${sanitizeMessage(message)}"`)
     },
     kick: async (userId) => {
       await exec(`kick ${sanitizeArg(userId)}`)
     },
-    ban: async (userId) => {
-      await exec(`banid ${sanitizeArg(userId)}`)
+    ban: async (userId, message) => {
+      // Rust's `banid` signature is <id> <username> <reason>; `ban` takes
+      // the id with just a reason, which is all the panel has.
+      await exec(`ban ${sanitizeArg(userId)} "${sanitizeMessage(message ?? 'Banned by an admin')}"`)
     },
     unban: async (userId) => {
       await exec(`unban ${sanitizeArg(userId)}`)

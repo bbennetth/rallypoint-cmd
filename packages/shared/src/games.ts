@@ -150,7 +150,9 @@ export const GAMES: Record<string, GameDef> = {
     timeoutStopSec: 120,
     ports: [
       { name: 'game', port: 28015, proto: 'udp' },
-      { name: 'query', port: 28015, proto: 'udp' },
+      // Rust derives its query port as max(server.port, rcon.port) + 1
+      // unless told otherwise; the launch conf pins it to match.
+      { name: 'query', port: 28017, proto: 'udp' },
       { name: 'rcon', port: 28016, proto: 'tcp' },
     ],
     savePaths: ['server/rallypoint'],
@@ -176,6 +178,8 @@ export const GAMES: Record<string, GameDef> = {
     timeoutStopSec: 120,
     ports: [
       { name: 'game', port: 7777, proto: 'udp' },
+      // Steam P2P peer port — required for the in-game browser.
+      { name: 'peer', port: 7778, proto: 'udp' },
       { name: 'query', port: 27015, proto: 'udp' },
       { name: 'rcon', port: 27020, proto: 'tcp' },
     ],
@@ -200,7 +204,8 @@ export const GAMES: Record<string, GameDef> = {
     timeoutStopSec: 120,
     ports: [
       { name: 'game', port: 26900, proto: 'udp' },
-      { name: 'query', port: 26900, proto: 'udp' },
+      { name: 'query', port: 26901, proto: 'udp' },
+      { name: 'game-alt', port: 26902, proto: 'udp' },
       { name: 'telnet', port: 8081, proto: 'tcp' },
     ],
     savePaths: ['.local/share/7DaysToDie/Saves'],
@@ -215,12 +220,21 @@ export const GAMES: Record<string, GameDef> = {
     slug: 'project-zomboid',
     name: 'Project Zomboid',
     steamAppId: 380870,
-    startCommand: { bin: './start-server.sh', args: ['-servername', 'rallypoint'] },
+    startCommand: {
+      bin: './start-server.sh',
+      // -cachedir is required, not cosmetic: Project Zomboid is a JVM
+      // app and the JVM reads `user.home` from the passwd entry, not
+      // $HOME — so the panel's HOME override does NOT move its data.
+      // Without this the server writes to the service account's real
+      // home and the panel backs up an empty tree.
+      args: ['-servername', 'rallypoint', '-cachedir={{INSTALL_DIR}}/Zomboid'],
+    },
     stopSignal: 'SIGTERM',
     timeoutStopSec: 120,
     ports: [
       { name: 'game', port: 16261, proto: 'udp' },
       { name: 'query', port: 16261, proto: 'udp' },
+      { name: 'game-alt', port: 16262, proto: 'udp' },
       // Deconflicted from the Source games' 27015 block.
       { name: 'rcon', port: 27025, proto: 'tcp' },
     ],
@@ -229,6 +243,11 @@ export const GAMES: Record<string, GameDef> = {
     savePaths: ['Zomboid'],
     installedProbe: 'start-server.sh',
     settingsAdapter: 'keyvalue-ini',
+    // Project Zomboid stops at an interactive prompt on first boot asking
+    // for an admin password. Under systemd there is no TTY to answer it,
+    // so the unit would simply never come up — the launch conf carries
+    // `-adminpassword` to bypass the prompt.
+    launchConfFile: 'rallypoint-launch.conf',
     capabilities: { query: 'a2s', players: 'rcon', mods: 'none', world: true },
     diskEstimateGb: 5,
     supportLevel: 'full',
@@ -240,7 +259,12 @@ export const GAMES: Record<string, GameDef> = {
     startCommand: { bin: './FactoryServer.sh', args: [] },
     stopSignal: 'SIGINT',
     timeoutStopSec: 90,
-    ports: [{ name: 'game', port: 7777, proto: 'udp' }],
+    ports: [
+      { name: 'game', port: 7777, proto: 'udp' },
+      { name: 'game-tcp', port: 7777, proto: 'tcp' },
+      // Reliable Messaging port, required since Patch 1.1.
+      { name: 'messaging', port: 8888, proto: 'tcp' },
+    ],
     // HOME is the install dir, so the Epic save tree lands under it.
     savePaths: ['.config/Epic/FactoryGame/Saved/SaveGames'],
     installedProbe: 'FactoryServer.sh',
@@ -257,13 +281,22 @@ export const GAMES: Record<string, GameDef> = {
     slug: 'team-fortress-2',
     name: 'Team Fortress 2',
     steamAppId: 232250,
-    startCommand: { bin: './srcds_run', args: ['-game', 'tf', '+map', 'cp_dustbowl', '+maxplayers', '24'] },
+    // -maxplayers is a dash argument; `+maxplayers` is not a console
+    // command and is silently ignored.
+    startCommand: {
+      bin: './srcds_run',
+      // -norestart makes srcds_run exec the engine instead of supervising
+      // it in a relaunch loop: without it the panel's stop signal reaches
+      // only the wrapper, and a server it did stop comes back 10s later.
+      args: ['-game', 'tf', '-norestart', '+map', 'cp_dustbowl', '-maxplayers', '24'],
+    },
     stopSignal: 'SIGTERM',
     timeoutStopSec: 30,
     ports: [
       { name: 'game', port: 27015, proto: 'udp' },
       { name: 'query', port: 27015, proto: 'udp' },
       { name: 'rcon', port: 27015, proto: 'tcp' },
+      { name: 'sourcetv', port: 27020, proto: 'udp' },
     ],
     savePaths: ['tf/cfg'],
     installedProbe: 'srcds_run',
@@ -279,7 +312,10 @@ export const GAMES: Record<string, GameDef> = {
     name: 'Counter-Strike 2',
     steamAppId: 730,
     startCommand: {
-      bin: './game/bin/linuxsteamrt64/cs2',
+      // Valve's docs are explicit that the wrapper must be used rather
+      // than game/bin/linuxsteamrt64/cs2 directly: it sets
+      // LD_LIBRARY_PATH and raises the fd/stack ulimits the engine needs.
+      bin: './game/cs2.sh',
       args: ['-dedicated', '+map', 'de_dust2'],
     },
     stopSignal: 'SIGTERM',
@@ -288,9 +324,10 @@ export const GAMES: Record<string, GameDef> = {
       { name: 'game', port: 27015, proto: 'udp' },
       { name: 'query', port: 27015, proto: 'udp' },
       { name: 'rcon', port: 27015, proto: 'tcp' },
+      { name: 'sourcetv', port: 27020, proto: 'udp' },
     ],
     savePaths: ['game/csgo/cfg'],
-    installedProbe: 'game/bin/linuxsteamrt64/cs2',
+    installedProbe: 'game/cs2.sh',
     settingsAdapter: 'source-cfg',
     capabilities: { query: 'a2s', players: 'rcon', mods: 'none', world: false },
     diskEstimateGb: 35,
@@ -337,9 +374,10 @@ export const GAMES: Record<string, GameDef> = {
     stopSignal: 'SIGINT',
     timeoutStopSec: 60,
     ports: [
-      { name: 'game', port: 27015, proto: 'udp' },
-      // Unturned answers Steam queries on game port + 1.
-      { name: 'query', port: 27016, proto: 'udp' },
+      // Unturned's configured `Port` is the Steam QUERY port and the one
+      // players connect through; game traffic runs on Port + 1.
+      { name: 'query', port: 27015, proto: 'udp', join: true },
+      { name: 'game', port: 27016, proto: 'udp' },
     ],
     savePaths: ['Servers'],
     installedProbe: 'ServerHelper.sh',
@@ -381,6 +419,39 @@ export interface PlayerAdminFeatures {
 const ADMIN_FEATURE_OVERRIDES: Record<string, Partial<PlayerAdminFeatures>> = {
   'team-fortress-2': { save: false },
   'counter-strike-2': { save: false },
+}
+
+// Which per-player fields a game's admin channel actually reports. This
+// is a property of the protocol, not of who happens to be online: ARK's
+// `listplayers` gives a name and an id and nothing else, whatever the
+// server is doing. Driving the table columns from this keeps them stable
+// instead of appearing and vanishing as players join.
+export interface PlayerFields {
+  level: boolean
+  ping: boolean
+}
+
+const PLAYER_FIELDS: Record<string, PlayerFields> = {
+  // Palworld's REST API and 7DTD's `lp` both report level and ping.
+  'pal-rest': { level: true, ping: true },
+  telnet: { level: true, ping: true },
+  // Source `status` and Rust's `playerlist` report ping only.
+  rcon: { level: false, ping: true },
+  webrcon: { level: false, ping: true },
+  none: { level: false, ping: false },
+}
+
+// ARK and Project Zomboid speak RCON but their list commands report
+// neither field.
+const PLAYER_FIELD_OVERRIDES: Record<string, PlayerFields> = {
+  'ark-survival-evolved': { level: false, ping: false },
+  'project-zomboid': { level: false, ping: false },
+}
+
+export function playerFields(game: GameDef): PlayerFields {
+  return (
+    PLAYER_FIELD_OVERRIDES[game.slug] ?? PLAYER_FIELDS[game.capabilities.players] ?? { level: false, ping: false }
+  )
 }
 
 export function playerAdminFeatures(game: GameDef): PlayerAdminFeatures {

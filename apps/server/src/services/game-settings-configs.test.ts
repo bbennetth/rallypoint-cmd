@@ -175,19 +175,22 @@ describe('Source cfg invariants', () => {
 })
 
 describe('one home per credential', () => {
-  it('never manages an RCON password in two files for the same game', () => {
-    // Two files each generating their own secret means the server gets
-    // one password and the panel reads the other, so RCON silently fails.
+  it('never manages the same credential in two files for one game', () => {
+    // Two files each generating their own secret for the SAME credential
+    // means the server uses one and the panel reads the other, so the
+    // admin channel fails with a password nobody can see is wrong. A game
+    // may legitimately hold two DIFFERENT secrets (Project Zomboid has an
+    // admin account and an RCON password), so compare by credential.
+    const credential = (key: string): string =>
+      key.replace(/^[+-]/, '').replace(/[._]/g, '').toLowerCase()
     for (const game of Object.values(GAMES)) {
       const primary = settingsConfigForSlug(game.slug)
       const launch = launchConfConfigFor(game)
       if (!primary || !launch) continue
-      const secretish = (key: string): boolean => /password/i.test(key)
-      const inPrimary = primary.managedKeys.filter(secretish)
-      const inLaunch = launch.managedKeys.filter(secretish)
-      expect(inPrimary.length === 0 || inLaunch.length === 0, `${game.slug}: ${[...inPrimary, ...inLaunch]}`).toBe(
-        true,
-      )
+      const inPrimary = new Set(primary.managedKeys.filter((k) => /password/i.test(k)).map(credential))
+      for (const key of launch.managedKeys.filter((k) => /password/i.test(k))) {
+        expect(inPrimary.has(credential(key)), `${game.slug} manages ${key} in two files`).toBe(false)
+      }
     }
   })
 })

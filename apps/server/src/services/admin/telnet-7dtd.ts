@@ -15,12 +15,21 @@ const COMMAND_TIMEOUT_MS = 7000
 // complete. Long enough to survive a slow tick, short enough that the
 // Players page doesn't feel stuck.
 const IDLE_GAP_MS = 400
+// 7DTD streams the server log to every telnet client, so on a busy server
+// the stream may never go quiet. Commands that have a real terminator are
+// matched on it instead of waiting for silence.
+const TERMINATORS = [/^Total of \d+ in the game$/m]
+const MAX_OUTPUT_BYTES = 512 * 1024
 
 export class TelnetError extends Error {}
 
 // `1. id=171, Alice, pos=(-45.2, 61.0, 128.9), rot=(...), remote=True,
 //  health=100, deaths=0, zombies=12, players=1, score=42, level=7,
 //  steamid=76561198000000000, ip=10.0.0.5, ping=30`
+//
+// V1.0 replaced `steamid=` with the platform-qualified `pltfmid=Steam_…`
+// (and `crossid=EOS_…`), so the fallback below is load-bearing on current
+// builds — do not simplify it away.
 const LP_ROW = /^\s*\d+\.\s+id=(\d+),\s*(.*?),\s*pos=/
 
 function field(line: string, key: string): string | undefined {
@@ -87,10 +96,12 @@ export function telnetExec(host: string, port: number, password: string, command
       () => finish(new TelnetError(`telnet connect timed out after ${CONNECT_TIMEOUT_MS}ms`)),
       CONNECT_TIMEOUT_MS,
     )
-    const overall = setTimeout(
-      () => finish(new TelnetError(`telnet command timed out after ${COMMAND_TIMEOUT_MS}ms`)),
-      COMMAND_TIMEOUT_MS,
-    )
+    // Output that already arrived is the answer; a console that keeps
+    // streaming log lines must not cost us the reply we asked for.
+    const overall = setTimeout(() => {
+      if (commandSent && output !== '') finish(null, output)
+      else finish(new TelnetError(`telnet command timed out after ${COMMAND_TIMEOUT_MS}ms`))
+    }, COMMAND_TIMEOUT_MS)
 
     // Restarted on every chunk once the command is out: the reply is
     // whatever arrived by the time the stream goes quiet.
@@ -109,6 +120,15 @@ export function telnetExec(host: string, port: number, password: string, command
     socket.on('data', (chunk: string) => {
       if (commandSent) {
         output += chunk
+        if (output.length > MAX_OUTPUT_BYTES) {
+          finish(new TelnetError('telnet response exceeded the size limit'))
+          return
+        }
+        // A known end-of-output marker beats waiting for silence.
+        if (TERMINATORS.some((re) => re.test(output))) {
+          finish(null, output)
+          return
+        }
         bumpIdle()
         return
       }

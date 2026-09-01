@@ -615,6 +615,20 @@ export function createBackupService(deps: BackupDeps): BackupService {
             )
           }
         }
+
+        // 4b-ii. Some games keep their config INSIDE the save root
+        // (Unturned's Commands.dat, Rust's server.cfg), so the swap just
+        // restored an older copy of it — including whatever ports and
+        // admin credentials it held. Re-assert the panel's invariants over
+        // whatever is now on disk; this is idempotent, so it is a no-op
+        // for games whose config lives elsewhere.
+        try {
+          deps.settings.seedIfMissing()
+        } catch (err) {
+          say(
+            `[restore] Could not re-apply panel-managed settings after the swap (${err instanceof Error ? err.message : String(err)}).`,
+          )
+        }
         pct(65)
         await flush()
 

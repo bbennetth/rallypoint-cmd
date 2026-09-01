@@ -49,8 +49,10 @@ describe('game registry', () => {
       }
       const owner = EXCLUSIVE_ADAPTER_OWNER[game.settingsAdapter]
       if (owner) expect(game.slug).toBe(owner)
-      // launch-conf files are written by the launch-conf machinery only.
-      if (game.launchConfFile) expect(['launch-conf', 'source-cfg']).toContain(game.settingsAdapter)
+      // A launch conf carries settings the game accepts only on the
+      // command line, so it can sit beside any settings adapter — but it
+      // must be the panel's own filename, since start.sh sources it.
+      if (game.launchConfFile) expect(game.launchConfFile).toBe('rallypoint-launch.conf')
       // Windows-only servers run under Wine and exec a .exe.
       if (game.platform === 'windows') expect(game.startCommand.bin.endsWith('.exe')).toBe(true)
       expect(game.installedProbe.startsWith('/')).toBe(false)

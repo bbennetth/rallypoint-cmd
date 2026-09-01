@@ -135,4 +135,18 @@ describe('rconExec', () => {
     const port = await startFakeRcon({ password: 'secret', dropAfterAuth: true })
     await expect(rconExec('127.0.0.1', port, 'secret', 'status')).rejects.toThrow(/closed before/)
   })
+
+  it('keeps output from a server that never answers the sentinel', async () => {
+    // ARK and Project Zomboid reimplement RCON and need not echo the
+    // empty follow-up packet. Discarding a reply that already arrived
+    // would fail a command the server actually ran.
+    const port = await startFakeRcon({
+      password: 'secret',
+      reply: '0. Alice, 76561198000000001',
+      echoSentinel: false,
+    })
+    await expect(rconExec('127.0.0.1', port, 'secret', 'listplayers')).resolves.toBe(
+      '0. Alice, 76561198000000001',
+    )
+  }, 10_000)
 })

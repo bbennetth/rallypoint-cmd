@@ -171,6 +171,63 @@ describe('keyValueFormat', () => {
   })
 })
 
+// Every one of these was a live defect found in review; they are the
+// cases that only show up against a real game's config file.
+describe('regressions', () => {
+  it('splits an ARK key at the LAST slash, not the first', () => {
+    // The section name has slashes of its own. Splitting at the first one
+    // wrote `Script/Engine.GameSession/MaxPlayers=100` — a junk key ARK
+    // ignores, silently capping the server at its built-in default.
+    const file = '[/Script/Engine.GameSession]\nMaxPlayers=70'
+    const doc = sectionedIniFormat.parse(file)
+    expect(doc.entries.get('/Script/Engine.GameSession/MaxPlayers')).toBe('70')
+    sectionedIniFormat.set(doc, '/Script/Engine.GameSession/MaxPlayers', '100')
+    expect(sectionedIniFormat.serialize(doc)).toBe('[/Script/Engine.GameSession]\nMaxPlayers=100')
+  })
+
+  it('parses CRLF files, which every line-oriented dialect used to miss', () => {
+    // A CRLF file parsed as zero settings, so the panel appended fresh
+    // keys at EOF — for 7DTD that meant properties after </ServerSettings>.
+    const xml = '<?xml version="1.0"?>\r\n<ServerSettings>\r\n  <property name="TelnetPort" value="8081"/>\r\n</ServerSettings>\r\n'
+    expect(xmlPropertiesFormat.parse(xml).entries.get('TelnetPort')).toBe('8081')
+    const cfg = keyValueFormat(SOURCE_CFG_DIALECT)
+    expect(cfg.parse('hostname "A"\r\nsv_pure 1\r\n').entries.get('sv_pure')).toBe('1')
+    const ini = keyValueFormat(ZOMBOID_DIALECT)
+    expect(ini.parse('RCONPort=27025\r\n').entries.get('RCONPort')).toBe('27025')
+  })
+
+  it('round-trips a CRLF file byte for byte, including a rewritten line', () => {
+    const cfg = keyValueFormat(SOURCE_CFG_DIALECT)
+    const file = '// note\r\nhostname "Old"\r\nsv_pure 1\r\n'
+    expect(cfg.serialize(cfg.parse(file))).toBe(file)
+    const doc = cfg.parse(file)
+    cfg.set(doc, 'hostname', 'New')
+    // The rewritten line keeps CRLF; the rest is untouched.
+    expect(cfg.serialize(doc)).toBe('// note\r\nhostname "New"\r\nsv_pure 1\r\n')
+  })
+
+  it('refuses a value carrying a line break, in every dialect', () => {
+    // This was a complete bypass of "managed keys cannot be edited":
+    // `x"\nrcon_password ATTACKER` opened a second line that defined the
+    // panel's own key, and the game reads the injected one.
+    const injection = 'x"\nrcon_password ATTACKER'
+    const cfg = keyValueFormat(SOURCE_CFG_DIALECT)
+    expect(() => cfg.set(cfg.parse('hostname "A"'), 'hostname', injection)).toThrow(SettingsFormatError)
+    expect(() =>
+      sectionedIniFormat.set(sectionedIniFormat.parse('[ServerSettings]'), 'ServerSettings/SessionName', injection),
+    ).toThrow(SettingsFormatError)
+    expect(() =>
+      xmlPropertiesFormat.set(xmlPropertiesFormat.parse('<ServerSettings>'), 'ServerName', injection),
+    ).toThrow(SettingsFormatError)
+  })
+
+  it('refuses a quote in a dialect that delimits with quotes', () => {
+    // Previously stripped silently, which quietly renamed the server.
+    const cfg = keyValueFormat(SOURCE_CFG_DIALECT)
+    expect(() => cfg.set(cfg.parse('hostname "A"'), 'hostname', 'The "Best" Server')).toThrow(SettingsFormatError)
+  })
+})
+
 describe('launchConfFormat', () => {
   it('renders the argument list start.sh forwards as "$@"', () => {
     const doc = launchConfFormat.parse('')

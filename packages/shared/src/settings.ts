@@ -593,23 +593,26 @@ export const SOURCE_CFG_KEY_SPECS: GameKeySpecs = {
 
 export const UNTURNED_SETTINGS_CATEGORIES = ['Server & Network', 'World & Rules'] as const
 
+// Keys are lowercase because Commands.dat command names are matched
+// case-insensitively and the parser normalizes them — a capitalized key
+// here would never match a value read from the file.
 export const UNTURNED_KEY_SPECS: GameKeySpecs = {
-  Name: { kind: 'string', category: 'Server & Network', label: 'Server name' },
-  Password: { kind: 'string', category: 'Server & Network', label: 'Join password' },
-  MaxPlayers: { kind: 'int', category: 'Server & Network', label: 'Max players' },
-  Port: { kind: 'int', category: 'Server & Network', managed: true, label: 'Game port (panel-managed)' },
-  Owner: { kind: 'string', category: 'Server & Network', label: 'Owner SteamID64' },
-  Welcome: { kind: 'string', category: 'Server & Network', label: 'Welcome message' },
+  name: { kind: 'string', category: 'Server & Network', label: 'Server name' },
+  password: { kind: 'string', category: 'Server & Network', label: 'Join password' },
+  maxplayers: { kind: 'int', category: 'Server & Network', label: 'Max players' },
+  port: { kind: 'int', category: 'Server & Network', managed: true, label: 'Server port (panel-managed)' },
+  owner: { kind: 'string', category: 'Server & Network', label: 'Owner SteamID64' },
+  welcome: { kind: 'string', category: 'Server & Network', label: 'Welcome message' },
 
-  Map: { kind: 'string', category: 'World & Rules', label: 'Map' },
-  Perspective: {
+  map: { kind: 'string', category: 'World & Rules', label: 'Map' },
+  perspective: {
     kind: 'enum',
     category: 'World & Rules',
     enumValues: ['First', 'Third', 'Both', 'Vehicle'],
     label: 'Perspective',
   },
-  Mode: { kind: 'enum', category: 'World & Rules', enumValues: ['Easy', 'Normal', 'Hard'], label: 'Difficulty mode' },
-  Cycle: { kind: 'int', category: 'World & Rules', label: 'Day length (s)' },
+  mode: { kind: 'enum', category: 'World & Rules', enumValues: ['Easy', 'Normal', 'Hard'], label: 'Difficulty mode' },
+  cycle: { kind: 'int', category: 'World & Rules', label: 'Day length (s)' },
 }
 
 // A settings PATCH: known keys are typed values, everything else may be

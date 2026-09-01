@@ -6,6 +6,7 @@ import type { Env } from '../env.js'
 import type { Db } from '../db/client.js'
 import { panelState } from '../db/schema/index.js'
 import { SettingsParseError, coerceValue, type SettingsService } from './settings-ini.js'
+import { assertValueSafe } from './settings-formats.js'
 import { invalidateAdminCredsCache } from './admin-creds.js'
 import type { SettingsDoc, SettingsFormat } from './settings-formats.js'
 
@@ -48,7 +49,17 @@ export interface FileSettingsConfigTarget {
 // Values are rendered plainly here — quoting is the format's business,
 // not the value's, which is what lets one spec table serve an ini, an
 // XML property and a console command alike.
-function renderValue(kind: string, value: SettingValue): string {
+function renderValue(key: string, kind: string, value: SettingValue): string {
+  const rendered = renderByKind(kind, value)
+  // A newline here would open a second line in the config file, which is
+  // enough to define a key the panel manages (an `rcon_password` ahead of
+  // the panel's own). The formats reject this too; catching it here gives
+  // the operator the failing key's name.
+  assertValueSafe(key, rendered)
+  return rendered
+}
+
+function renderByKind(kind: string, value: SettingValue): string {
   switch (kind) {
     case 'bool':
       return value === true || value === 'true' || value === 'True' ? 'true' : 'false'
@@ -78,16 +89,28 @@ export function createFileSettings(
 
   function writeContent(content: string): void {
     const historyDir = path.join(env.DATA_DIR, 'settings-history', target.stateKey.replace(/[^a-zA-Z0-9_-]/g, '_'))
-    fs.mkdirSync(historyDir, { recursive: true })
+    // These snapshots carry admin/RCON passwords, so the directory is
+    // owner-only rather than the default 0755.
+    fs.mkdirSync(historyDir, { recursive: true, mode: 0o700 })
     const base = path.basename(config.file)
     if (fs.existsSync(filePath)) {
       const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-      fs.copyFileSync(filePath, path.join(historyDir, `${base}-${stamp}`))
+      const snapshot = path.join(historyDir, `${base}-${stamp}`)
+      fs.copyFileSync(filePath, snapshot)
+      fs.chmodSync(snapshot, 0o600)
       pruneHistory(historyDir, base, 20)
     }
     fs.mkdirSync(path.dirname(filePath), { recursive: true })
+    // 'wx' (O_CREAT|O_EXCL) so a pre-created symlink at this path cannot
+    // redirect the write — the game process can write this directory.
     const tmp = `${filePath}.tmp-${process.pid}`
-    fs.writeFileSync(tmp, content, { mode: 0o640 })
+    fs.rmSync(tmp, { force: true })
+    const fd = fs.openSync(tmp, 'wx', 0o640)
+    try {
+      fs.writeFileSync(fd, content)
+    } finally {
+      fs.closeSync(fd)
+    }
     fs.renameSync(tmp, filePath)
     // The admin password/port may have just changed under the RCON
     // clients — drop the cached copy so the next command re-reads it.
@@ -157,12 +180,12 @@ export function createFileSettings(
         if (config.managedKeys.includes(key)) {
           throw new SettingsParseError(`${key} is panel-managed and cannot be edited`)
         }
-        const spec = config.specs[key]
+        const spec = Object.hasOwn(config.specs, key) ? config.specs[key] : undefined
         if (spec) {
           if (spec.kind === 'enum' && spec.enumValues && !spec.enumValues.includes(String(value))) {
             throw new SettingsParseError(`${key} must be one of: ${spec.enumValues.join(', ')}`)
           }
-          config.format.set(doc, key, renderValue(spec.kind, value))
+          config.format.set(doc, key, renderValue(key, spec.kind, value))
         } else if (doc.entries.has(key)) {
           // Unknown-but-present key: accept a verbatim raw string only.
           if (typeof value !== 'string') {

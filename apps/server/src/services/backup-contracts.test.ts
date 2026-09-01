@@ -148,11 +148,25 @@ describe('contract registry', () => {
     expect(() => contractFor(bogus)).toThrow(/no world contract/)
   })
 
-  it('keeps Project Zomboid logs and panel config out of the archive body', () => {
-    // Both ride along as config files or are dropped — never swapped in
-    // wholesale, which would clobber the panel-managed server ini.
+  it('archives Project Zomboid’s Server dir, because restore deletes whatever it omits', () => {
+    // Restore swaps the whole save root, so anything excluded here is
+    // deleted from the live tree — and Server/ holds the sandbox ruleset
+    // (`<name>_SandboxVars.lua`). Only logs are safe to drop.
     const contract = contractForSlug('project-zomboid')!
-    expect([...contract.internalBackupDirs]).toEqual(['Logs', 'Server'])
+    expect([...contract.internalBackupDirs]).toEqual(['Logs'])
+    // The ini still rides along separately so the panel's managed keys
+    // are re-applied through the settings adapter on restore.
     expect(contract.settingsImportFile).toBe('rallypoint.ini')
+  })
+
+  it('excludes nothing that a restore would then delete from the live tree', () => {
+    // A dir excluded from the archive is a dir the swap removes. Only
+    // regenerable content may appear here.
+    const REGENERABLE = new Set(['Logs', 'backup', 'crashes'])
+    for (const slug of SLUGS) {
+      for (const dir of contractForSlug(slug)!.internalBackupDirs) {
+        expect(REGENERABLE.has(dir), `${slug} excludes ${dir} from its archive`).toBe(true)
+      }
+    }
   })
 })
