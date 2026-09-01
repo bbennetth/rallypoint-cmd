@@ -75,12 +75,12 @@ export interface GameDef {
   logPatterns?: { error: string[] }
   // Rough full-install size, surfaced in the add-server UI.
   diskEstimateGb: number
-  // 'full' = settings/players/mods/backups wired; 'basic' = install,
-  // start/stop, console, updates and restart schedules only.
+  // 'full' = everything the game itself allows is wired (settings,
+  // query, player admin, backups — which of those exist varies by game;
+  // see `capabilities`). 'basic' = install, start/stop, console, updates
+  // and restart schedules only.
   supportLevel: 'full' | 'basic'
 }
-
-const BASIC_CAPS = { query: 'none', players: 'none', mods: 'none', world: false } as const
 
 export const GAMES: Record<string, GameDef> = {
   palworld: {
@@ -112,19 +112,31 @@ export const GAMES: Record<string, GameDef> = {
     steamAppId: 896660,
     startCommand: {
       bin: './valheim_server.x86_64',
-      args: ['-nographics', '-batchmode', '-name', 'Rallypoint', '-port', '2456', '-world', 'Dedicated', '-public', '0'],
+      // Name, world, port and visibility come from the launch conf the
+      // settings editor owns — keeping them here too would pass every
+      // flag twice.
+      args: ['-nographics', '-batchmode'],
     },
     stopSignal: 'SIGINT',
     timeoutStopSec: 60,
     memoryHigh: '4G',
     memoryMax: '6G',
-    ports: [{ name: 'game', port: 2456, proto: 'udp' }],
+    ports: [
+      { name: 'game', port: 2456, proto: 'udp' },
+      // Valheim answers Steam queries on game port + 1.
+      { name: 'query', port: 2457, proto: 'udp' },
+    ],
     savePaths: ['.config/unity3d/IronGate/Valheim/worlds_local'],
     installedProbe: 'valheim_server.x86_64',
-    settingsAdapter: 'none',
-    capabilities: BASIC_CAPS,
+    // No config file at all — every knob is a launch flag, so the panel
+    // owns a conf that the generated start.sh sources.
+    settingsAdapter: 'launch-conf',
+    launchConfFile: 'rallypoint-launch.conf',
+    // Vanilla Valheim has no admin console to drive: moderation happens
+    // through adminlist.txt, not a live protocol.
+    capabilities: { query: 'a2s', players: 'none', mods: 'none', world: true },
     diskEstimateGb: 2,
-    supportLevel: 'basic',
+    supportLevel: 'full',
   },
   rust: {
     slug: 'rust',
@@ -138,14 +150,19 @@ export const GAMES: Record<string, GameDef> = {
     timeoutStopSec: 120,
     ports: [
       { name: 'game', port: 28015, proto: 'udp' },
+      { name: 'query', port: 28015, proto: 'udp' },
       { name: 'rcon', port: 28016, proto: 'tcp' },
     ],
     savePaths: ['server/rallypoint'],
     installedProbe: 'RustDedicated',
-    settingsAdapter: 'none',
-    capabilities: BASIC_CAPS,
+    settingsAdapter: 'source-cfg',
+    // Rust honors its RCON convars only from the command line, so the
+    // panel keeps those in a launch conf rather than server.cfg.
+    launchConfFile: 'rallypoint-launch.conf',
+    // Rust's RCON is a WebSocket protocol of its own, not Source RCON.
+    capabilities: { query: 'a2s', players: 'webrcon', mods: 'none', world: true },
     diskEstimateGb: 35,
-    supportLevel: 'basic',
+    supportLevel: 'full',
   },
   'ark-survival-evolved': {
     slug: 'ark-survival-evolved',
@@ -160,13 +177,16 @@ export const GAMES: Record<string, GameDef> = {
     ports: [
       { name: 'game', port: 7777, proto: 'udp' },
       { name: 'query', port: 27015, proto: 'udp' },
+      { name: 'rcon', port: 27020, proto: 'tcp' },
     ],
-    savePaths: ['ShooterGame/Saved'],
+    // Only the world saves; the panel-managed ini rides along with the
+    // backup as a config file (see backup-contracts.ts).
+    savePaths: ['ShooterGame/Saved/SavedArks'],
     installedProbe: 'ShooterGame/Binaries/Linux/ShooterGameServer',
-    settingsAdapter: 'none',
-    capabilities: BASIC_CAPS,
+    settingsAdapter: 'sectioned-ini',
+    capabilities: { query: 'a2s', players: 'rcon', mods: 'none', world: true },
     diskEstimateGb: 100,
-    supportLevel: 'basic',
+    supportLevel: 'full',
   },
   '7-days-to-die': {
     slug: '7-days-to-die',
@@ -178,13 +198,18 @@ export const GAMES: Record<string, GameDef> = {
     },
     stopSignal: 'SIGINT',
     timeoutStopSec: 120,
-    ports: [{ name: 'game', port: 26900, proto: 'udp' }],
+    ports: [
+      { name: 'game', port: 26900, proto: 'udp' },
+      { name: 'query', port: 26900, proto: 'udp' },
+      { name: 'telnet', port: 8081, proto: 'tcp' },
+    ],
     savePaths: ['.local/share/7DaysToDie/Saves'],
     installedProbe: '7DaysToDieServer.x86_64',
-    settingsAdapter: 'none',
-    capabilities: BASIC_CAPS,
+    settingsAdapter: 'xml-properties',
+    // No RCON — 7DTD's admin channel is its telnet console.
+    capabilities: { query: 'a2s', players: 'telnet', mods: 'none', world: true },
     diskEstimateGb: 15,
-    supportLevel: 'basic',
+    supportLevel: 'full',
   },
   'project-zomboid': {
     slug: 'project-zomboid',
@@ -193,13 +218,20 @@ export const GAMES: Record<string, GameDef> = {
     startCommand: { bin: './start-server.sh', args: ['-servername', 'rallypoint'] },
     stopSignal: 'SIGTERM',
     timeoutStopSec: 120,
-    ports: [{ name: 'game', port: 16261, proto: 'udp' }],
-    savePaths: ['Zomboid/Saves'],
+    ports: [
+      { name: 'game', port: 16261, proto: 'udp' },
+      { name: 'query', port: 16261, proto: 'udp' },
+      // Deconflicted from the Source games' 27015 block.
+      { name: 'rcon', port: 27025, proto: 'tcp' },
+    ],
+    // One swap covers Saves/ and the player DB together; Logs/ and the
+    // panel-managed Server/ ini are excluded by the world contract.
+    savePaths: ['Zomboid'],
     installedProbe: 'start-server.sh',
-    settingsAdapter: 'none',
-    capabilities: BASIC_CAPS,
+    settingsAdapter: 'keyvalue-ini',
+    capabilities: { query: 'a2s', players: 'rcon', mods: 'none', world: true },
     diskEstimateGb: 5,
-    supportLevel: 'basic',
+    supportLevel: 'full',
   },
   satisfactory: {
     slug: 'satisfactory',
@@ -209,12 +241,17 @@ export const GAMES: Record<string, GameDef> = {
     stopSignal: 'SIGINT',
     timeoutStopSec: 90,
     ports: [{ name: 'game', port: 7777, proto: 'udp' }],
-    savePaths: ['FactoryGame/Saved/SaveGames'],
+    // HOME is the install dir, so the Epic save tree lands under it.
+    savePaths: ['.config/Epic/FactoryGame/Saved/SaveGames'],
     installedProbe: 'FactoryServer.sh',
+    // Settings are administered in-game through an HTTPS API that needs
+    // a claim token the panel can't self-provision — no file to edit.
     settingsAdapter: 'none',
-    capabilities: BASIC_CAPS,
+    // Answers its own lightweight query protocol on the game port rather
+    // than A2S; that protocol carries no player counts.
+    capabilities: { query: 'satisfactory-lwq', players: 'none', mods: 'none', world: true },
     diskEstimateGb: 15,
-    supportLevel: 'basic',
+    supportLevel: 'full',
   },
   'team-fortress-2': {
     slug: 'team-fortress-2',
@@ -223,13 +260,19 @@ export const GAMES: Record<string, GameDef> = {
     startCommand: { bin: './srcds_run', args: ['-game', 'tf', '+map', 'cp_dustbowl', '+maxplayers', '24'] },
     stopSignal: 'SIGTERM',
     timeoutStopSec: 30,
-    ports: [{ name: 'game', port: 27015, proto: 'udp' }],
+    ports: [
+      { name: 'game', port: 27015, proto: 'udp' },
+      { name: 'query', port: 27015, proto: 'udp' },
+      { name: 'rcon', port: 27015, proto: 'tcp' },
+    ],
     savePaths: ['tf/cfg'],
     installedProbe: 'srcds_run',
-    settingsAdapter: 'none',
-    capabilities: BASIC_CAPS,
+    settingsAdapter: 'source-cfg',
+    // No persistent world to back up — a Source server's state is its
+    // config, which the settings editor already covers.
+    capabilities: { query: 'a2s', players: 'rcon', mods: 'none', world: false },
     diskEstimateGb: 25,
-    supportLevel: 'basic',
+    supportLevel: 'full',
   },
   'counter-strike-2': {
     slug: 'counter-strike-2',
@@ -241,13 +284,20 @@ export const GAMES: Record<string, GameDef> = {
     },
     stopSignal: 'SIGTERM',
     timeoutStopSec: 30,
-    ports: [{ name: 'game', port: 27015, proto: 'udp' }],
+    ports: [
+      { name: 'game', port: 27015, proto: 'udp' },
+      { name: 'query', port: 27015, proto: 'udp' },
+      { name: 'rcon', port: 27015, proto: 'tcp' },
+    ],
     savePaths: ['game/csgo/cfg'],
     installedProbe: 'game/bin/linuxsteamrt64/cs2',
-    settingsAdapter: 'none',
-    capabilities: BASIC_CAPS,
+    settingsAdapter: 'source-cfg',
+    // CS2's cfg-exec timing for rcon_password has been unreliable across
+    // builds, so the panel also passes it on the command line.
+    launchConfFile: 'rallypoint-launch.conf',
+    capabilities: { query: 'a2s', players: 'rcon', mods: 'none', world: false },
     diskEstimateGb: 35,
-    supportLevel: 'basic',
+    supportLevel: 'full',
   },
   enshrouded: {
     slug: 'enshrouded',
@@ -289,13 +339,18 @@ export const GAMES: Record<string, GameDef> = {
     startCommand: { bin: './ServerHelper.sh', args: ['+InternetServer/rallypoint'] },
     stopSignal: 'SIGINT',
     timeoutStopSec: 60,
-    ports: [{ name: 'game', port: 27015, proto: 'udp' }],
+    ports: [
+      { name: 'game', port: 27015, proto: 'udp' },
+      // Unturned answers Steam queries on game port + 1.
+      { name: 'query', port: 27016, proto: 'udp' },
+    ],
     savePaths: ['Servers'],
     installedProbe: 'ServerHelper.sh',
-    settingsAdapter: 'none',
-    capabilities: BASIC_CAPS,
+    settingsAdapter: 'unturned-commands',
+    // Vanilla Unturned exposes no remote admin protocol.
+    capabilities: { query: 'a2s', players: 'none', mods: 'none', world: true },
     diskEstimateGb: 8,
-    supportLevel: 'basic',
+    supportLevel: 'full',
   },
 }
 

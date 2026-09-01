@@ -19,6 +19,13 @@ import { createA2sQuery } from './a2s.real.js'
 import { createRealSteamCmd } from './steamcmd.real.js'
 import { createSettingsService } from './settings-ini.js'
 import { createEnshroudedSettings } from './settings-json.js'
+import { createSettingsFor, launchConfConfigFor } from './game-settings-configs.js'
+import { createFileSettings } from './settings-file.js'
+import { createSatisfactoryQuery } from './satisfactory-lwq.real.js'
+import { readAdminCreds } from './admin-creds.js'
+import { createRconAdmin } from './admin/rcon-admin.js'
+import { createRustWebrcon } from './admin/rust-webrcon.js'
+import { create7dtdTelnet } from './admin/telnet-7dtd.js'
 import { createBackupService } from './backup.js'
 import { contractFor } from './backup-contracts.js'
 import { createModsService } from './mods.js'
@@ -60,6 +67,15 @@ export interface ComposedServices {
   dispose(): void
 }
 
+// A named port the registry promises exists. Missing means the registry
+// entry and the capability it declares have drifted apart — fail loudly
+// at startup rather than quietly querying port 0 forever.
+function portFor(game: { slug: string; ports: { name: string; port: number }[] }, name: string): number {
+  const port = game.ports.find((p) => p.name === name)?.port
+  if (!port) throw new Error(`${game.slug} declares no '${name}' port but its capabilities need one`)
+  return port
+}
+
 export function composeServices(env: Env, logger: Logger, db: Db): ComposedServices {
   function createInstance(row: ServerRow): ServerInstance {
     const game = gameBySlug(row.gameSlug)
@@ -97,7 +113,29 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
               gamePort: game.ports.find((p) => p.name === 'game')?.port ?? 15636,
               queryPort: game.ports.find((p) => p.name === 'query')?.port ?? 15637,
             })
-          : createNullSettings(db, game, stateKey)
+          : (createSettingsFor(env, db, game, { installDir: row.installDir, stateKey }) ??
+            createNullSettings(db, game, stateKey))
+    // start.sh dot-sources the launch conf, so it has to exist before the
+    // game can start with the args the panel intends. Seeding here (not
+    // just after an install) covers servers that predate the conf, and is
+    // idempotent — a conf already satisfying its invariants is untouched.
+    if (game.launchConfFile) {
+      // Rust and CS2 keep their admin credentials on the command line, so
+      // they carry a second, panel-owned conf beside their settings file;
+      // for Valheim the conf *is* the settings file.
+      const launchConf = launchConfConfigFor(game)
+      const service = launchConf
+        ? createFileSettings(env, db, launchConf, { installDir: row.installDir, stateKey })
+        : settings
+      try {
+        service.seedIfMissing()
+      } catch (err) {
+        logger.warn('could not seed launch conf', {
+          server: row.id,
+          err: err instanceof Error ? err.message : String(err),
+        })
+      }
+    }
     const mods =
       game.capabilities.mods === 'ue-paks'
         ? createModsService(env, logger, row.installDir)
@@ -118,9 +156,25 @@ export function composeServices(env: Env, logger: Logger, db: Db): ComposedServi
             const query =
               palRest ??
               (game.capabilities.query === 'a2s'
-                ? createA2sQuery(game.ports.find((p) => p.name === 'query')?.port ?? 0)
-                : createNullQuery(game))
-            const admin = game.capabilities.players === 'pal-rest' && palRest ? palRest : createNullAdmin(game)
+                ? createA2sQuery(portFor(game, 'query'))
+                : game.capabilities.query === 'satisfactory-lwq'
+                  ? createSatisfactoryQuery(portFor(game, 'game'))
+                  : createNullQuery(game))
+            // Every protocol-based admin channel reads its credentials
+            // from the config file the settings invariants maintain, so a
+            // password rotation reaches the client without a restart.
+            const adminCreds = (): { port: number | null; password: string | null } =>
+              readAdminCreds(game.slug, row.installDir)
+            const admin =
+              game.capabilities.players === 'pal-rest' && palRest
+                ? palRest
+                : game.capabilities.players === 'rcon'
+                  ? createRconAdmin(game.slug, adminCreds)
+                  : game.capabilities.players === 'webrcon'
+                    ? createRustWebrcon(adminCreds)
+                    : game.capabilities.players === 'telnet'
+                      ? create7dtdTelnet(adminCreds)
+                      : createNullAdmin(game)
             // Samples the unit's cgroup on its own timer from panel
             // start, so the history window is already filled by the time
             // someone opens the Monitoring page to ask what just happened.

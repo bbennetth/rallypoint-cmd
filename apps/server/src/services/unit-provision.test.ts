@@ -36,14 +36,25 @@ describe('renderStartScript', () => {
   })
 
   it('sources the launch conf and appends $EXTRA_ARGS only for games that declare one', () => {
-    const withConf: GameDef = { ...(GAMES['valheim'] as GameDef), launchConfFile: 'rallypoint-launch.conf' }
-    const script = renderStartScript(withConf, '/opt/games/valheim')
-    expect(script).toContain('[ -f "./rallypoint-launch.conf" ] && . "./rallypoint-launch.conf"')
+    const valheim = GAMES['valheim'] as GameDef
+    const script = renderStartScript(valheim, '/opt/games/valheim')
+    expect(script).toContain(`[ -f "./${valheim.launchConfFile}" ] && . "./${valheim.launchConfFile}"`)
     expect(script.trim().endsWith('$EXTRA_ARGS')).toBe(true)
     // Games without a launch conf keep their exact pre-existing script.
-    const plain = renderStartScript(GAMES['valheim'] as GameDef, '/opt/games/valheim')
+    const plain = renderStartScript(palworld, '/opt/games/palworld')
     expect(plain).not.toContain('EXTRA_ARGS')
     expect(plain).not.toContain('rallypoint-launch.conf')
+  })
+
+  it('never passes a launch-conf game its settings-owned flags twice', () => {
+    // The conf supplies these at run time; repeating them in the base
+    // args would hand the game each flag two ways.
+    for (const game of Object.values(GAMES).filter((g) => g.launchConfFile)) {
+      const script = renderStartScript(game, `/opt/games/${game.slug}`)
+      const execLine = script.split('\n').find((l) => l.startsWith('exec '))!
+      const flags = execLine.split(/\s+/).filter((t) => t.startsWith('-') || t.startsWith('+'))
+      expect(new Set(flags).size, game.slug).toBe(flags.length)
+    }
   })
 
   it('renders every registry game without an unresolved placeholder', () => {

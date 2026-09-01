@@ -188,8 +188,15 @@ export function createFileSettings(
         // The file exists but may predate the panel (or a restore may
         // have brought back an older one) — re-assert the invariants so
         // the admin channel is live before the game next starts.
+        // Idempotent: a file already satisfying them is left alone, so
+        // this can run on every install without flagging a restart that
+        // nothing actually requires.
         try {
-          commit(config.format.parse(fs.readFileSync(filePath, 'utf8')))
+          const current = fs.readFileSync(filePath, 'utf8')
+          const doc = config.format.parse(current)
+          config.applyInvariants(doc)
+          const next = config.format.serialize(doc)
+          if (next !== current) writeContent(next)
         } catch {
           // A config we cannot parse is left alone; the settings page
           // surfaces the parse error rather than the panel rewriting it.
