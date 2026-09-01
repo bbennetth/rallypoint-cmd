@@ -128,19 +128,22 @@ export function createFileSettings(
           category: spec?.category ?? null,
         }
       })
-      // A managed key the file does not carry yet still belongs in the
-      // form — it is about to exist, and the operator should see it.
-      for (const key of config.managedKeys) {
+      // A known setting the file does not carry yet still belongs in the
+      // form. Several of these games only write their full config on
+      // first boot (ARK, Zomboid) or ship a bare one, so without this the
+      // settings page of a freshly installed server would be nearly
+      // empty and there would be no way to configure it before starting
+      // it. The web page only submits fields the operator actually
+      // edited, so surfacing an unset key does not write a default.
+      for (const [key, spec] of Object.entries(config.specs)) {
         if (doc.entries.has(key)) continue
-        const spec = config.specs[key]
-        if (!spec) continue
         entries.push({
           key,
           raw: '',
           value: null,
           kind: spec.kind,
           enumValues: spec.enumValues ? [...spec.enumValues] : null,
-          managed: true,
+          managed: spec.managed ?? config.managedKeys.includes(key),
           label: spec.label ?? null,
           category: spec.category,
         })

@@ -68,11 +68,14 @@ exec "$WINE_BIN" ${cmd}
 `
   }
   // Games with a panel-owned launch conf get their extra args from it.
-  // The file is dot-sourced, so it is written only by the launch-conf
-  // settings adapter, which restricts values to a strict charset — that
-  // pairing is what makes the unquoted $EXTRA_ARGS word-splitting safe.
+  // The conf sets the positional parameters (`set -- 'a' 'b'`) and they
+  // are forwarded as "$@", so a value containing spaces — a server name,
+  // typically — stays one argument. The file is dot-sourced, so only the
+  // launch-conf settings adapter writes it, and it restricts values to a
+  // strict charset. `set --` first clears the parameters, so a missing
+  // conf simply contributes nothing.
   const launchConf = game.launchConfFile
-    ? `EXTRA_ARGS=""
+    ? `set --
 [ -f "./${game.launchConfFile}" ] && . "./${game.launchConfFile}"
 `
     : ''
@@ -81,7 +84,7 @@ exec "$WINE_BIN" ${cmd}
 cd "${installDir}"
 export HOME="${installDir}"
 export LD_LIBRARY_PATH="${installDir}:${installDir}/linux64:\${LD_LIBRARY_PATH:-}"
-${launchConf}exec ${cmd}${game.launchConfFile ? ' $EXTRA_ARGS' : ''}
+${launchConf}exec ${cmd}${game.launchConfFile ? ' "$@"' : ''}
 `
 }
 

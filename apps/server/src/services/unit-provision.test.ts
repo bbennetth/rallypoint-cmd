@@ -35,14 +35,16 @@ describe('renderStartScript', () => {
     expect(script).toContain('exec "$WINE_BIN" ./enshrouded_server.exe')
   })
 
-  it('sources the launch conf and appends $EXTRA_ARGS only for games that declare one', () => {
+  it('sources the launch conf and forwards its arguments only for games that declare one', () => {
     const valheim = GAMES['valheim'] as GameDef
     const script = renderStartScript(valheim, '/opt/games/valheim')
     expect(script).toContain(`[ -f "./${valheim.launchConfFile}" ] && . "./${valheim.launchConfFile}"`)
-    expect(script.trim().endsWith('$EXTRA_ARGS')).toBe(true)
+    // Forwarded as "$@" so a value with spaces stays one argument.
+    expect(script.trim().endsWith('"$@"')).toBe(true)
+    expect(script).toContain('set --')
     // Games without a launch conf keep their exact pre-existing script.
     const plain = renderStartScript(palworld, '/opt/games/palworld')
-    expect(plain).not.toContain('EXTRA_ARGS')
+    expect(plain).not.toContain('set --')
     expect(plain).not.toContain('rallypoint-launch.conf')
   })
 

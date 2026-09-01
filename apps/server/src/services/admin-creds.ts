@@ -37,9 +37,11 @@ function iniValue(content: string, key: string): string | null {
 }
 
 // `cvar value` / `+cvar value`, quoted or bare, as written in a Source
-// server.cfg or a launch conf.
+// server.cfg. Also matches a launch conf's `#: +cvar value` record line —
+// that file's pairs are comments because start.sh dot-sources it (see
+// settings-formats.ts).
 function cfgValue(content: string, key: string): string | null {
-  const re = new RegExp(`^\\s*\\+?${key.replace(/\./g, '\\.')}\\s+"?([^"\\s]*)"?\\s*$`, 'im')
+  const re = new RegExp(`^\\s*(?:#:\\s*)?\\+?${key.replace(/\./g, '\\.')}\\s+"?([^"\\s]*)"?\\s*$`, 'im')
   return content.match(re)?.[1] ?? null
 }
 

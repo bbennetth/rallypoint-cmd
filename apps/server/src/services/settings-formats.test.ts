@@ -172,15 +172,41 @@ describe('keyValueFormat', () => {
 })
 
 describe('launchConfFormat', () => {
-  it('renders pairs plus the EXTRA_ARGS line start.sh sources', () => {
+  it('renders the argument list start.sh forwards as "$@"', () => {
     const doc = launchConfFormat.parse('')
     launchConfFormat.set(doc, '-name', 'Rallypoint')
     launchConfFormat.set(doc, '-world', 'Dedicated')
     launchConfFormat.set(doc, '-crossplay', '')
     const out = launchConfFormat.serialize(doc)
-    expect(out).toContain("EXTRA_ARGS='-name Rallypoint -world Dedicated -crossplay'")
+    expect(out).toContain("set -- '-name' 'Rallypoint' '-world' 'Dedicated' '-crossplay'")
     // And reads its own output back.
     expect(launchConfFormat.parse(out).entries.get('-name')).toBe('Rallypoint')
+  })
+
+  it('keeps a value containing spaces as one argument', () => {
+    // Server names have spaces. An unquoted variable would split this
+    // into three arguments and the game would see the name "Byrons".
+    const doc = launchConfFormat.parse('')
+    launchConfFormat.set(doc, '-name', 'Byrons Valheim EU-West')
+    expect(launchConfFormat.serialize(doc)).toContain("set -- '-name' 'Byrons Valheim EU-West'")
+    expect(launchConfFormat.parse(launchConfFormat.serialize(doc)).entries.get('-name')).toBe(
+      'Byrons Valheim EU-West',
+    )
+  })
+
+  it('has exactly one executable line — the rest are comments', () => {
+    // start.sh dot-sources this file, so any line that is not a comment
+    // runs as a command. Writing the pairs as bare `-name Rallypoint`
+    // lines would spray "command not found" on every server start.
+    const doc = launchConfFormat.parse('')
+    launchConfFormat.set(doc, '-name', 'Rallypoint')
+    launchConfFormat.set(doc, 'port', '27015')
+    const executable = launchConfFormat
+      .serialize(doc)
+      .split('\n')
+      .filter((l) => l.trim() !== '' && !l.trimStart().startsWith('#'))
+    expect(executable).toHaveLength(1)
+    expect(executable[0]).toMatch(/^set -- '/)
   })
 
   it('rejects every shell metacharacter a value could carry', () => {

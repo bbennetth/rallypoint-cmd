@@ -27,6 +27,7 @@ import {
   ZOMBOID_DIALECT,
   keyValueFormat,
   launchConfFormat,
+  renderLaunchConfSeed,
   sectionedIniFormat,
   xmlPropertiesFormat,
   type SettingsDoc,
@@ -197,7 +198,8 @@ function valheimConfig(game: GameDef): GameSettingsConfig {
         throw new SettingsParseError('Valheim refuses a join password that matches the world name.')
       }
     },
-    seedContent: () => ['-name Rallypoint', '-world Dedicated', '-public 0', ''].join('\n'),
+    seedContent: () =>
+      renderLaunchConfSeed({ '-name': 'Rallypoint', '-world': 'Dedicated', '-public': '0' }),
   }
 }
 

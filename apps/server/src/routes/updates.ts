@@ -76,7 +76,7 @@ updateRoutes.post('/updates/run', requireSession, async (c) => {
         if (kind === 'install') {
           try {
             settings.seedIfMissing()
-            sink.line('[panel] Seeded server settings (panel-managed REST enabled).')
+            sink.line('[panel] Seeded server settings (panel-managed admin access enabled).')
           } catch (err) {
             sink.line(
               `[panel] Could not seed settings automatically: ${err instanceof Error ? err.message : String(err)}`,

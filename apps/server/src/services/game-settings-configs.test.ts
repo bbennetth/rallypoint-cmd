@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { GAMES } from '@rallypoint-cmd/shared'
 import { readAdminCreds } from './admin-creds.js'
 import { settingsConfigForSlug } from './game-settings-configs.js'
-import type { SettingsDoc } from './settings-formats.js'
+import { launchConfFormat, type SettingsDoc } from './settings-formats.js'
 
 // The invariants are the panel's grip on each game: they are what makes
 // the admin channel exist at all, so they are checked per game against a
@@ -29,6 +29,14 @@ function applied(slug: string, content: string): SettingsDoc {
 function seeded(slug: string): SettingsDoc {
   const config = settingsConfigForSlug(slug)!
   return applied(slug, config.seedContent?.() ?? '')
+}
+
+// A launch conf as the panel writes it: pairs are comments, since the
+// file is dot-sourced (see settings-formats.ts).
+function launchConf(pairs: Record<string, string>): string {
+  return Object.entries(pairs)
+    .map(([k, v]) => `#: ${k} ${v}`)
+    .join('\n')
 }
 
 describe('every generic-engine game has a settings config', () => {
@@ -55,6 +63,25 @@ describe('every generic-engine game has a settings config', () => {
     const seed = config.seedContent?.()
     if (seed === null || seed === undefined) return
     expect(() => config.format.serialize(applied(slug, seed))).not.toThrow()
+  })
+
+  it.each(SLUGS)('%s writes a seed that survives being read back', (slug) => {
+    // A seed written in a shape its own format cannot parse is dropped
+    // silently, leaving a freshly installed server unconfigured — which
+    // is exactly what a launch conf written as bare pairs used to do.
+    const config = settingsConfigForSlug(slug)!
+    const seed = config.seedContent?.()
+    if (!seed) return
+    const written = config.format.serialize(applied(slug, seed))
+    const reread = config.format.parse(written)
+    for (const [key, value] of config.format.parse(seed).entries) {
+      expect(reread.entries.get(key), `${slug}/${key}`).toBe(value)
+    }
+    // And the seed's declared settings are actually in the file.
+    const declared = seed.split('\n').filter((l) => l.trim() !== '').length
+    if (declared > 0 && config.format === launchConfFormat) {
+      expect(reread.entries.size, `${slug} launch conf lost its seed`).toBeGreaterThanOrEqual(declared)
+    }
   })
 
   it.each(SLUGS)('%s leaves no managed key unset after a seed', (slug) => {
@@ -108,21 +135,25 @@ describe('7 Days to Die invariants', () => {
 
 describe('Valheim launch conf', () => {
   it('pins the game port the unit was provisioned with', () => {
-    const doc = applied('valheim', '-name Rallypoint\n-port 9999')
+    const doc = applied('valheim', launchConf({ '-name': 'Rallypoint', '-port': '9999' }))
     expect(doc.entries.get('-port')).toBe(String(GAMES['valheim']!.ports.find((p) => p.name === 'game')!.port))
   })
 
   it('rejects a password Valheim itself would refuse', () => {
-    expect(() => applied('valheim', '-name Rallypoint\n-password abc')).toThrow(/at least 5 characters/)
+    expect(() => applied('valheim', launchConf({ '-name': 'Rallypoint', '-password': 'abc' }))).toThrow(
+      /at least 5 characters/,
+    )
   })
 
   it('rejects a password equal to the world name', () => {
-    expect(() => applied('valheim', '-world Dedicated\n-password Dedicated')).toThrow(/world name/)
+    expect(() => applied('valheim', launchConf({ '-world': 'Dedicated', '-password': 'Dedicated' }))).toThrow(
+      /world name/,
+    )
   })
 
   it('accepts an empty password and a valid one', () => {
-    expect(() => applied('valheim', '-password ')).not.toThrow()
-    expect(() => applied('valheim', '-password longenough')).not.toThrow()
+    expect(() => applied('valheim', launchConf({ '-password': '' }))).not.toThrow()
+    expect(() => applied('valheim', launchConf({ '-password': 'longenough' }))).not.toThrow()
   })
 })
 
