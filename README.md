@@ -30,8 +30,13 @@ itself offers — which is why the columns below differ.
 | Unturned | 1110390 | Commands.dat | Steam | — | ✅ | — | 8 GB |
 
 A dash means the game itself has no such facility: Valheim and Unturned expose no remote admin
-protocol, Source servers keep no persistent world to back up, and Satisfactory's settings live
-behind an authenticated in-game API rather than a config file.
+protocol (both were checked — what hosts sell as "Unturned RCON" is a plugin framework, and
+Valheim's is a mod), and Source servers keep no persistent world to back up.
+
+Satisfactory is the one entry that is under-served rather than fully served. It has no config
+file, so the panel reads it over the unauthenticated lightweight query and stops there. Its
+HTTPS API would give settings, player counts and a save-based backup path, and can be claimed
+headlessly — that is the highest-value follow-up on this list, not a dead end.
 
 The panel owns the keys that keep its admin channel open — RCON/telnet enabled, on the port the
 unit was provisioned with, with a generated password. Those render read-only in the settings
@@ -256,6 +261,15 @@ are wired from documented behavior and want a live pass before you lean on them:
 - **Valheim** — whether A2S answers on the query port with `-public 0`.
 - **Unturned** — Steam query port, and whether restoring `Servers/` mid-session is safe.
 - **Satisfactory** — the lightweight query layout drifts across releases.
+- **Counter-Strike 2** — whether RCON works at all in current builds. If not, it is one registry
+  line (`players: 'none'`) to turn the Players tab off.
+- **Stop behaviour** — the panel stops every server with a signal. Several games want a console
+  command first: Rust and Project Zomboid want `quit` over their admin channel, 7 Days to Die
+  wants a telnet `shutdown`, and Satisfactory does not save on shutdown at all. Until that lands,
+  a stop can cost up to one autosave interval on those four. The admin channels this needs are
+  already wired, so it is plumbing rather than research.
+- **Game server login tokens** — CS2 restricts connections to LAN without one, and TF2 loses
+  server-browser ranking. The panel has nowhere to enter one yet.
 - **Project Zomboid / ARK** — config filename and `players`/`listplayers` output format.
 
 Port collisions between games on one host (ARK, TF2 and CS2 all default to 27015) predate this
