@@ -11,25 +11,35 @@ installs into `/opt/games/<slug>` under its own `rallypoint-game@<slug>.service`
 
 ## Supported games
 
-| Game | Steam app | Support | ~Disk |
-|---|---|---|---|
-| Palworld | 2394010 | **Full** — settings editor, players (kick/ban/announce), world backups + restore, `.pak` mods | 12 GB |
-| Valheim | 896660 | Basic | 2 GB |
-| Rust | 258550 | Basic | 35 GB |
-| ARK: Survival Evolved | 376030 | Basic | 100 GB |
-| 7 Days to Die | 294420 | Basic | 15 GB |
-| Project Zomboid | 380870 | Basic | 5 GB |
-| Satisfactory | 1690800 | Basic | 15 GB |
-| Team Fortress 2 | 232250 | Basic | 25 GB |
-| Counter-Strike 2 | 730 | Basic | 35 GB |
-| Enshrouded | 2278520 | **Full** — settings editor, world backups + restore (Windows build run under Wine) | 8 GB |
-| Unturned | 1110390 | Basic | 8 GB |
+Every game gets install/update via SteamCMD, start/stop/restart, a live console, resource
+limits, monitoring and restart schedules. Beyond that, the panel wires up whatever each game
+itself offers — which is why the columns below differ.
 
-**Basic** = install/update via SteamCMD, start/stop/restart, live console, restart schedules.
-**Full** adds the game's admin API (players, announcements), a structured settings editor,
-world-aware backup/restore, and mod management. The registry lives in
-[`packages/shared/src/games.ts`](packages/shared/src/games.ts) — every game is a data entry, so
-deepening support for a game is adapter work, not a rewrite.
+| Game | Steam app | Settings | Server query | Player admin | Backups | Mods | ~Disk |
+|---|---|---|---|---|---|---|---|
+| Palworld | 2394010 | ini | REST | REST API | ✅ | `.pak` | 12 GB |
+| Valheim | 896660 | launch args | Steam | — | ✅ | — | 2 GB |
+| Rust | 258550 | server.cfg | Steam | WebSocket RCON | ✅ | — | 35 GB |
+| ARK: Survival Evolved | 376030 | ini | Steam | RCON | ✅ | — | 100 GB |
+| 7 Days to Die | 294420 | XML | Steam | telnet | ✅ | — | 15 GB |
+| Project Zomboid | 380870 | ini | Steam | RCON | ✅ | — | 5 GB |
+| Satisfactory | 1690800 | — | native | — | ✅ | — | 15 GB |
+| Team Fortress 2 | 232250 | server.cfg | Steam | RCON | — | — | 25 GB |
+| Counter-Strike 2 | 730 | server.cfg | Steam | RCON | — | — | 35 GB |
+| Enshrouded | 2278520 | JSON | Steam | — | ✅ | — | 8 GB |
+| Unturned | 1110390 | Commands.dat | Steam | — | ✅ | — | 8 GB |
+
+A dash means the game itself has no such facility: Valheim and Unturned expose no remote admin
+protocol, Source servers keep no persistent world to back up, and Satisfactory's settings live
+behind an authenticated in-game API rather than a config file.
+
+The panel owns the keys that keep its admin channel open — RCON/telnet enabled, on the port the
+unit was provisioned with, with a generated password. Those render read-only in the settings
+editor and are re-applied on every write, so a hand edit or a restored backup cannot lock the
+panel out of the game.
+
+The registry lives in [`packages/shared/src/games.ts`](packages/shared/src/games.ts) — every game
+is a data entry, so deepening support for a game is adapter work, not a rewrite.
 
 ## Deployment
 
@@ -229,6 +239,27 @@ If you'd rather port-forward: forward the game's UDP port(s) from the table in
 - Session cookies + double-submit CSRF on every state-changing request; SQLite-backed login rate
   limiting; backups/mod uploads are streamed with byte caps and validated (zip-slip/bomb checks)
   before anything touches game dirs.
+
+### Verified against real servers?
+
+The per-game integrations are covered by unit tests (protocol framing, config round-trips,
+managed-key invariants) and by an end-to-end suite against a mock-mode build. What automated
+tests cannot check is whether each real game still speaks what the panel expects — ports and
+console output drift between game builds. Palworld and Enshrouded run in production; the rest
+are wired from documented behavior and want a live pass before you lean on them:
+
+- **Rust** — WebSocket RCON on loopback, and whether `rcon.*` convars are honored from the
+  launch conf; `playerlist` JSON shape.
+- **Counter-Strike 2** — whether RCON works at all in current builds. If not, it is one
+  registry line (`players: 'none'`) to turn the Players tab off.
+- **7 Days to Die** — Steam query port, and telnet output framing.
+- **Valheim** — whether A2S answers on the query port with `-public 0`.
+- **Unturned** — Steam query port, and whether restoring `Servers/` mid-session is safe.
+- **Satisfactory** — the lightweight query layout drifts across releases.
+- **Project Zomboid / ARK** — config filename and `players`/`listplayers` output format.
+
+Port collisions between games on one host (ARK, TF2 and CS2 all default to 27015) predate this
+and are still a known limitation — run those on separate hosts or edit the registry.
 
 ## Repository layout
 
