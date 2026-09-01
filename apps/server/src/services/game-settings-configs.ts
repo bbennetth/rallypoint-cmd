@@ -1,0 +1,284 @@
+import { randomBytes } from 'node:crypto'
+import {
+  ARK_KEY_SPECS,
+  ARK_SETTINGS_CATEGORIES,
+  RUST_KEY_SPECS,
+  RUST_SETTINGS_CATEGORIES,
+  SDTD_KEY_SPECS,
+  SDTD_SETTINGS_CATEGORIES,
+  SOURCE_CFG_KEY_SPECS,
+  SOURCE_CFG_SETTINGS_CATEGORIES,
+  UNTURNED_KEY_SPECS,
+  UNTURNED_SETTINGS_CATEGORIES,
+  VALHEIM_KEY_SPECS,
+  VALHEIM_SETTINGS_CATEGORIES,
+  ZOMBOID_KEY_SPECS,
+  ZOMBOID_SETTINGS_CATEGORIES,
+  gameBySlug,
+  type GameDef,
+} from '@rallypoint-cmd/shared'
+import type { Env } from '../env.js'
+import type { Db } from '../db/client.js'
+import { SettingsParseError, type SettingsService } from './settings-ini.js'
+import { createFileSettings, type FileSettingsConfigTarget, type GameSettingsConfig } from './settings-file.js'
+import {
+  SOURCE_CFG_DIALECT,
+  UNTURNED_DIALECT,
+  ZOMBOID_DIALECT,
+  keyValueFormat,
+  launchConfFormat,
+  sectionedIniFormat,
+  xmlPropertiesFormat,
+  type SettingsDoc,
+} from './settings-formats.js'
+
+// Per-game settings wiring: which file, which dialect, which spec table,
+// and — the part that matters — what the panel enforces on every write.
+//
+// The invariants are the same idea as Palworld's REST credentials: the
+// panel administers each game over a channel the game itself is
+// configured to expose, so the keys that open that channel are owned by
+// the panel. An operator can read them but not edit them shut, and a
+// hand-edited or restored config is corrected on the next write.
+
+// Generated once and then left alone: rewriting it on every write would
+// invalidate a password an operator may have shared with their admins.
+function generatedSecret(): string {
+  return randomBytes(18).toString('base64url')
+}
+
+// Set a key to a fixed value, always.
+function pin(doc: SettingsDoc, format: GameSettingsConfig['format'], key: string, value: string): void {
+  if (doc.entries.get(key) !== value) format.set(doc, key, value)
+}
+
+// Set a key only if it has no usable value yet.
+function ensureSecret(doc: SettingsDoc, format: GameSettingsConfig['format'], key: string): void {
+  const current = doc.entries.get(key)
+  if (!current || current.trim() === '') format.set(doc, key, generatedSecret())
+}
+
+function portOf(game: GameDef, name: string, fallback: number): number {
+  return game.ports.find((p) => p.name === name)?.port ?? fallback
+}
+
+// --- ARK: Survival Evolved -------------------------------------------
+// GameUserSettings.ini exists only after the first boot, so the panel
+// seeds a minimal one — otherwise there is no way to enable RCON before
+// the server has already started without it.
+
+function arkConfig(game: GameDef): GameSettingsConfig {
+  const rconPort = portOf(game, 'rcon', 27020)
+  return {
+    slug: game.slug,
+    file: 'ShooterGame/Saved/Config/LinuxServer/GameUserSettings.ini',
+    format: sectionedIniFormat,
+    specs: ARK_KEY_SPECS,
+    categories: ARK_SETTINGS_CATEGORIES,
+    managedKeys: ['ServerSettings/RCONEnabled', 'ServerSettings/RCONPort', 'ServerSettings/ServerAdminPassword'],
+    applyInvariants(doc) {
+      pin(doc, sectionedIniFormat, 'ServerSettings/RCONEnabled', 'True')
+      pin(doc, sectionedIniFormat, 'ServerSettings/RCONPort', String(rconPort))
+      ensureSecret(doc, sectionedIniFormat, 'ServerSettings/ServerAdminPassword')
+    },
+    seedContent: () => ['[ServerSettings]', '[SessionSettings]', '[/Script/Engine.GameSession]', ''].join('\n'),
+  }
+}
+
+// --- 7 Days to Die ----------------------------------------------------
+// Ships its own serverconfig.xml, so there is nothing to seed — the
+// panel corrects the shipped file in place to open the telnet console.
+
+function sevenDaysConfig(game: GameDef): GameSettingsConfig {
+  const telnetPort = portOf(game, 'telnet', 8081)
+  return {
+    slug: game.slug,
+    file: 'serverconfig.xml',
+    format: xmlPropertiesFormat,
+    specs: SDTD_KEY_SPECS,
+    categories: SDTD_SETTINGS_CATEGORIES,
+    managedKeys: ['TelnetEnabled', 'TelnetPort', 'TelnetPassword'],
+    applyInvariants(doc) {
+      pin(doc, xmlPropertiesFormat, 'TelnetEnabled', 'true')
+      pin(doc, xmlPropertiesFormat, 'TelnetPort', String(telnetPort))
+      ensureSecret(doc, xmlPropertiesFormat, 'TelnetPassword')
+    },
+  }
+}
+
+// --- Project Zomboid --------------------------------------------------
+// The ini is named after the server identity the unit launches with
+// (`-servername rallypoint`), and is generated on first boot.
+
+function zomboidConfig(game: GameDef): GameSettingsConfig {
+  const rconPort = portOf(game, 'rcon', 27025)
+  const format = keyValueFormat(ZOMBOID_DIALECT)
+  return {
+    slug: game.slug,
+    file: 'Zomboid/Server/rallypoint.ini',
+    format,
+    specs: ZOMBOID_KEY_SPECS,
+    categories: ZOMBOID_SETTINGS_CATEGORIES,
+    managedKeys: ['RCONPort', 'RCONPassword'],
+    applyInvariants(doc) {
+      pin(doc, format, 'RCONPort', String(rconPort))
+      ensureSecret(doc, format, 'RCONPassword')
+    },
+    seedContent: () => ['# Generated by rallypoint-cmd on first install.', 'PublicName=Rallypoint', ''].join('\n'),
+  }
+}
+
+// --- Source dedicated servers (TF2, CS2) ------------------------------
+// server.cfg is executed at map load. CS2 additionally takes
+// +rcon_password on the command line, which the launch conf carries —
+// its cfg-exec timing for rcon has been unreliable across builds.
+
+function sourceConfig(game: GameDef, file: string): GameSettingsConfig {
+  const format = keyValueFormat(SOURCE_CFG_DIALECT)
+  return {
+    slug: game.slug,
+    file,
+    format,
+    specs: SOURCE_CFG_KEY_SPECS,
+    categories: SOURCE_CFG_SETTINGS_CATEGORIES,
+    managedKeys: ['rcon_password'],
+    applyInvariants(doc) {
+      ensureSecret(doc, format, 'rcon_password')
+    },
+    seedContent: () =>
+      ['// Generated by rallypoint-cmd on first install.', 'hostname "Rallypoint Server"', ''].join('\n'),
+  }
+}
+
+// --- Unturned ---------------------------------------------------------
+// Commands.dat is a list of console commands run at boot; the panel pins
+// the port the unit was provisioned with.
+
+function unturnedConfig(game: GameDef): GameSettingsConfig {
+  const format = keyValueFormat(UNTURNED_DIALECT)
+  const gamePort = portOf(game, 'game', 27015)
+  return {
+    slug: game.slug,
+    file: 'Servers/rallypoint/Server/Commands.dat',
+    format,
+    specs: UNTURNED_KEY_SPECS,
+    categories: UNTURNED_SETTINGS_CATEGORIES,
+    managedKeys: ['port'],
+    applyInvariants(doc) {
+      pin(doc, format, 'port', String(gamePort))
+    },
+    seedContent: () => ['Name Rallypoint', 'MaxPlayers 24', ''].join('\n'),
+  }
+}
+
+// --- Valheim (launch args only) ---------------------------------------
+// Valheim has no config file at all, so the panel owns a launch conf
+// that start.sh dot-sources. That makes the settings page possible and
+// is why launch-conf values are charset-restricted (settings-formats.ts).
+
+function valheimConfig(game: GameDef): GameSettingsConfig {
+  const gamePort = portOf(game, 'game', 2456)
+  return {
+    slug: game.slug,
+    file: game.launchConfFile ?? 'rallypoint-launch.conf',
+    format: launchConfFormat,
+    specs: VALHEIM_KEY_SPECS,
+    categories: VALHEIM_SETTINGS_CATEGORIES,
+    managedKeys: ['-port'],
+    applyInvariants(doc) {
+      pin(doc, launchConfFormat, '-port', String(gamePort))
+      // Valheim refuses to start with a password shorter than 5 chars,
+      // and refuses one at all unless the server is listed publicly.
+      const password = doc.entries.get('-password') ?? ''
+      if (password !== '' && password.length < 5) {
+        throw new SettingsParseError('Valheim join passwords must be at least 5 characters (or empty).')
+      }
+      if (password !== '' && (doc.entries.get('-world') ?? '') === password) {
+        throw new SettingsParseError('Valheim refuses a join password that matches the world name.')
+      }
+    },
+    seedContent: () => ['-name Rallypoint', '-world Dedicated', '-public 0', ''].join('\n'),
+  }
+}
+
+// --- Rust -------------------------------------------------------------
+// Gameplay convars live in server.cfg; the RCON convars only take effect
+// from the command line, so they live in the launch conf instead and are
+// managed there (see admin-creds.ts, which reads them back).
+
+function rustConfig(game: GameDef): GameSettingsConfig {
+  const format = keyValueFormat(SOURCE_CFG_DIALECT)
+  return {
+    slug: game.slug,
+    file: 'server/rallypoint/cfg/server.cfg',
+    format,
+    specs: RUST_KEY_SPECS,
+    categories: RUST_SETTINGS_CATEGORIES,
+    managedKeys: [],
+    applyInvariants() {
+      // Nothing panel-critical lives in server.cfg for Rust — the admin
+      // channel is configured through the launch conf.
+    },
+    seedContent: () =>
+      ['// Generated by rallypoint-cmd on first install.', 'server.hostname "Rallypoint Rust"', ''].join('\n'),
+  }
+}
+
+// The launch conf a game needs alongside its main settings file, when
+// the two are different files (Rust's and CS2's RCON credentials).
+export function launchConfConfigFor(game: GameDef): GameSettingsConfig | null {
+  if (!game.launchConfFile || game.settingsAdapter === 'launch-conf') return null
+  const rconPort = portOf(game, 'rcon', 28016)
+  return {
+    slug: game.slug,
+    file: game.launchConfFile,
+    format: launchConfFormat,
+    specs: {},
+    categories: [],
+    managedKeys:
+      game.slug === 'rust' ? ['+rcon.port', '+rcon.password', '+rcon.web'] : ['+rcon_password'],
+    applyInvariants(doc) {
+      if (game.slug === 'rust') {
+        pin(doc, launchConfFormat, '+rcon.port', String(rconPort))
+        pin(doc, launchConfFormat, '+rcon.web', '1')
+        ensureSecret(doc, launchConfFormat, '+rcon.password')
+      } else {
+        ensureSecret(doc, launchConfFormat, '+rcon_password')
+      }
+    },
+    seedContent: () => '',
+  }
+}
+
+const BUILDERS: Record<string, (game: GameDef) => GameSettingsConfig> = {
+  valheim: valheimConfig,
+  rust: rustConfig,
+  'ark-survival-evolved': arkConfig,
+  '7-days-to-die': sevenDaysConfig,
+  'project-zomboid': zomboidConfig,
+  'team-fortress-2': (game) => sourceConfig(game, 'tf/cfg/server.cfg'),
+  'counter-strike-2': (game) => sourceConfig(game, 'game/csgo/cfg/server.cfg'),
+  unturned: unturnedConfig,
+}
+
+// Slug → config, for tests and for callers holding a slug. Configs exist
+// ahead of the registry flipping each game's settingsAdapter on.
+export function settingsConfigForSlug(slug: string): GameSettingsConfig | null {
+  const game = gameBySlug(slug)
+  const build = BUILDERS[slug]
+  return game && build ? build(game) : null
+}
+
+// The settings service for a game the generic engine owns; null for
+// Palworld, Enshrouded and games with no settings file (compose keeps
+// their hand-written services and the null adapter respectively).
+export function createSettingsFor(
+  env: Env,
+  db: Db,
+  game: GameDef,
+  target: FileSettingsConfigTarget,
+): SettingsService | null {
+  const build = BUILDERS[game.slug]
+  if (!build) return null
+  return createFileSettings(env, db, build(game), target)
+}
