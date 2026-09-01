@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { joinPort, type PublicAccessConsole, type PublicAccessStatus, type ServerLifecycle } from '@rallypoint-cmd/shared'
+import {
+  joinPort,
+  type GameDef,
+  type PublicAccessConsole,
+  type PublicAccessStatus,
+  type ServerLifecycle,
+} from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
 import { usePoll } from '../lib/usePoll.js'
 import { useLongOp } from '../lib/useEventSource.js'
@@ -11,6 +17,21 @@ import { Banner } from '../ui/Banner.js'
 import { ProgressBar } from '../ui/ProgressBar.js'
 import { LogPane } from '../ui/LogPane.js'
 import { Icon } from '../ui/ink/icons.js'
+
+// What to call the channel the panel reads status over. Only Palworld's
+// is a REST API; the rest answer a Steam or first-party query.
+function queryLabel(game: GameDef | undefined): string {
+  switch (game?.capabilities.query) {
+    case 'pal-rest':
+      return 'REST API'
+    case 'a2s':
+      return 'Steam query'
+    case 'satisfactory-lwq':
+      return 'Server query'
+    default:
+      return 'Query API'
+  }
+}
 
 const LIFECYCLE: Record<ServerLifecycle, { tone: 'good' | 'bad' | 'warn' | 'muted'; label: string }> = {
   active: { tone: 'good', label: 'Running' },
@@ -157,7 +178,8 @@ export function DashboardPage() {
         <Card title="World">
           <dl className="space-y-2 text-sm">
             <Row k="Name" v={status.rest.info?.servername ?? '—'} />
-            <Row k="World ID" v={status.world.id ?? '—'} mono />
+            {/* Only Palworld names its worlds; the rest have one save. */}
+            {status.world.id != null && <Row k="World ID" v={status.world.id} mono />}
             <Row
               k="Last saved"
               v={
@@ -168,7 +190,9 @@ export function DashboardPage() {
             />
             <Row k="Version" v={status.rest.info?.version ?? '—'} />
             <Row k="systemd" v={`${status.systemd.activeState} / ${status.systemd.subState}`} />
-            <Row k="REST API" v={status.rest.reachable ? 'reachable' : 'unreachable'} />
+            {/* Named for the channel the game actually offers — only
+                Palworld's is a REST API. */}
+            <Row k={queryLabel(game)} v={status.rest.reachable ? 'reachable' : 'unreachable'} />
           </dl>
         </Card>
 
