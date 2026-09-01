@@ -7,20 +7,26 @@ import { expect, test, type Page } from '@playwright/test'
 
 test.describe.configure({ mode: 'serial' })
 
+// The suite signs in once (auth.setup.ts) and every test starts from that
+// saved session, so this only has to land on the server list.
 async function login(page: Page): Promise<void> {
-  await page.goto('/login')
-  await page.getByLabel('Username').fill('admin')
-  await page.getByLabel('Password').fill('e2e-password-1234')
-  await page.getByRole('button', { name: 'Sign in' }).click()
+  await page.goto('/')
 }
 
 // Land on a Palworld server's dashboard: open the existing one, or add it.
 async function ensurePalworldOpen(page: Page): Promise<void> {
   await login(page)
-  // The "Add server" button renders once the list has loaded (spinner
-  // before that), so it's a reliable "list ready" signal.
   const addBtn = page.getByRole('button', { name: 'Add server' }).first()
   await expect(addBtn).toBeVisible()
+  // The header button renders before the server list resolves, so it is
+  // not a "list ready" signal on its own: checking for an existing server
+  // too early adds a duplicate instead of opening the one already there.
+  await expect(
+    page
+      .getByRole('button', { name: /^Open / })
+      .or(page.getByText('No servers yet'))
+      .first(),
+  ).toBeVisible()
   const open = page.getByRole('button', { name: 'Open Palworld' })
   if ((await open.count()) > 0) {
     await open.first().click()
@@ -41,6 +47,10 @@ async function ensurePalworldOpen(page: Page): Promise<void> {
 async function ensureInstalled(page: Page): Promise<void> {
   await page.getByRole('link', { name: 'Updates' }).click()
   await expect(page).toHaveURL(/\/updates$/)
+  // The primary button reads "Checking…" until the page knows whether the
+  // server is installed — reading it before then races the fetch and can
+  // both miss the install and fire the wrong steamcmd op.
+  await expect(page.getByRole('button', { name: /Install server|Update server/ })).toBeVisible()
   const install = page.getByRole('button', { name: 'Install server' })
   if ((await install.count()) === 0) return
   await install.click()

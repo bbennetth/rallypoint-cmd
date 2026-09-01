@@ -8,6 +8,7 @@ import {
   isErrorLine,
   effectiveResources,
   parseSystemdBytes,
+  playerFields,
   type GameDef,
   type MetricsErrorLine,
   type MetricsSample,
@@ -19,8 +20,9 @@ import {
 } from '@rallypoint-cmd/shared'
 import type { Env } from '../../env.js'
 import type { Logger } from '../../logger.js'
-import type { GameControl, GameQuery, Journal, MetricsSampler, OpSink, SteamCmd, SystemdStatus } from '../types.js'
-import { createNullQuery } from '../stubs.js'
+import type { GameControl, GameQuery, Journal, MetricsSampler, OpSink, PlayerAdmin, SteamCmd, SystemdStatus } from '../types.js'
+import { createNullAdmin, createNullQuery } from '../stubs.js'
+import { SEED_LAYOUTS } from './seed-layouts.js'
 
 // Fake implementations of every game-facing service, driven by one
 // in-memory world per server instance. Lets the entire panel run (and be
@@ -139,6 +141,13 @@ class FakeWorld {
       for (const savePath of this.game.savePaths) {
         fs.mkdirSync(path.join(root, savePath), { recursive: true })
       }
+      // Config the game itself ships plus a save tree the game's backup
+      // contract recognizes (see fake/seed-layouts.ts).
+      for (const file of SEED_LAYOUTS[this.game.slug] ?? []) {
+        const target = path.join(root, file.path)
+        fs.mkdirSync(path.dirname(target), { recursive: true })
+        if (!fs.existsSync(target)) fs.writeFileSync(target, file.content)
+      }
     }
     this.installed = true
     this.buildId = FAKE_BUILD_ID
@@ -243,6 +252,7 @@ const FAKE_PLAYERS: Player[] = [
 export interface FakeInstanceServices {
   gameControl: GameControl
   query: GameQuery
+  admin: PlayerAdmin
   journal: Journal
   metrics: MetricsSampler
   steamcmd: SteamCmd
@@ -415,7 +425,7 @@ export function createFakeInstanceServices(
     if (world.state !== 'active') throw new Error(`${game.name} admin API is unreachable (game down)`)
   }
 
-  const palQuery: GameQuery = {
+  const palQuery: GameQuery & PlayerAdmin = {
     reachable: () => Promise.resolve(world.state === 'active'),
     info: (): Promise<PalServerInfo> => {
       requireUp()
@@ -470,6 +480,77 @@ export function createFakeInstanceServices(
     },
   }
 
+  // Read-only query stand-in for the games whose real adapter is A2S or
+  // Satisfactory's lightweight query. Deliberately sparser than the
+  // Palworld fixture: those protocols carry no fps or uptime, and
+  // Satisfactory carries no player counts either, so mock mode exercises
+  // the same missing-field rendering the real thing produces.
+  const readOnlyQuery: GameQuery = {
+    reachable: () => Promise.resolve(world.state === 'active'),
+    info: (): Promise<PalServerInfo> => {
+      requireUp()
+      return Promise.resolve({ servername: `Fake ${game.name} Server`, version: 'v1.0-fake' })
+    },
+    metrics: (): Promise<PalServerMetrics> => {
+      requireUp()
+      if (game.capabilities.query === 'satisfactory-lwq') return Promise.resolve({})
+      return Promise.resolve({
+        currentplayernum: FAKE_PLAYERS.filter((p) => !banned.has(p.userId)).length,
+        maxplayernum: 16,
+      })
+    },
+  }
+
+  // Admin stand-in for the protocol-based channels. RCON and telnet
+  // report far less about a player than Palworld's REST API — no
+  // location, and only 7DTD reports a level — so the fixture is trimmed
+  // to what each protocol can actually answer.
+  const protocolAdmin: PlayerAdmin = {
+    players: () => {
+      requireUp()
+      // Report exactly the fields this game's real protocol reports, so
+      // mock mode shows the same columns production would — an ARK
+      // `listplayers` has no ping, and pretending otherwise would let a
+      // wrong column pass the e2e suite.
+      const fields = playerFields(game)
+      return Promise.resolve(
+        FAKE_PLAYERS.filter((p) => !banned.has(p.userId)).map((p) => ({
+          name: p.name,
+          playerId: p.playerId,
+          userId: p.userId,
+          ...(fields.ping && p.ping !== undefined ? { ping: p.ping } : {}),
+          ...(fields.level && p.level !== undefined ? { level: p.level } : {}),
+        })),
+      )
+    },
+    announce: (message) => {
+      requireUp()
+      world.log(`[Admin] say ${message}`)
+      return Promise.resolve()
+    },
+    kick: (userId, message) => {
+      requireUp()
+      world.log(`[Admin] Kicked ${userId}${message ? ` (${message})` : ''}`)
+      return Promise.resolve()
+    },
+    ban: (userId, message) => {
+      requireUp()
+      banned.add(userId)
+      world.log(`[Admin] Banned ${userId}${message ? ` (${message})` : ''}`)
+      return Promise.resolve()
+    },
+    unban: (userId) => {
+      banned.delete(userId)
+      world.log(`[Admin] Unbanned ${userId}`)
+      return Promise.resolve()
+    },
+    save: () => {
+      requireUp()
+      world.log('[Admin] World saved.')
+      return Promise.resolve()
+    },
+  }
+
   const journal: Journal = {
     buffer: () => world.journalBuffer(),
     subscribe: (cb) => world.onLine(cb),
@@ -498,7 +579,18 @@ export function createFakeInstanceServices(
 
   return {
     gameControl,
-    query: game.capabilities.query === 'pal-rest' ? palQuery : createNullQuery(game),
+    query:
+      game.capabilities.query === 'pal-rest'
+        ? palQuery
+        : game.capabilities.query === 'none'
+          ? createNullQuery(game)
+          : readOnlyQuery,
+    admin:
+      game.capabilities.players === 'pal-rest'
+        ? palQuery
+        : game.capabilities.players === 'none'
+          ? createNullAdmin(game)
+          : protocolAdmin,
     journal,
     metrics,
     steamcmd,

@@ -36,11 +36,16 @@ statusRoutes.get('/status', requireSession, async (c) => {
   // for games that have one.
   let rest: ServerStatus['rest'] = { reachable: false }
   if (lifecycle === 'active' && instance.game.capabilities.query !== 'none') {
-    try {
-      const [info, metrics] = await Promise.all([query.info(), query.metrics()])
-      rest = { reachable: true, info, metrics }
-    } catch {
-      rest = { reachable: false }
+    // Settled, not all: a query that can only answer half the probe
+    // (Satisfactory's LWQ has no player counts) still contributes what
+    // it has instead of collapsing the whole block to unreachable.
+    const [info, metrics] = await Promise.allSettled([query.info(), query.metrics()])
+    if (info.status === 'fulfilled' || metrics.status === 'fulfilled') {
+      rest = {
+        reachable: true,
+        ...(info.status === 'fulfilled' ? { info: info.value } : {}),
+        ...(metrics.status === 'fulfilled' ? { metrics: metrics.value } : {}),
+      }
     }
   }
 

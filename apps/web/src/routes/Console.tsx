@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { playerAdminFeatures } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
 import { useSseLines } from '../lib/useEventSource.js'
 import { apiScope } from '../lib/api.js'
@@ -15,7 +16,7 @@ export function ConsolePage() {
   const [autoscroll, setAutoscroll] = useState(true)
   // Broadcast needs an admin/query API; hide it for games without one.
   const game = useCurrentGame()
-  const canAnnounce = game ? game.capabilities.query === 'pal-rest' : false
+  const canAnnounce = game ? playerAdminFeatures(game).announce : false
 
   async function announce(e: React.FormEvent) {
     e.preventDefault()

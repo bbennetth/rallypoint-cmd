@@ -33,15 +33,24 @@ export interface GameControl {
   waitFor(state: 'active' | 'inactive', timeoutMs: number): Promise<boolean>
 }
 
-// Admin/query channel into the running game. Palworld's REST API is the
-// rich implementation; games without an admin API get a stub whose
-// reachable() is always false and whose other methods throw (routes are
-// capability-gated before they get here).
+// Read-only status channel into the running game (name/version/player
+// counts). Palworld's REST API is the rich implementation; A2S is the
+// generic Steam-query fallback. Games without any query API get a stub
+// whose reachable() is always false and whose other methods throw
+// (routes are capability-gated before they get here).
 export interface GameQuery {
   reachable(): Promise<boolean>
   info(): Promise<PalServerInfo>
-  players(): Promise<Player[]>
   metrics(): Promise<PalServerMetrics>
+}
+
+// Admin channel into the running game — player list and moderation,
+// broadcast, force-save. Selected by capabilities.players: Palworld's
+// REST API implements this alongside GameQuery; RCON/webrcon/telnet
+// clients implement only this. Which actions actually work per game is
+// described by playerAdminFeatures() in the shared registry.
+export interface PlayerAdmin {
+  players(): Promise<Player[]>
   announce(message: string): Promise<void>
   kick(userId: string, message?: string): Promise<void>
   ban(userId: string, message?: string): Promise<void>
@@ -90,6 +99,7 @@ export interface ServerInstance {
   game: GameDef
   gameControl: GameControl
   query: GameQuery
+  admin: PlayerAdmin
   journal: Journal
   metrics: MetricsSampler
   steamcmd: SteamCmd
@@ -113,6 +123,7 @@ export interface Services {
   instance: ServerInstance
   gameControl: GameControl
   query: GameQuery
+  admin: PlayerAdmin
   journal: Journal
   metrics: MetricsSampler
   steamcmd: SteamCmd

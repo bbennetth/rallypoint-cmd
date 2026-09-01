@@ -80,9 +80,6 @@ function queryInfo(host: string, port: number, timeoutMs: number): Promise<A2sIn
 
 export function createA2sQuery(queryPort: number, host = '127.0.0.1'): GameQuery {
   const TIMEOUT_MS = 3000
-  const unavailable = (): never => {
-    throw new Error('A2S query is read-only — this game has no admin API.')
-  }
   return {
     async reachable() {
       try {
@@ -100,11 +97,5 @@ export function createA2sQuery(queryPort: number, host = '127.0.0.1'): GameQuery
       const a2s = await queryInfo(host, queryPort, TIMEOUT_MS)
       return { currentplayernum: a2s.players, maxplayernum: a2s.maxPlayers }
     },
-    players: unavailable,
-    announce: unavailable,
-    kick: unavailable,
-    ban: unavailable,
-    unban: unavailable,
-    save: unavailable,
   }
 }

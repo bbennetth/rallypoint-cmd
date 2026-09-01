@@ -277,6 +277,359 @@ export const ENSHROUDED_KEY_SPECS: Record<string, EnshroudedKeySpec> = {
   },
 }
 
+// --- generic per-game spec tables -------------------------------------------
+// Every game past Palworld/Enshrouded describes its settings file with the
+// same shape: a key → spec table plus that game's category render order.
+// The server's settings adapters read these; the web Settings page is
+// spec-driven and needs no per-game code.
+
+export interface GameKeySpec {
+  kind: PalKeyKind
+  // One of the game's own categories (see the *_SETTINGS_CATEGORIES below).
+  category: string
+  enumValues?: readonly string[]
+  // Managed keys are enforced by the panel on every write and rendered
+  // read-only in the UI (they keep the panel's control channel alive).
+  managed?: boolean
+  label?: string
+}
+
+export type GameKeySpecs = Record<string, GameKeySpec>
+
+// --- Valheim (panel-owned rallypoint-launch.conf) ---------------------------
+// Valheim has no config file: everything is a launch flag, so the panel owns
+// a small conf the generated start.sh dot-sources. Keys are the flags.
+
+export const VALHEIM_SETTINGS_CATEGORIES = ['Server & Network', 'World & Saves'] as const
+
+export const VALHEIM_KEY_SPECS: GameKeySpecs = {
+  '-name': { kind: 'string', category: 'Server & Network', label: 'Server name' },
+  '-password': { kind: 'string', category: 'Server & Network', label: 'Join password (5+ chars, or empty)' },
+  '-public': { kind: 'enum', category: 'Server & Network', enumValues: ['0', '1'], label: 'List in server browser' },
+  '-crossplay': { kind: 'bool', category: 'Server & Network', label: 'Crossplay (PlayFab)' },
+  '-port': { kind: 'int', category: 'Server & Network', managed: true, label: 'Game port (panel-managed)' },
+  '-world': { kind: 'string', category: 'World & Saves', label: 'World name' },
+  '-saveinterval': { kind: 'int', category: 'World & Saves', label: 'Auto-save interval (s)' },
+  '-backups': { kind: 'int', category: 'World & Saves', label: 'Backups kept' },
+}
+
+// --- Rust (server/rallypoint/cfg/server.cfg convars) ------------------------
+
+export const RUST_SETTINGS_CATEGORIES = ['Server & Network', 'World & Gameplay'] as const
+
+export const RUST_KEY_SPECS: GameKeySpecs = {
+  'server.hostname': { kind: 'string', category: 'Server & Network', label: 'Server name' },
+  'server.description': { kind: 'string', category: 'Server & Network', label: 'Server description' },
+  'server.url': { kind: 'string', category: 'Server & Network', label: 'Website URL' },
+  'server.headerimage': { kind: 'string', category: 'Server & Network', label: 'Header image URL' },
+  'server.saveinterval': { kind: 'int', category: 'Server & Network', label: 'Auto-save interval (s)' },
+  'server.globalchat': { kind: 'bool', category: 'Server & Network', label: 'Global chat' },
+  'server.pve': { kind: 'bool', category: 'World & Gameplay', label: 'PvE mode' },
+  'server.stability': { kind: 'bool', category: 'World & Gameplay', label: 'Building stability' },
+  'server.radiation': { kind: 'bool', category: 'World & Gameplay', label: 'Radiation' },
+  'decay.scale': { kind: 'float', category: 'World & Gameplay', label: 'Decay rate' },
+  'craft.instant': { kind: 'bool', category: 'World & Gameplay', label: 'Instant crafting' },
+  'spawn.max_density': { kind: 'float', category: 'World & Gameplay', label: 'Spawn density' },
+  // Launch-conf keys the panel maintains so RCON stays reachable. They live
+  // in rallypoint-launch.conf, not server.cfg — listed so the UI can explain
+  // why the RCON port/password are not editable.
+  '+rcon.port': { kind: 'int', category: 'Server & Network', managed: true, label: 'RCON port (panel-managed)' },
+  '+rcon.password': { kind: 'string', category: 'Server & Network', managed: true, label: 'RCON password (panel-managed)' },
+  '+rcon.web': { kind: 'int', category: 'Server & Network', managed: true, label: 'RCON websocket (panel-managed)' },
+}
+
+// --- ARK: Survival Evolved (GameUserSettings.ini) ---------------------------
+// Sectioned ini: keys are addressed as `Section/Key`, split at the LAST
+// slash so UE's `[/Script/Engine.GameSession]` sections work.
+
+export const ARK_SETTINGS_CATEGORIES = [
+  'Server & Network',
+  'World & Rates',
+  'Players & Dinos',
+  'PvP & Structures',
+] as const
+
+export const ARK_KEY_SPECS: GameKeySpecs = {
+  'SessionSettings/SessionName': { kind: 'string', category: 'Server & Network', label: 'Session name' },
+  'ServerSettings/ServerPassword': { kind: 'string', category: 'Server & Network', label: 'Join password' },
+  'ServerSettings/ServerAdminPassword': {
+    kind: 'string',
+    category: 'Server & Network',
+    managed: true,
+    label: 'Admin password (panel-managed)',
+  },
+  'ServerSettings/RCONEnabled': {
+    kind: 'bool',
+    category: 'Server & Network',
+    managed: true,
+    label: 'RCON (panel-managed)',
+  },
+  'ServerSettings/RCONPort': {
+    kind: 'int',
+    category: 'Server & Network',
+    managed: true,
+    label: 'RCON port (panel-managed)',
+  },
+  '/Script/Engine.GameSession/MaxPlayers': { kind: 'int', category: 'Server & Network', label: 'Max players' },
+  'ServerSettings/ServerCrosshair': { kind: 'bool', category: 'Server & Network', label: 'Crosshair' },
+  'ServerSettings/GlobalVoiceChat': { kind: 'bool', category: 'Server & Network', label: 'Global voice chat' },
+  'ServerSettings/ProximityChat': { kind: 'bool', category: 'Server & Network', label: 'Proximity chat' },
+  'ServerSettings/ShowMapPlayerLocation': { kind: 'bool', category: 'Server & Network', label: 'Show map location' },
+  'ServerSettings/KickIdlePlayersPeriod': { kind: 'float', category: 'Server & Network', label: 'Kick idle after (s)' },
+  'ServerSettings/AutoSavePeriodMinutes': { kind: 'float', category: 'Server & Network', label: 'Auto-save (min)' },
+
+  'ServerSettings/DifficultyOffset': { kind: 'float', category: 'World & Rates', label: 'Difficulty offset' },
+  'ServerSettings/XPMultiplier': { kind: 'float', category: 'World & Rates', label: 'XP rate' },
+  'ServerSettings/TamingSpeedMultiplier': { kind: 'float', category: 'World & Rates', label: 'Taming speed' },
+  'ServerSettings/HarvestAmountMultiplier': { kind: 'float', category: 'World & Rates', label: 'Harvest amount' },
+  'ServerSettings/DayCycleSpeedScale': { kind: 'float', category: 'World & Rates', label: 'Day cycle speed' },
+  'ServerSettings/DayTimeSpeedScale': { kind: 'float', category: 'World & Rates', label: 'Daytime speed' },
+  'ServerSettings/NightTimeSpeedScale': { kind: 'float', category: 'World & Rates', label: 'Night speed' },
+
+  'ServerSettings/PlayerDamageMultiplier': { kind: 'float', category: 'Players & Dinos', label: 'Player damage' },
+  'ServerSettings/DinoDamageMultiplier': { kind: 'float', category: 'Players & Dinos', label: 'Dino damage' },
+  'ServerSettings/PlayerCharacterFoodDrainMultiplier': {
+    kind: 'float',
+    category: 'Players & Dinos',
+    label: 'Player food drain',
+  },
+  'ServerSettings/PlayerCharacterWaterDrainMultiplier': {
+    kind: 'float',
+    category: 'Players & Dinos',
+    label: 'Player water drain',
+  },
+  'ServerSettings/DinoCharacterFoodDrainMultiplier': {
+    kind: 'float',
+    category: 'Players & Dinos',
+    label: 'Dino food drain',
+  },
+  'ServerSettings/AllowThirdPersonPlayer': { kind: 'bool', category: 'Players & Dinos', label: 'Third person' },
+
+  'ServerSettings/ServerPVE': { kind: 'bool', category: 'PvP & Structures', label: 'PvE mode' },
+  'ServerSettings/EnablePvPGamma': { kind: 'bool', category: 'PvP & Structures', label: 'PvP gamma' },
+  'ServerSettings/StructureResistanceMultiplier': {
+    kind: 'float',
+    category: 'PvP & Structures',
+    label: 'Structure resistance',
+  },
+  'ServerSettings/StructureDamageMultiplier': {
+    kind: 'float',
+    category: 'PvP & Structures',
+    label: 'Structure damage',
+  },
+  'ServerSettings/AllowCaveBuildingPvE': { kind: 'bool', category: 'PvP & Structures', label: 'Cave building (PvE)' },
+  'ServerSettings/NoTributeDownloads': { kind: 'bool', category: 'PvP & Structures', label: 'No tribute downloads' },
+}
+
+// --- 7 Days to Die (serverconfig.xml) ---------------------------------------
+// Flat `<property name="X" value="Y"/>` lines; keys are the property names.
+
+export const SDTD_SETTINGS_CATEGORIES = [
+  'Server & Network',
+  'World',
+  'Gameplay & Difficulty',
+  'Loot & Progression',
+] as const
+
+export const SDTD_KEY_SPECS: GameKeySpecs = {
+  ServerName: { kind: 'string', category: 'Server & Network', label: 'Server name' },
+  ServerDescription: { kind: 'string', category: 'Server & Network', label: 'Server description' },
+  ServerWebsiteURL: { kind: 'string', category: 'Server & Network', label: 'Website URL' },
+  ServerPassword: { kind: 'string', category: 'Server & Network', label: 'Join password' },
+  ServerMaxPlayerCount: { kind: 'int', category: 'Server & Network', label: 'Max players' },
+  ServerVisibility: {
+    kind: 'enum',
+    category: 'Server & Network',
+    enumValues: ['0', '1', '2'],
+    label: 'Visibility (0 private, 2 public)',
+  },
+  EACEnabled: { kind: 'bool', category: 'Server & Network', label: 'EasyAntiCheat' },
+  TelnetEnabled: { kind: 'bool', category: 'Server & Network', managed: true, label: 'Telnet (panel-managed)' },
+  TelnetPort: { kind: 'int', category: 'Server & Network', managed: true, label: 'Telnet port (panel-managed)' },
+  TelnetPassword: {
+    kind: 'string',
+    category: 'Server & Network',
+    managed: true,
+    label: 'Telnet password (panel-managed)',
+  },
+  SaveGameFolder: { kind: 'string', category: 'Server & Network', managed: true, label: 'Save folder (panel-managed)' },
+
+  GameWorld: { kind: 'string', category: 'World', label: 'World' },
+  WorldGenSeed: { kind: 'string', category: 'World', label: 'World seed' },
+  WorldGenSize: { kind: 'int', category: 'World', label: 'World size' },
+  GameName: { kind: 'string', category: 'World', label: 'Save game name' },
+  DayNightLength: { kind: 'int', category: 'World', label: 'Day length (real min)' },
+  DayLightLength: { kind: 'int', category: 'World', label: 'Daylight hours' },
+
+  GameDifficulty: {
+    kind: 'enum',
+    category: 'Gameplay & Difficulty',
+    enumValues: ['0', '1', '2', '3', '4', '5'],
+    label: 'Difficulty',
+  },
+  ZombiesRun: {
+    kind: 'enum',
+    category: 'Gameplay & Difficulty',
+    enumValues: ['0', '1', '2'],
+    label: 'Zombie speed (day)',
+  },
+  EnemyDifficulty: {
+    kind: 'enum',
+    category: 'Gameplay & Difficulty',
+    enumValues: ['0', '1'],
+    label: 'Enemy difficulty',
+  },
+  BlockDamagePlayer: { kind: 'int', category: 'Gameplay & Difficulty', label: 'Block damage (player) %' },
+  PlayerKillingMode: {
+    kind: 'enum',
+    category: 'Gameplay & Difficulty',
+    enumValues: ['0', '1', '2', '3'],
+    label: 'Player killing',
+  },
+  MaxSpawnedZombies: { kind: 'int', category: 'Gameplay & Difficulty', label: 'Max spawned zombies' },
+  DropOnDeath: {
+    kind: 'enum',
+    category: 'Gameplay & Difficulty',
+    enumValues: ['0', '1', '2', '3', '4'],
+    label: 'Drop on death',
+  },
+
+  XPMultiplier: { kind: 'int', category: 'Loot & Progression', label: 'XP rate %' },
+  LootAbundance: { kind: 'int', category: 'Loot & Progression', label: 'Loot abundance %' },
+  LootRespawnDays: { kind: 'int', category: 'Loot & Progression', label: 'Loot respawn (days)' },
+  AirDropFrequency: { kind: 'int', category: 'Loot & Progression', label: 'Air drop (h, 0 off)' },
+  LandClaimSize: { kind: 'int', category: 'Loot & Progression', label: 'Land claim size' },
+  BedrollDeadZoneSize: { kind: 'int', category: 'Loot & Progression', label: 'Bedroll dead zone' },
+  PersistentPlayerProfiles: { kind: 'bool', category: 'Loot & Progression', label: 'Persistent profiles' },
+}
+
+// --- Project Zomboid (Zomboid/Server/rallypoint.ini) ------------------------
+// `Key=Value` with `#` comments, no sections.
+
+export const ZOMBOID_SETTINGS_CATEGORIES = ['Server & Network', 'Players & Rules', 'World & Saves'] as const
+
+export const ZOMBOID_KEY_SPECS: GameKeySpecs = {
+  PublicName: { kind: 'string', category: 'Server & Network', label: 'Server name' },
+  PublicDescription: { kind: 'string', category: 'Server & Network', label: 'Server description' },
+  Password: { kind: 'string', category: 'Server & Network', label: 'Join password' },
+  Public: { kind: 'bool', category: 'Server & Network', label: 'List in server browser' },
+  Open: { kind: 'bool', category: 'Server & Network', label: 'Open (no whitelist)' },
+  MaxPlayers: { kind: 'int', category: 'Server & Network', label: 'Max players' },
+  DefaultPort: { kind: 'int', category: 'Server & Network', label: 'Game port' },
+  UDPPort: { kind: 'int', category: 'Server & Network', label: 'UDP port' },
+  PingLimit: { kind: 'int', category: 'Server & Network', label: 'Ping limit (ms)' },
+  RCONPort: { kind: 'int', category: 'Server & Network', managed: true, label: 'RCON port (panel-managed)' },
+  RCONPassword: {
+    kind: 'string',
+    category: 'Server & Network',
+    managed: true,
+    label: 'RCON password (panel-managed)',
+  },
+
+  PVP: { kind: 'bool', category: 'Players & Rules', label: 'PvP' },
+  SafetySystem: { kind: 'bool', category: 'Players & Rules', label: 'PvP safety system' },
+  SafetyToggleTimer: { kind: 'int', category: 'Players & Rules', label: 'Safety toggle timer (s)' },
+  DisplayUserName: { kind: 'bool', category: 'Players & Rules', label: 'Show usernames' },
+  GlobalChat: { kind: 'bool', category: 'Players & Rules', label: 'Global chat' },
+  ServerWelcomeMessage: { kind: 'string', category: 'Players & Rules', label: 'Welcome message' },
+  SpawnItems: { kind: 'string', category: 'Players & Rules', label: 'Spawn items' },
+
+  PauseEmpty: { kind: 'bool', category: 'World & Saves', label: 'Pause when empty' },
+  NoFire: { kind: 'bool', category: 'World & Saves', label: 'Disable fire spread' },
+  AllowDestructionBySledgehammer: { kind: 'bool', category: 'World & Saves', label: 'Sledgehammer destruction' },
+  SaveWorldEveryMinutes: { kind: 'int', category: 'World & Saves', label: 'Save world every (min)' },
+  BackupsOnStart: { kind: 'bool', category: 'World & Saves', label: 'Backup on start' },
+  Mods: { kind: 'string', category: 'World & Saves', label: 'Mod ids (;-separated)' },
+  WorkshopItems: { kind: 'string', category: 'World & Saves', label: 'Workshop ids (;-separated)' },
+}
+
+// --- Source dedicated servers (server.cfg) — TF2 + CS2 ----------------------
+// Space-separated `convar value` lines with `//` comments; values that
+// contain spaces are double-quoted.
+
+export const SOURCE_CFG_SETTINGS_CATEGORIES = ['Server & Network', 'Match Rules', 'Gameplay'] as const
+
+export const SOURCE_CFG_KEY_SPECS: GameKeySpecs = {
+  // Set before the server logs in, so this one is passed on the command
+  // line rather than written to server.cfg (which runs at map load, too
+  // late to matter). Create the token for the GAME's app id — 440 for
+  // Team Fortress 2, 730 for Counter-Strike 2, not the dedicated-server
+  // app id — at steamcommunity.com/dev/managegameservers.
+  '+sv_setsteamaccount': {
+    kind: 'string',
+    category: 'Server & Network',
+    label: 'Steam login token (GSLT)',
+  },
+  hostname: { kind: 'string', category: 'Server & Network', label: 'Server name' },
+  sv_password: { kind: 'string', category: 'Server & Network', label: 'Join password' },
+  rcon_password: {
+    kind: 'string',
+    category: 'Server & Network',
+    managed: true,
+    label: 'RCON password (panel-managed)',
+  },
+  sv_lan: { kind: 'enum', category: 'Server & Network', enumValues: ['0', '1'], label: 'LAN mode' },
+  sv_region: { kind: 'int', category: 'Server & Network', label: 'Region code' },
+  sv_downloadurl: { kind: 'string', category: 'Server & Network', label: 'Fast download URL' },
+  sv_hibernate_when_empty: {
+    kind: 'enum',
+    category: 'Server & Network',
+    enumValues: ['0', '1'],
+    label: 'Hibernate when empty',
+  },
+
+  mp_timelimit: { kind: 'int', category: 'Match Rules', label: 'Map time limit (min)' },
+  mp_maxrounds: { kind: 'int', category: 'Match Rules', label: 'Max rounds' },
+  mp_roundtime: { kind: 'float', category: 'Match Rules', label: 'Round time (min)' },
+  mp_freezetime: { kind: 'int', category: 'Match Rules', label: 'Freeze time (s)' },
+  mp_warmuptime: { kind: 'int', category: 'Match Rules', label: 'Warmup time (s)' },
+  mp_friendlyfire: { kind: 'enum', category: 'Match Rules', enumValues: ['0', '1'], label: 'Friendly fire' },
+  mp_autoteambalance: { kind: 'enum', category: 'Match Rules', enumValues: ['0', '1'], label: 'Auto team balance' },
+  mp_teams_unbalance_limit: { kind: 'int', category: 'Match Rules', label: 'Team unbalance limit' },
+
+  sv_cheats: { kind: 'enum', category: 'Gameplay', enumValues: ['0', '1'], label: 'Cheats' },
+  sv_pure: { kind: 'enum', category: 'Gameplay', enumValues: ['-1', '0', '1', '2'], label: 'Pure server' },
+  sv_gravity: { kind: 'int', category: 'Gameplay', label: 'Gravity' },
+  sv_alltalk: { kind: 'enum', category: 'Gameplay', enumValues: ['0', '1'], label: 'All talk' },
+  sv_voiceenable: { kind: 'enum', category: 'Gameplay', enumValues: ['0', '1'], label: 'Voice chat' },
+  sv_pausable: { kind: 'enum', category: 'Gameplay', enumValues: ['0', '1'], label: 'Pausable' },
+  sv_allow_votes: { kind: 'enum', category: 'Gameplay', enumValues: ['0', '1'], label: 'Allow votes' },
+  bot_quota: { kind: 'int', category: 'Gameplay', label: 'Bot count' },
+}
+
+// --- Unturned (Servers/<id>/Server/Commands.dat) ----------------------------
+// Space-separated `Command value` lines with `//` comments, values never
+// quoted; command names are case-insensitive.
+
+export const UNTURNED_SETTINGS_CATEGORIES = ['Server & Network', 'World & Rules'] as const
+
+// Keys are lowercase because Commands.dat command names are matched
+// case-insensitively and the parser normalizes them — a capitalized key
+// here would never match a value read from the file.
+export const UNTURNED_KEY_SPECS: GameKeySpecs = {
+  name: { kind: 'string', category: 'Server & Network', label: 'Server name' },
+  password: { kind: 'string', category: 'Server & Network', label: 'Join password' },
+  maxplayers: { kind: 'int', category: 'Server & Network', label: 'Max players' },
+  port: { kind: 'int', category: 'Server & Network', managed: true, label: 'Server port (panel-managed)' },
+  owner: { kind: 'string', category: 'Server & Network', label: 'Owner SteamID64' },
+  // Without a token the server still runs and is joinable by code or
+  // address, but Steam treats it as anonymous and hides it from the
+  // Internet server list. Create one for app id 304930 (the game's id,
+  // not the dedicated server's) at steamcommunity.com/dev/managegameservers.
+  gslt: { kind: 'string', category: 'Server & Network', label: 'Steam login token (GSLT)' },
+  welcome: { kind: 'string', category: 'Server & Network', label: 'Welcome message' },
+
+  map: { kind: 'string', category: 'World & Rules', label: 'Map' },
+  perspective: {
+    kind: 'enum',
+    category: 'World & Rules',
+    enumValues: ['First', 'Third', 'Both', 'Vehicle'],
+    label: 'Perspective',
+  },
+  mode: { kind: 'enum', category: 'World & Rules', enumValues: ['Easy', 'Normal', 'Hard'], label: 'Difficulty mode' },
+  cycle: { kind: 'int', category: 'World & Rules', label: 'Day length (s)' },
+}
+
 // A settings PATCH: known keys are typed values, everything else may be
 // passed as a raw string (kept verbatim in the tuple).
 export const settingValueSchema = z.union([z.string(), z.number(), z.boolean()])

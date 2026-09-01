@@ -23,3 +23,6 @@ playwright-report/
 test-results/
 dist-types/
 **/dist-types/
+
+# Playwright saved auth state
+e2e/.auth/

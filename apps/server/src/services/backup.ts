@@ -12,7 +12,7 @@ import type { Db } from '../db/client.js'
 import type { Env } from '../env.js'
 import type { Logger } from '../logger.js'
 import { backups } from '../db/schema/index.js'
-import type { GameControl, GameQuery, OpSink, SteamCmd } from './types.js'
+import type { GameControl, OpSink, PlayerAdmin, SteamCmd } from './types.js'
 import type { SettingsService } from './settings-ini.js'
 import type { WorldContract } from './backup-contracts.js'
 import { assertDiskFloor } from './disk.js'
@@ -119,7 +119,7 @@ interface BackupDeps {
   db: Db
   logger: Logger
   gameControl: GameControl
-  query: GameQuery
+  admin: PlayerAdmin
   steamcmd: SteamCmd
   settings: SettingsService
   // Instance scoping: which server's saves/rows this engine owns.
@@ -163,16 +163,20 @@ export function walkFiles(
   return out
 }
 
-// Copy a live save tree file-by-file, tolerating churn: a running
-// Palworld server rotates files (esp. its own `backup/` zips, which we
-// exclude entirely — they're the game's internal backups, not world
-// state). fs.cpSync(recursive) aborts on the first ENOENT; this walks
-// and skips vanished files instead. Exported for direct unit testing.
+// Copy a live save tree file-by-file, tolerating churn: a running server
+// rotates files (esp. a game's own internal backup dir, which callers
+// exclude — those are the game's backups, not world state).
+// fs.cpSync(recursive) aborts on the first ENOENT; this walks and skips
+// vanished files instead. Exported for direct unit testing.
+//
+// `excludeTopDirs` defaults to nothing on purpose: exclusions are a
+// per-game fact and belong to the caller's WorldContract, so a new call
+// site can't silently inherit Palworld's.
 export function copySaveTree(
   srcRoot: string,
   destRoot: string,
   onProgress?: (copiedBytes: number, totalBytes: number) => void,
-  excludeTopDirs: readonly string[] = PAL_INTERNAL_BACKUP_DIRS,
+  excludeTopDirs: readonly string[] = [],
 ): { copiedBytes: number; skipped: string[] } {
   const files = walkFiles(srcRoot, '', excludeTopDirs)
   const totalBytes = files.reduce((a, f) => a + f.size, 0)
@@ -245,7 +249,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
       // is fine too — it captures the latest on-disk state.
       say('[backup] Requesting world save flush...')
       try {
-        await deps.query.save()
+        await deps.admin.save()
         // The game flushes asynchronously; give it a moment.
         await new Promise((r) => setTimeout(r, 2000))
       } catch {
@@ -610,6 +614,20 @@ export function createBackupService(deps: BackupDeps): BackupService {
               `[restore] Backup contained ${path.basename(importFile)} but it failed to parse — keeping current settings (${err instanceof Error ? err.message : String(err)}).`,
             )
           }
+        }
+
+        // 4b-ii. Some games keep their config INSIDE the save root
+        // (Unturned's Commands.dat, Rust's server.cfg), so the swap just
+        // restored an older copy of it — including whatever ports and
+        // admin credentials it held. Re-assert the panel's invariants over
+        // whatever is now on disk; this is idempotent, so it is a no-op
+        // for games whose config lives elsewhere.
+        try {
+          deps.settings.seedIfMissing()
+        } catch (err) {
+          say(
+            `[restore] Could not re-apply panel-managed settings after the swap (${err instanceof Error ? err.message : String(err)}).`,
+          )
         }
         pct(65)
         await flush()

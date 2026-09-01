@@ -166,7 +166,7 @@ function AddServerDialog({
             {game.supportLevel === 'full'
               ? `full support (${[
                   game.settingsAdapter !== 'none' && 'settings',
-                  game.capabilities.players && 'players',
+                  game.capabilities.players !== 'none' && 'players',
                   game.capabilities.world && 'backups',
                   game.capabilities.mods !== 'none' && 'mods',
                 ]

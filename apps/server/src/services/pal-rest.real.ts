@@ -1,7 +1,7 @@
 import { palServerInfoSchema, palServerMetricsSchema, playersResponseSchema } from '@rallypoint-cmd/shared'
 import type { Player } from '@rallypoint-cmd/shared'
 import type { Logger } from '../logger.js'
-import type { GameQuery } from './types.js'
+import type { GameQuery, PlayerAdmin } from './types.js'
 import { readRestCreds } from './rest-creds.js'
 
 const TIMEOUT_MS = 5000
@@ -11,7 +11,9 @@ const TIMEOUT_MS = 5000
 // port is the RESTAPIPort from that instance's ini (default 8212). The
 // browser never talks to this — every call is proxied through panel routes.
 
-export function createRealPalRest(logger: Logger, installDir: string): GameQuery {
+// One client satisfies both the read side (GameQuery) and the admin side
+// (PlayerAdmin) — compose wires the same instance into both slots.
+export function createRealPalRest(logger: Logger, installDir: string): GameQuery & PlayerAdmin {
   function baseUrl(): string {
     const { port } = readRestCreds(installDir)
     return `http://127.0.0.1:${port || 8212}`
