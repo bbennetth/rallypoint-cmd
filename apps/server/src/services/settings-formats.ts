@@ -390,6 +390,11 @@ const LAUNCH_CONF_HEADER = [
 // `-name Rallypoint` line would be run as a command on every start.
 const LAUNCH_CONF_PAIR = '#: '
 
+// Launch flags that take no argument: present means on. Everything else
+// with an empty value is omitted entirely — emitting a bare `-name` would
+// make the game read the NEXT flag as its argument.
+const LAUNCH_CONF_BARE_FLAGS = new Set(['-crossplay'])
+
 // Build launch-conf content from plain pairs. Seeds go through this
 // rather than hand-writing lines, so nothing has to remember that the
 // pairs are comment-prefixed.
@@ -417,6 +422,9 @@ export const launchConfFormat: SettingsFormat = {
     const lines = [...LAUNCH_CONF_HEADER]
     for (const [key, raw] of doc.entries) {
       assertLaunchConfSafe(key, raw)
+      // An unset value means the operator cleared the setting, so the
+      // flag goes away with it.
+      if (raw === '' && !LAUNCH_CONF_BARE_FLAGS.has(key)) continue
       lines.push(`${LAUNCH_CONF_PAIR}${key} ${raw}`)
       args.push(key)
       if (raw !== '') args.push(raw)

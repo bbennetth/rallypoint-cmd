@@ -550,6 +550,16 @@ export const ZOMBOID_KEY_SPECS: GameKeySpecs = {
 export const SOURCE_CFG_SETTINGS_CATEGORIES = ['Server & Network', 'Match Rules', 'Gameplay'] as const
 
 export const SOURCE_CFG_KEY_SPECS: GameKeySpecs = {
+  // Set before the server logs in, so this one is passed on the command
+  // line rather than written to server.cfg (which runs at map load, too
+  // late to matter). Create the token for the GAME's app id — 440 for
+  // Team Fortress 2, 730 for Counter-Strike 2, not the dedicated-server
+  // app id — at steamcommunity.com/dev/managegameservers.
+  '+sv_setsteamaccount': {
+    kind: 'string',
+    category: 'Server & Network',
+    label: 'Steam login token (GSLT)',
+  },
   hostname: { kind: 'string', category: 'Server & Network', label: 'Server name' },
   sv_password: { kind: 'string', category: 'Server & Network', label: 'Join password' },
   rcon_password: {
@@ -602,6 +612,11 @@ export const UNTURNED_KEY_SPECS: GameKeySpecs = {
   maxplayers: { kind: 'int', category: 'Server & Network', label: 'Max players' },
   port: { kind: 'int', category: 'Server & Network', managed: true, label: 'Server port (panel-managed)' },
   owner: { kind: 'string', category: 'Server & Network', label: 'Owner SteamID64' },
+  // Without a token the server still runs and is joinable by code or
+  // address, but Steam treats it as anonymous and hides it from the
+  // Internet server list. Create one for app id 304930 (the game's id,
+  // not the dedicated server's) at steamcommunity.com/dev/managegameservers.
+  gslt: { kind: 'string', category: 'Server & Network', label: 'Steam login token (GSLT)' },
   welcome: { kind: 'string', category: 'Server & Network', label: 'Welcome message' },
 
   map: { kind: 'string', category: 'World & Rules', label: 'Map' },

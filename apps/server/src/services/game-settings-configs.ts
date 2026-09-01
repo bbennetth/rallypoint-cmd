@@ -20,7 +20,12 @@ import {
 import type { Env } from '../env.js'
 import type { Db } from '../db/client.js'
 import { SettingsParseError, type SettingsService } from './settings-ini.js'
-import { createFileSettings, type FileSettingsConfigTarget, type GameSettingsConfig } from './settings-file.js'
+import {
+  createCompositeSettings,
+  createFileSettings,
+  type FileSettingsConfigTarget,
+  type GameSettingsConfig,
+} from './settings-file.js'
 import {
   SOURCE_CFG_DIALECT,
   UNTURNED_DIALECT,
@@ -144,11 +149,18 @@ function zomboidConfig(game: GameDef): GameSettingsConfig {
 
 function sourceConfig(game: GameDef, file: string): GameSettingsConfig {
   const format = keyValueFormat(SOURCE_CFG_DIALECT)
+  // Keys that must reach the game as launch arguments are stored in the
+  // launch conf, so they must not also be offered here — one setting
+  // written to two files is a setting nobody can predict the value of.
+  const launchOwned = new Set(LAUNCH_EDITABLE_KEYS[game.slug] ?? [])
+  const specs = Object.fromEntries(
+    Object.entries(SOURCE_CFG_KEY_SPECS).filter(([key]) => !launchOwned.has(key)),
+  )
   return {
     slug: game.slug,
     file,
     format,
-    specs: SOURCE_CFG_KEY_SPECS,
+    specs,
     categories: SOURCE_CFG_SETTINGS_CATEGORIES,
     managedKeys: ['rcon_password'],
     applyInvariants(doc) {
@@ -205,11 +217,6 @@ function valheimConfig(game: GameDef): GameSettingsConfig {
         if (crossplay === 'true' || crossplay === '') doc.entries.set('-crossplay', '')
         else doc.entries.delete('-crossplay')
       }
-      // A cleared value would otherwise emit a bare flag, and the NEXT
-      // flag would be read as its argument (`-name -world Dedicated`).
-      for (const [key, value] of [...doc.entries]) {
-        if (value === '' && key !== '-crossplay') doc.entries.delete(key)
-      }
       pin(doc, launchConfFormat, '-port', String(gamePort))
       // Valheim refuses to start with a password shorter than 5 chars,
       // and refuses one at all unless the server is listed publicly.
@@ -258,6 +265,14 @@ function rustConfig(game: GameDef): GameSettingsConfig {
 // Rust (its RCON convars are ignored in server.cfg) and Project Zomboid
 // (its first-boot admin prompt has to be answered before there is a
 // console to answer it on).
+// Keys an operator edits that must reach the game as launch arguments.
+// They render on the settings page like any other key; only their storage
+// differs (see createCompositeSettings).
+export const LAUNCH_EDITABLE_KEYS: Record<string, readonly string[]> = {
+  'team-fortress-2': ['+sv_setsteamaccount'],
+  'counter-strike-2': ['+sv_setsteamaccount'],
+}
+
 const LAUNCH_ONLY_INVARIANTS: Record<
   string,
   { managedKeys: readonly string[]; apply(doc: SettingsDoc, game: GameDef): void }
@@ -287,17 +302,21 @@ const LAUNCH_ONLY_INVARIANTS: Record<
 
 export function launchConfConfigFor(game: GameDef): GameSettingsConfig | null {
   if (!game.launchConfFile || game.settingsAdapter === 'launch-conf') return null
-  const spec = LAUNCH_ONLY_INVARIANTS[game.slug]
-  if (!spec) return null
+  const invariants = LAUNCH_ONLY_INVARIANTS[game.slug]
+  const editable = LAUNCH_EDITABLE_KEYS[game.slug] ?? []
+  if (!invariants && editable.length === 0) return null
+  const specs = Object.fromEntries(
+    editable.filter((key) => key in SOURCE_CFG_KEY_SPECS).map((key) => [key, SOURCE_CFG_KEY_SPECS[key]!]),
+  )
   return {
     slug: game.slug,
     file: game.launchConfFile,
     format: launchConfFormat,
-    specs: {},
-    categories: [],
-    managedKeys: spec.managedKeys,
+    specs,
+    categories: [...SOURCE_CFG_SETTINGS_CATEGORIES],
+    managedKeys: invariants?.managedKeys ?? [],
     applyInvariants(doc) {
-      spec.apply(doc, game)
+      invariants?.apply(doc, game)
     },
     seedContent: () => '',
   }
@@ -333,5 +352,12 @@ export function createSettingsFor(
 ): SettingsService | null {
   const build = BUILDERS[game.slug]
   if (!build) return null
-  return createFileSettings(env, db, build(game), target)
+  const primary = createFileSettings(env, db, build(game), target)
+  const editable = LAUNCH_EDITABLE_KEYS[game.slug]
+  const launchConf = editable?.length ? launchConfConfigFor(game) : null
+  if (!launchConf || !editable) return primary
+  return createCompositeSettings(primary, {
+    service: createFileSettings(env, db, launchConf, target),
+    keys: editable,
+  })
 }

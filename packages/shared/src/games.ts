@@ -301,6 +301,9 @@ export const GAMES: Record<string, GameDef> = {
     savePaths: ['tf/cfg'],
     installedProbe: 'srcds_run',
     settingsAdapter: 'source-cfg',
+    // Carries the Steam login token, which must be set before the server
+    // logs in — server.cfg runs at map load, too late for it.
+    launchConfFile: 'rallypoint-launch.conf',
     // No persistent world to back up — a Source server's state is its
     // config, which the settings editor already covers.
     capabilities: { query: 'a2s', players: 'rcon', mods: 'none', world: false },
@@ -329,6 +332,9 @@ export const GAMES: Record<string, GameDef> = {
     savePaths: ['game/csgo/cfg'],
     installedProbe: 'game/cs2.sh',
     settingsAdapter: 'source-cfg',
+    // As TF2: the Steam login token goes on the command line. Without one
+    // CS2 accepts connections only from LAN addresses.
+    launchConfFile: 'rallypoint-launch.conf',
     capabilities: { query: 'a2s', players: 'rcon', mods: 'none', world: false },
     diskEstimateGb: 35,
     supportLevel: 'full',

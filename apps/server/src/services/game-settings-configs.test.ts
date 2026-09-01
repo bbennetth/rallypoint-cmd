@@ -195,6 +195,44 @@ describe('one home per credential', () => {
   })
 })
 
+describe('launch-only settings', () => {
+  it('offers the Steam login token exactly once per game', () => {
+    // Declared in the shared Source spec table but stored in the launch
+    // conf, so the file-backed config must not also claim it.
+    for (const slug of ['team-fortress-2', 'counter-strike-2']) {
+      const game = GAMES[slug]!
+      const primary = settingsConfigForSlug(slug)!
+      const launch = launchConfConfigFor(game)!
+      expect(Object.keys(primary.specs)).not.toContain('+sv_setsteamaccount')
+      expect(Object.keys(launch.specs)).toContain('+sv_setsteamaccount')
+    }
+  })
+
+  it('leaves the token editable rather than panel-managed', () => {
+    // The operator supplies it; the panel has no way to generate one.
+    for (const slug of ['team-fortress-2', 'counter-strike-2']) {
+      const launch = launchConfConfigFor(GAMES[slug]!)!
+      expect([...launch.managedKeys]).not.toContain('+sv_setsteamaccount')
+    }
+  })
+
+  it('omits a token the operator has not set instead of passing a bare flag', () => {
+    // `+sv_setsteamaccount` with no value would make the game read the
+    // next argument as the token.
+    const doc = launchConfFormat.parse('')
+    launchConfFormat.set(doc, '+sv_setsteamaccount', '')
+    launchConfFormat.set(doc, '+ip', '0.0.0.0')
+    expect(launchConfFormat.serialize(doc)).toContain("set -- '+ip' '0.0.0.0'")
+    expect(launchConfFormat.serialize(doc)).not.toContain('sv_setsteamaccount')
+  })
+
+  it('keeps Unturned’s token in Commands.dat, which the game reads directly', () => {
+    const config = settingsConfigForSlug('unturned')!
+    expect(Object.keys(config.specs)).toContain('gslt')
+    expect(config.file).toContain('Commands.dat')
+  })
+})
+
 describe('config write path feeds the admin clients', () => {
   it('a seeded ARK config is readable as RCON credentials', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-ark-'))

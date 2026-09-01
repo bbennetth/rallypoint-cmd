@@ -38,6 +38,16 @@ file, so the panel reads it over the unauthenticated lightweight query and stops
 HTTPS API would give settings, player counts and a save-based backup path, and can be claimed
 headlessly — that is the highest-value follow-up on this list, not a dead end.
 
+**Steam login tokens.** Team Fortress 2, Counter-Strike 2 and Unturned each accept a Game Server
+Login Token, and the settings page has a field for it. Create one at
+[steamcommunity.com/dev/managegameservers](https://steamcommunity.com/dev/managegameservers) using
+the **game's** app id — 440 for TF2, 730 for CS2, 304930 for Unturned — not the dedicated-server id
+in the table above. What you lose without one differs by game: CS2 accepts connections only from
+LAN addresses, Unturned is hidden from the Internet server list (still joinable by code or
+address), and TF2 takes a server-browser ranking penalty. For the Source games the panel passes
+the token on the command line, because `server.cfg` runs at map load — after the server has
+already logged in.
+
 The panel owns the keys that keep its admin channel open — RCON/telnet enabled, on the port the
 unit was provisioned with, with a generated password. Those render read-only in the settings
 editor and are re-applied on every write, so a hand edit or a restored backup cannot lock the
@@ -268,8 +278,8 @@ are wired from documented behavior and want a live pass before you lean on them:
   wants a telnet `shutdown`, and Satisfactory does not save on shutdown at all. Until that lands,
   a stop can cost up to one autosave interval on those four. The admin channels this needs are
   already wired, so it is plumbing rather than research.
-- **Game server login tokens** — CS2 restricts connections to LAN without one, and TF2 loses
-  server-browser ranking. The panel has nowhere to enter one yet.
+- **Satisfactory's ports cannot be tunnelled.** It requires the external and internal port to
+  match, so the playit.gg path cannot work for it — use a direct port-forward instead.
 - **Project Zomboid / ARK** — config filename and `players`/`listplayers` output format.
 
 Port collisions between games on one host (ARK, TF2 and CS2 all default to 27015) predate this

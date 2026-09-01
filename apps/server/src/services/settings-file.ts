@@ -257,6 +257,41 @@ export function createFileSettings(
   }
 }
 
+// Some settings only take effect if the game sees them on the command
+// line — a Steam login token has to be set before the server logs in, so
+// a config file executed at map load is too late. Those live in the
+// panel-owned launch conf, and this presents them on the settings page
+// beside the game's own file so an operator sees one list, not two.
+export function createCompositeSettings(
+  primary: SettingsService,
+  launch: { service: SettingsService; keys: readonly string[] },
+): SettingsService {
+  const owns = (key: string): boolean => launch.keys.includes(key)
+  return {
+    ...primary,
+    read() {
+      const base = primary.read()
+      const extra = launch.service.read()
+      return {
+        entries: [...base.entries, ...extra.entries.filter((e) => owns(e.key))],
+        categories: base.categories,
+      }
+    },
+    writeStructured(values) {
+      const forLaunch = Object.fromEntries(Object.entries(values).filter(([k]) => owns(k)))
+      const forPrimary = Object.fromEntries(Object.entries(values).filter(([k]) => !owns(k)))
+      if (Object.keys(forPrimary).length > 0) primary.writeStructured(forPrimary)
+      if (Object.keys(forLaunch).length > 0) launch.service.writeStructured(forLaunch)
+    },
+    // The raw editor edits the game's own file; the launch conf is
+    // panel-generated and has no user content to hand over.
+    seedIfMissing() {
+      primary.seedIfMissing()
+      launch.service.seedIfMissing()
+    },
+  }
+}
+
 function pruneHistory(dir: string, base: string, keep: number): void {
   const files = fs
     .readdirSync(dir)
