@@ -9,6 +9,10 @@ import { ProgressBar } from '../ui/ProgressBar.js'
 
 export function UpdatesPage() {
   const [installedBuild, setInstalledBuild] = useState<string | null>(null)
+  // Until the first fetch lands we do not know whether this server is
+  // installed — and the primary button's action depends on it. Acting on
+  // a guess means running the wrong steamcmd op on a real server.
+  const [stateLoaded, setStateLoaded] = useState(false)
   const [op, setOp] = useState<LongOp | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const running = op?.status === 'running'
@@ -18,6 +22,7 @@ export function UpdatesPage() {
     const s = await api.updateState()
     setInstalledBuild(s.installedBuildId)
     setOp(s.op)
+    setStateLoaded(true)
   }
   useEffect(() => {
     void refresh()
@@ -54,10 +59,15 @@ export function UpdatesPage() {
           </div>
         )}
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="primary" disabled={running} onClick={() => run(installedBuild ? 'update' : 'install')}>
-            {running ? <Spinner /> : null} {installedBuild ? 'Update server' : 'Install server'}
+          <Button
+            variant="primary"
+            disabled={running || !stateLoaded}
+            onClick={() => run(installedBuild ? 'update' : 'install')}
+          >
+            {running ? <Spinner /> : null}{' '}
+            {!stateLoaded ? 'Checking\u2026' : installedBuild ? 'Update server' : 'Install server'}
           </Button>
-          <Button variant="ghost" disabled={running} onClick={() => run('validate')}>
+          <Button variant="ghost" disabled={running || !stateLoaded} onClick={() => run('validate')}>
             Validate files
           </Button>
           {op && (

@@ -6,17 +6,25 @@ import { expect, test, type Page } from '@playwright/test'
 
 test.describe.configure({ mode: 'serial' })
 
+// The suite signs in once (auth.setup.ts) and every test starts from that
+// saved session, so this only has to land on the server list.
 async function login(page: Page): Promise<void> {
-  await page.goto('/login')
-  await page.getByLabel('Username').fill('admin')
-  await page.getByLabel('Password').fill('e2e-password-1234')
-  await page.getByRole('button', { name: 'Sign in' }).click()
+  await page.goto('/')
 }
 
 async function ensureEnshroudedOpen(page: Page): Promise<void> {
   await login(page)
   const addBtn = page.getByRole('button', { name: 'Add server' }).first()
   await expect(addBtn).toBeVisible()
+  // The header button renders before the server list resolves, so it is
+  // not a "list ready" signal on its own: checking for an existing server
+  // too early adds a duplicate instead of opening the one already there.
+  await expect(
+    page
+      .getByRole('button', { name: /^Open / })
+      .or(page.getByText('No servers yet'))
+      .first(),
+  ).toBeVisible()
   const open = page.getByRole('button', { name: 'Open Enshrouded' })
   if ((await open.count()) > 0) {
     await open.first().click()
