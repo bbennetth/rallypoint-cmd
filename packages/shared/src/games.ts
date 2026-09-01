@@ -54,7 +54,10 @@ export interface GameDef {
   // mark a line as worth surfacing on the Monitoring page. Omit to take
   // DEFAULT_ERROR_PATTERNS; set it when a game names its own trouble in
   // words the default set would miss.
-  logPatterns?: { error: string[] }
+  // `ignore` wins over `error`: lines matching it are never surfaced,
+  // even when an error pattern also hits — for known-benign diagnostics
+  // (typically Wine's) that contain trigger words like "error"/"failed".
+  logPatterns?: { error: string[]; ignore?: string[] }
   // Rough full-install size, surfaced in the add-server UI.
   diskEstimateGb: number
   // 'full' = settings/players/mods/backups wired; 'basic' = install,
@@ -260,6 +263,15 @@ export const GAMES: Record<string, GameDef> = {
     // feels, so they lead the list ahead of the generic patterns.
     logPatterns: {
       error: ['server (is )?overload', 'overloaded', 'sav(e|ing).*(fail|error)', '\\berrors?\\b', '\\bwarn(ing)?\\b'],
+      ignore: [
+        // The game probes a registry value the auto-created Wine prefix
+        // never populated (error 2 = not found); harmless.
+        "query size of value 'displayversion'",
+        // libwayland's probe under a root systemd unit. Fixed for real by
+        // RuntimeDirectory= in unit-provision.ts; kept here for scripts
+        // run outside the unit and the window before the unit restarts.
+        'xdg_runtime_dir is invalid or not set',
+      ],
     },
     diskEstimateGb: 8,
     supportLevel: 'full',

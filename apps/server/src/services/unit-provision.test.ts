@@ -24,6 +24,7 @@ describe('renderStartScript', () => {
     expect(script).toContain('LD_LIBRARY_PATH="/opt/games/palworld:/opt/games/palworld/linux64:')
     expect(script).not.toContain('WINEPREFIX')
     expect(script).not.toContain('WINEESYNC')
+    expect(script).not.toContain('XDG_RUNTIME_DIR')
   })
 
   it('wraps a Windows-only server in Wine with a run-time loader lookup', () => {
@@ -38,6 +39,14 @@ describe('renderStartScript', () => {
     // through the single-threaded wineserver.
     expect(script).toContain('export WINEESYNC=1')
     expect(script).toContain('export WINEFSYNC=1')
+    // Wine's wayland driver logs an "error:" line without a valid
+    // XDG_RUNTIME_DIR; systemd supplies $RUNTIME_DIRECTORY via the
+    // drop-in, with a /tmp fallback for hand-run scripts.
+    expect(script).toContain(
+      'export XDG_RUNTIME_DIR="${RUNTIME_DIRECTORY:-${TMPDIR:-/tmp}/rallypoint-xdg-runtime}"',
+    )
+    expect(script).toContain('mkdir -p "$XDG_RUNTIME_DIR"')
+    expect(script).toContain('chmod 700 "$XDG_RUNTIME_DIR"')
   })
 
   it('renders every registry game without an unresolved placeholder', () => {
@@ -115,6 +124,14 @@ describe('renderInstanceDropIn', () => {
         `ReadWritePaths=/opt/games/${game.slug}`,
       )
     }
+  })
+
+  it('gives Windows games a runtime dir for Wine and leaves native games alone', () => {
+    const winConf = renderInstanceDropIn(enshrouded, '/opt/games/enshrouded')
+    expect(winConf).toContain('RuntimeDirectory=rallypoint-game-enshrouded')
+    expect(winConf).toContain('RuntimeDirectoryMode=0700')
+    const nativeConf = renderInstanceDropIn(palworld, '/opt/games/palworld')
+    expect(nativeConf).not.toContain('RuntimeDirectory')
   })
 })
 

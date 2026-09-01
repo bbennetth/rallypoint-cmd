@@ -61,6 +61,13 @@ export WINEDEBUG=-all
 # servers like Enshrouded, and a direct cause of tick starvation.
 export WINEESYNC=1
 export WINEFSYNC=1
+# Wine's wayland driver probes XDG_RUNTIME_DIR on launch and logs
+# "error: XDG_RUNTIME_DIR is invalid or not set" when the unit has no
+# login session. systemd sets $RUNTIME_DIRECTORY via RuntimeDirectory=
+# in the instance drop-in; the fallback covers running this by hand.
+export XDG_RUNTIME_DIR="\${RUNTIME_DIRECTORY:-\${TMPDIR:-/tmp}/rallypoint-xdg-runtime}"
+mkdir -p "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
 WINE_BIN="\${WINE_BIN:-}"
 if [ -z "$WINE_BIN" ]; then
   for c in wine64 wine; do
@@ -115,6 +122,14 @@ export function renderInstanceDropIn(
   // read-only; the game needs its own install dir writable (saves, logs,
   // and for Windows servers the Wine prefix under it).
   lines.push(`ReadWritePaths=${installDir}`)
+  if (game.platform === 'windows') {
+    // Gives Wine a valid $XDG_RUNTIME_DIR (start.sh forwards systemd's
+    // $RUNTIME_DIRECTORY) — the unit has no login session, so /run/user
+    // never exists for it. Implicitly writable under ProtectSystem=strict;
+    // 0700 matches what libwayland expects of a runtime dir.
+    lines.push(`RuntimeDirectory=rallypoint-game-${game.slug}`)
+    lines.push('RuntimeDirectoryMode=0700')
+  }
   return `${lines.join('\n')}\n`
 }
 
