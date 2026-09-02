@@ -62,8 +62,10 @@ const EnvSchema = z.object({
   // it false or login silently fails.
   COOKIE_SECURE: boolFromString,
   // When true (behind a trusted reverse proxy) trust the forwarded client
-  // IP (X-Forwarded-For / CF-Connecting-IP) for rate-limit keying;
-  // otherwise use the socket address.
+  // IP for rate-limit keying — the LAST X-Forwarded-For entry (the hop the
+  // proxy appended), or CF-Connecting-IP; otherwise use the socket
+  // address. Only safe when every request really passes through a proxy
+  // that appends the connecting address.
   TRUSTED_PROXY: boolFromString,
 
   // Free-space floor for backups/uploads/steamcmd (bytes).
