@@ -16,6 +16,7 @@ import {
   copySaveTree,
   createBackupService,
   isSafeEntryPath,
+  moveDir,
   validateArchiveEntries,
   walkFiles,
   type BackupService,
@@ -480,5 +481,130 @@ describe('restore happy path + rollback', () => {
     })
     // Rolled back: the mutated (pre-restore) world is back in place.
     expect(fs.readFileSync(liveLevel, 'utf8')).toBe('MUTATED-AFTER-BACKUP')
+  })
+  // --- move-aside failure modes (issue #35) -------------------------------
+  // The rollback used to `rmSync(liveWorldDir)` unconditionally and then
+  // rename the rollback copy back — so a move-aside that never happened
+  // (EXDEV, EPERM, EBUSY) deleted the only copy of the live world.
+
+  function errno(code: string): NodeJS.ErrnoException {
+    const err = new Error(`${code}: injected`) as NodeJS.ErrnoException
+    err.code = code
+    return err
+  }
+
+  it('a failed move-aside leaves the live world untouched', async () => {
+    const backup = await service.create('manual', noopSink)
+    const liveWorldDir = path.join(installDir, 'Pal/Saved/SaveGames/0', WORLD)
+    const liveLevel = path.join(liveWorldDir, 'Level.sav')
+    fs.writeFileSync(liveLevel, 'MUTATED-AFTER-BACKUP')
+    const preview = await service.stageUpload(bodyOf(path.join(env.PANEL_BACKUP_DIR, backup.filename)))
+
+    const realRename = fs.renameSync.bind(fs)
+    const spy = vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+      if (String(from) === liveWorldDir) throw errno('EPERM')
+      return realRename(from, to)
+    })
+    try {
+      await expect(service.restore(preview.stagingId, WORLD, noopSink)).rejects.toThrow(/EPERM/)
+    } finally {
+      spy.mockRestore()
+    }
+    // The world was never moved, so the rollback must not have removed it.
+    expect(fs.readFileSync(liveLevel, 'utf8')).toBe('MUTATED-AFTER-BACKUP')
+  })
+
+  it('completes a restore when every rename is cross-device (copy fallback)', async () => {
+    const backup = await service.create('manual', noopSink)
+    const liveLevel = path.join(installDir, 'Pal/Saved/SaveGames/0', WORLD, 'Level.sav')
+    fs.writeFileSync(liveLevel, 'MUTATED-AFTER-BACKUP')
+    const preview = await service.stageUpload(bodyOf(path.join(env.PANEL_BACKUP_DIR, backup.filename)))
+
+    const spy = vi.spyOn(fs, 'renameSync').mockImplementation(() => {
+      throw errno('EXDEV')
+    })
+    try {
+      await service.restore(preview.stagingId, WORLD, noopSink)
+    } finally {
+      spy.mockRestore()
+    }
+    expect(fs.readFileSync(liveLevel, 'utf8')).toBe('fake-level-data')
+    // The pre-restore world landed in the rollback snapshot via copy.
+    const rollbackRoot = path.join(env.DATA_DIR, 'rollback')
+    const snapshots = fs.readdirSync(rollbackRoot)
+    expect(snapshots).toHaveLength(1)
+    expect(fs.readFileSync(path.join(rollbackRoot, snapshots[0]!, WORLD, 'Level.sav'), 'utf8')).toBe(
+      'MUTATED-AFTER-BACKUP',
+    )
+  })
+
+  it('rolls back across filesystems when the swap-in fails after the move-aside', async () => {
+    const backup = await service.create('manual', noopSink)
+    const liveWorldDir = path.join(installDir, 'Pal/Saved/SaveGames/0', WORLD)
+    const liveLevel = path.join(liveWorldDir, 'Level.sav')
+    fs.writeFileSync(liveLevel, 'MUTATED-AFTER-BACKUP')
+    const preview = await service.stageUpload(bodyOf(path.join(env.PANEL_BACKUP_DIR, backup.filename)))
+
+    const realCp = fs.cpSync.bind(fs)
+    const renameSpy = vi.spyOn(fs, 'renameSync').mockImplementation(() => {
+      throw errno('EXDEV')
+    })
+    // Copying INTO the live dir (the swap-in) fails — e.g. disk full on
+    // GAMES_ROOT; copying out to the rollback dir and back must still work.
+    const cpSpy = vi.spyOn(fs, 'cpSync').mockImplementation((src, dest, opts) => {
+      if (String(dest) === liveWorldDir && String(src).includes('staging')) throw errno('ENOSPC')
+      return realCp(src, dest, opts)
+    })
+    try {
+      await expect(service.restore(preview.stagingId, WORLD, noopSink)).rejects.toThrow(/ENOSPC/)
+    } finally {
+      renameSpy.mockRestore()
+      cpSpy.mockRestore()
+    }
+    expect(fs.readFileSync(liveLevel, 'utf8')).toBe('MUTATED-AFTER-BACKUP')
+  })
+})
+
+describe('moveDir (pure)', () => {
+  it('falls back to copy + remove on EXDEV and leaves nothing behind', () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'pal-movedir-'))
+    const src = path.join(base, 'src')
+    const dest = path.join(base, 'dest')
+    fs.mkdirSync(path.join(src, 'nested'), { recursive: true })
+    fs.writeFileSync(path.join(src, 'nested', 'Level.sav'), 'level')
+    const spy = vi.spyOn(fs, 'renameSync').mockImplementation(() => {
+      const err = new Error('EXDEV: injected') as NodeJS.ErrnoException
+      err.code = 'EXDEV'
+      throw err
+    })
+    try {
+      moveDir(src, dest)
+    } finally {
+      spy.mockRestore()
+    }
+    expect(fs.readFileSync(path.join(dest, 'nested', 'Level.sav'), 'utf8')).toBe('level')
+    expect(fs.existsSync(src)).toBe(false)
+    fs.rmSync(base, { recursive: true, force: true })
+  })
+
+  it('rethrows non-EXDEV errors without touching the source', () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'pal-movedir-'))
+    const src = path.join(base, 'src')
+    const dest = path.join(base, 'dest')
+    fs.mkdirSync(src, { recursive: true })
+    fs.writeFileSync(path.join(src, 'Level.sav'), 'level')
+    const spy = vi.spyOn(fs, 'renameSync').mockImplementation(() => {
+      const err = new Error('EACCES: injected') as NodeJS.ErrnoException
+      err.code = 'EACCES'
+      throw err
+    })
+    try {
+      expect(() => moveDir(src, dest)).toThrow(/EACCES/)
+    } finally {
+      spy.mockRestore()
+    }
+    expect(fs.readFileSync(path.join(src, 'Level.sav'), 'utf8')).toBe('level')
+    expect(fs.existsSync(dest)).toBe(false)
+    fs.rmSync(base, { recursive: true, force: true })
   })
 })

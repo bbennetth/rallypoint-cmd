@@ -12,10 +12,15 @@ import { rateLimits } from '../db/schema/index.js'
 export function clientIp(c: Context<HonoApp>): string {
   const env = c.get('env')
   if (env.TRUSTED_PROXY) {
-    // Behind a trusted reverse proxy: use the forwarded client IP.
-    // X-Forwarded-For (first entry = original client) is the de-facto
-    // standard; cf-connecting-ip is accepted as a fallback.
-    const fwd = c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
+    // Behind a trusted reverse proxy: use the forwarded client IP. Take
+    // the LAST X-Forwarded-For entry — that is the peer address the proxy
+    // in front of us appended; everything before it arrived in the
+    // request and is attacker-controlled (a rotating first entry would
+    // otherwise give every login attempt its own rate-limit bucket).
+    // Requires the proxy to append (nginx: $proxy_add_x_forwarded_for),
+    // which Caddy, Traefik and Cloudflare do by default.
+    // cf-connecting-ip is accepted as a fallback.
+    const fwd = c.req.header('x-forwarded-for')?.split(',').at(-1)?.trim()
     if (fwd) return fwd
     const cf = c.req.header('cf-connecting-ip')
     if (cf) return cf

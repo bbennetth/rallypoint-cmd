@@ -9,6 +9,7 @@ import { createPasswordHasher, type PasswordHasher } from './auth/password.js'
 import { requestId } from './middleware/request-id.js'
 import { errorHandler } from './middleware/error-handler.js'
 import { csrfIssueHandler, requireCsrf } from './middleware/csrf.js'
+import { apiBodyLimit } from './middleware/body-limit.js'
 import { errors } from './errors.js'
 import { healthRoutes } from './routes/health.js'
 import { authRoutes } from './routes/auth.js'
@@ -87,6 +88,9 @@ export function buildApp(deps: BuildAppDeps): Hono<HonoApp> {
   // state-changing /api/* request — including login.
   app.get('/api/csrf', csrfIssueHandler)
   app.use('/api/*', requireCsrf())
+  // Body-size ceiling for every JSON route (streaming uploads exempt) —
+  // handlers `await c.req.json()` and would otherwise buffer anything.
+  app.use('/api/*', apiBodyLimit())
 
   // Panel-scoped routes (not tied to one game server).
   app.route('/', healthRoutes)

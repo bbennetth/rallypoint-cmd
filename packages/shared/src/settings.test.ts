@@ -23,6 +23,16 @@ describe('settings contract', () => {
     expect(patch.values['ExpRate']).toBe(1.5)
   })
 
+  it('bounds what a settings patch may carry', () => {
+    expect(settingsPatchSchema.safeParse({ values: { ServerName: 'x' } }).success).toBe(true)
+    const tooMany = Object.fromEntries(Array.from({ length: 501 }, (_, i) => [`k${i}`, 'v']))
+    expect(settingsPatchSchema.safeParse({ values: tooMany }).success).toBe(false)
+    expect(settingsPatchSchema.safeParse({ values: { ['k'.repeat(129)]: 'v' } }).success).toBe(false)
+    expect(settingsPatchSchema.safeParse({ values: { ServerName: 'x'.repeat(4097) } }).success).toBe(false)
+    expect(settingsPatchSchema.safeParse({ values: { ServerName: 'x'.repeat(4096) } }).success).toBe(true)
+    expect(settingsPatchSchema.safeParse({ values: { '': 'v' } }).success).toBe(false)
+  })
+
   it('round-trips a settings response entry', () => {
     const res = settingsResponseSchema.parse({
       entries: [

@@ -188,6 +188,12 @@ reads the client IP from `X-Forwarded-For` (or `CF-Connecting-IP`) only when
 `TRUSTED_PROXY=true` — leave it `false` unless a proxy you control is actually in front,
 otherwise the header is spoofable.
 
+With `TRUSTED_PROXY=true` the panel uses the **last** `X-Forwarded-For` entry — the address
+your proxy appended — so the proxy must append the connecting client rather than pass the
+header through untouched. Caddy, Traefik and Cloudflare do this by default; for nginx use
+`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`. Also make sure port 8080 is
+not reachable except through the proxy (`PANEL_HOST=127.0.0.1`), or the header can be forged.
+
 Whatever you pick: a game's own admin API (e.g. Palworld's REST on `127.0.0.1:8212`) always stays
 on loopback — the browser only ever talks to the panel, which proxies it.
 

@@ -635,8 +635,22 @@ export const UNTURNED_KEY_SPECS: GameKeySpecs = {
 export const settingValueSchema = z.union([z.string(), z.number(), z.boolean()])
 export type SettingValue = z.infer<typeof settingValueSchema>
 
+// Bounds for what a PATCH may carry. `settingValueSchema` itself stays
+// unbounded because the GET response embeds it and a long value already
+// on disk must still load; only what the client WRITES is capped.
+export const SETTINGS_PATCH_MAX_KEYS = 500
+export const SETTINGS_PATCH_MAX_KEY_LENGTH = 128
+export const SETTINGS_PATCH_MAX_STRING_LENGTH = 4096
+
 export const settingsPatchSchema = z.object({
-  values: z.record(settingValueSchema),
+  values: z
+    .record(
+      z.string().min(1).max(SETTINGS_PATCH_MAX_KEY_LENGTH),
+      z.union([z.string().max(SETTINGS_PATCH_MAX_STRING_LENGTH), z.number(), z.boolean()]),
+    )
+    .refine((v) => Object.keys(v).length <= SETTINGS_PATCH_MAX_KEYS, {
+      message: `At most ${SETTINGS_PATCH_MAX_KEYS} settings per request.`,
+    }),
 })
 export type SettingsPatch = z.infer<typeof settingsPatchSchema>
 
