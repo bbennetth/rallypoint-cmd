@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import { Children, cloneElement, useId, type ButtonHTMLAttributes, type ReactElement, type ReactNode } from 'react'
 
 // Small set of styled primitives so every page looks like one system.
 // Built on the vendored Ink recipes (.pl-card / .pl-btn / .pl-chip /
@@ -99,15 +99,21 @@ export function Stat({ label, value, sub }: { label: string; value: ReactNode; s
   )
 }
 
-// The <label> WRAPS its control — the association is structural, with no
-// htmlFor/id pair to keep in sync, and the e2e `getByLabel` assertions
-// depend on that shape. Do not "improve" this into a sibling label.
-export function Field({ label, children }: { label: string; children: ReactNode }) {
+// The label is a SIBLING of its control, associated by id — never wrap
+// the control in the <label>. A wrapping label re-dispatches its click
+// into the control, which is how a native <select> picker in desktop
+// Chrome/Edge opened and closed on the same click. `getByLabel` in the
+// e2e suite resolves htmlFor associations exactly like wrapping did.
+// `children` must be the single control element; it receives the id.
+export function Field({ label, children }: { label: string; children: ReactElement<{ id?: string }> }) {
+  const id = useId()
   return (
-    <label className="block">
-      <span className="eyebrow mb-1.5 block">{label}</span>
-      {children}
-    </label>
+    <div className="block">
+      <label htmlFor={id} className="eyebrow mb-1.5 block">
+        {label}
+      </label>
+      {cloneElement(Children.only(children), { id })}
+    </div>
   )
 }
 

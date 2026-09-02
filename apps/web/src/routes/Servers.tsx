@@ -21,10 +21,14 @@ const LIFECYCLE: Record<ServerLifecycle, { tone: 'good' | 'bad' | 'warn' | 'mute
 // Home: one card per managed game server, plus the add-server flow.
 export function ServersPage() {
   const navigate = useNavigate()
-  const { data, error, loading, refresh } = usePoll(api.servers, 5000)
   const [err, setErr] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [removing, setRemoving] = useState<GameServerSummary | null>(null)
+  // Paused while a dialog is up: a poll result re-renders the dialog's
+  // controlled <select>, and desktop Chrome closes its open picker.
+  const { data, error, loading, refresh } = usePoll(api.servers, 5000, {
+    enabled: !adding && !removing,
+  })
 
   if (!data)
     return error ? (

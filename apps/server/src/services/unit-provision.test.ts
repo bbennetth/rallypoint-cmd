@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import fs from 'node:fs'
+import path from 'node:path'
 import { GAMES, type GameDef } from '@rallypoint-cmd/shared'
 import { renderInstanceDropIn, renderStartScript } from './unit-provision.js'
 import { ALLOWED_SLUGS, ALLOWED_UNITS } from './constants.js'
@@ -164,5 +166,40 @@ describe('closed sets derived from the registry', () => {
     expect([...ALLOWED_SLUGS].sort()).toEqual(Object.keys(GAMES).sort())
     expect(ALLOWED_UNITS).toHaveLength(Object.keys(GAMES).length)
     for (const unit of ALLOWED_UNITS) expect(unit).toMatch(/^rallypoint-game@[a-z0-9-]+\.service$/)
+  })
+})
+
+describe('template unit (deploy/systemd/rallypoint-game@.service)', () => {
+  const unit = fs.readFileSync(
+    path.resolve(import.meta.dirname, '../../../../deploy/systemd/rallypoint-game@.service'),
+    'utf8',
+  )
+  const lines = unit.split('\n').map((l) => l.trim())
+
+  it('grants no writable path itself — the per-instance drop-in scopes it to one game', () => {
+    // A template-wide ReadWritePaths=/opt/games lets any game write into
+    // every other game's install dir.
+    expect(lines.filter((l) => l.startsWith('ReadWritePaths='))).toEqual([])
+    expect(renderInstanceDropIn(palworld, '/opt/games/palworld')).toContain('ReadWritePaths=/opt/games/palworld')
+  })
+
+  it('drops capabilities so ProtectSystem= binds a root process', () => {
+    for (const required of [
+      'CapabilityBoundingSet=',
+      'AmbientCapabilities=',
+      'RestrictNamespaces=true',
+      'ProtectSystem=strict',
+      'NoNewPrivileges=true',
+    ]) {
+      expect(lines).toContain(required)
+    }
+    const filter = lines.find((l) => l.startsWith('SystemCallFilter='))
+    expect(filter).toBeDefined()
+    expect(filter).toContain('@mount')
+  })
+
+  it('leaves out the two options Wine and JIT runtimes cannot run under', () => {
+    expect(lines.some((l) => l.startsWith('MemoryDenyWriteExecute='))).toBe(false)
+    expect(lines.some((l) => l.startsWith('SystemCallArchitectures='))).toBe(false)
   })
 })

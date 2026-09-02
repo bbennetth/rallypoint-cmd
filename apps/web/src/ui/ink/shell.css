@@ -575,6 +575,31 @@ body {
 .pl-input::placeholder {
   color: var(--ink-mute);
 }
+/* Selects: `appearance: none` (theme.css) strips the native arrow, which
+   left a <select> indistinguishable from a text input. Draw a caret from
+   two currentColor gradients so it follows the ink in both themes. */
+select.pl-input {
+  padding-right: 38px;
+  cursor: pointer;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 20px) 50%,
+    calc(100% - 14px) 50%;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+}
+select.pl-input:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+select.pl-input.sm {
+  padding-right: 26px;
+  background-position:
+    calc(100% - 14px) 50%,
+    calc(100% - 8px) 50%;
+}
 /* Compact modifier — in-row selects / inline rename inputs. Replaces the
    per-site inline `fontSize/padding/width` shrinks; the coarse-pointer
    tap floor above still lifts these to --tap-min on touch devices. */
