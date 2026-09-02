@@ -48,3 +48,34 @@ export class WorldLock {
     }
   }
 }
+
+export type AcquireAllResult =
+  | { ok: true; release: () => void }
+  | { ok: false; busyIndex: number; holder: string | null }
+
+// Take several locks at once, non-blocking: either every lock is held by
+// `label` and one release() frees them all, or none is (the ones already
+// taken are released before returning) and `busyIndex` says which one was
+// busy. Panel-wide ops (panel/wine update) use this over the panel lock
+// plus every instance's lock, so a running restore or SteamCMD install
+// answers 409 instead of being killed by the panel restart — and
+// anything that starts during the update queues behind it.
+export function tryAcquireAll(locks: readonly WorldLock[], label: string): AcquireAllResult {
+  const releases: (() => void)[] = []
+  for (let i = 0; i < locks.length; i++) {
+    const lock = locks[i]!
+    const release = lock.tryAcquire(label)
+    if (!release) {
+      const holder = lock.holder
+      for (const r of releases.reverse()) r()
+      return { ok: false, busyIndex: i, holder }
+    }
+    releases.push(release)
+  }
+  return {
+    ok: true,
+    release: () => {
+      for (const r of [...releases].reverse()) r()
+    },
+  }
+}

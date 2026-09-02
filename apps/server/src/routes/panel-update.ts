@@ -5,6 +5,7 @@ import { errors } from '../errors.js'
 import { requireSession } from '../middleware/session.js'
 import { LongOpConflictError } from '../services/long-op.js'
 import { streamLongOp } from './long-op-stream.js'
+import { acquirePanelWide } from './panel-lock.js'
 
 export const panelUpdateRoutes = new Hono<HonoApp>()
 
@@ -36,18 +37,15 @@ panelUpdateRoutes.get('/api/panel/update', requireSession, async (c) => {
 })
 
 // Apply the latest release. Runs as a long-op streaming over
-// /api/updates/stream; takes the world lock so it can't interleave with
-// backups/restores/steamcmd. The service restart kills the panel mid-op —
-// the UI polls /api/health until the new version answers.
+// /api/panel/stream. The service restart at the end kills the panel
+// process — and with it any in-flight SteamCMD install, backup or restore
+// — so this takes the panel lock AND every instance's world lock (409
+// `world_busy` if any is held) for the whole op. The UI polls
+// /api/health until the new version answers.
 panelUpdateRoutes.post('/api/panel/update/run', requireSession, (c) => {
-  const { panelUpdate, longOps, worldLock } = c.get('composed')
-  const release = worldLock.tryAcquire('panel_update')
-  if (!release) {
-    throw errors.conflict(
-      'world_busy',
-      `Another operation holds the world lock (${worldLock.holder ?? 'unknown'}).`,
-    )
-  }
+  const composed = c.get('composed')
+  const { panelUpdate, longOps } = composed
+  const release = acquirePanelWide(composed, 'panel_update')
   try {
     const op = longOps.start('panel_update', async (sink) => {
       try {

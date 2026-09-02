@@ -4,6 +4,7 @@ import type { HonoApp } from '../context.js'
 import { errors } from '../errors.js'
 import { requireSession } from '../middleware/session.js'
 import { LongOpConflictError } from '../services/long-op.js'
+import { acquirePanelWide } from './panel-lock.js'
 
 export const wineRoutes = new Hono<HonoApp>()
 
@@ -23,9 +24,11 @@ wineRoutes.get('/api/panel/wine', requireSession, async (c) => {
 // Upgrade Debian wine -> WineHQ staging. apt replaces the loader binaries
 // out from under any running Wine process, so every Windows-platform
 // server must be stopped first (management.ts' unit_active refusal), then
-// the world lock keeps this from interleaving with backups/steamcmd.
+// the panel lock plus every instance's world lock keep this from
+// interleaving with backups/restores/steamcmd on any server.
 wineRoutes.post('/api/panel/wine/upgrade', requireSession, async (c) => {
-  const { wineUpdate, instances, longOps, worldLock } = c.get('composed')
+  const composed = c.get('composed')
+  const { wineUpdate, instances, longOps } = composed
 
   for (const inst of instances.list()) {
     if (inst.game.platform !== 'windows') continue
@@ -38,13 +41,7 @@ wineRoutes.post('/api/panel/wine/upgrade', requireSession, async (c) => {
     }
   }
 
-  const release = worldLock.tryAcquire('wine_update')
-  if (!release) {
-    throw errors.conflict(
-      'world_busy',
-      `Another operation holds the world lock (${worldLock.holder ?? 'unknown'}).`,
-    )
-  }
+  const release = acquirePanelWide(composed, 'wine_update')
   try {
     const op = longOps.start('wine_update', async (sink) => {
       try {
