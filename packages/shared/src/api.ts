@@ -80,14 +80,15 @@ export const announceRequestSchema = z.object({
 export type AnnounceRequest = z.infer<typeof announceRequestSchema>
 
 export const kickBanRequestSchema = z.object({
-  // Palworld user id, e.g. `steam_xxxxx`.
-  userId: z.string().min(1),
+  // Palworld user id, e.g. `steam_xxxxx`. Bounded: it ends up inside an
+  // RCON/REST packet.
+  userId: z.string().min(1).max(128),
   message: z.string().max(600).optional(),
 })
 export type KickBanRequest = z.infer<typeof kickBanRequestSchema>
 
 export const unbanRequestSchema = z.object({
-  userId: z.string().min(1),
+  userId: z.string().min(1).max(128),
 })
 export type UnbanRequest = z.infer<typeof unbanRequestSchema>
 

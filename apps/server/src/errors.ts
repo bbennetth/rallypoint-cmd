@@ -74,6 +74,14 @@ export const errors = {
   conflict(code: string, message: string): ApiError {
     return new ApiError({ code, message, status: 409 })
   },
+  payloadTooLarge(maxBytes: number): ApiError {
+    return new ApiError({
+      code: 'payload_too_large',
+      message: 'Request body is too large.',
+      status: 413,
+      details: { max_bytes: maxBytes },
+    })
+  },
   rateLimited(retryAfterSeconds: number, bucket: string): ApiError {
     return new ApiError({
       code: 'rate_limited',
