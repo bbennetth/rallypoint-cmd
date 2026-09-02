@@ -2,6 +2,7 @@ import { Cron } from 'croner'
 import { ulid } from 'ulid'
 import { desc, eq } from 'drizzle-orm'
 import type {
+  AnnounceStep,
   Backup,
   BackupPayload,
   CreateScheduleRequest,
@@ -15,19 +16,25 @@ import type { Db } from '../db/client.js'
 import type { Env } from '../env.js'
 import type { Logger } from '../logger.js'
 import { schedules, scheduleRuns } from '../db/schema/index.js'
-import type { ServerInstance } from './types.js'
+import type { GameControl, PlayerAdmin, ServerInstance } from './types.js'
+import type { WorldLock } from './world-lock.js'
 
 // Cron-driven restarts + backups, panel-wide: one scheduler owns every
 // row across all servers and resolves the row's server instance at fire
-// time. Every job takes that instance's world lock (blocking) so it
-// queues behind manual ops instead of colliding; croner's protect:true
-// stops overrun stacking.
+// time. The destructive part of every job (the backup, the save+restart)
+// takes that instance's world lock (blocking) so it queues behind manual
+// ops instead of colliding; a restart's announce countdown — up to an
+// hour of broadcasts — runs BEFORE the lock so it doesn't 409 every
+// manual backup/restore/update meanwhile. croner's protect:true stops
+// overrun stacking (the countdown is inside the job callback).
 
 interface SchedulerDeps {
   env: Env
   db: Db
   logger: Logger
   getInstance(serverId: string): ServerInstance | undefined
+  // Injectable so tests can run a countdown without waiting it out.
+  sleep?: (ms: number) => Promise<void>
 }
 
 export interface SchedulerService {
@@ -65,8 +72,62 @@ export function selectBackupsToPrune(
   return scheduled.filter((b) => !keepIds.has(b.id))
 }
 
+// Turn announce steps into an ordered countdown: each step's wait is the
+// gap to the next step, and the last step waits out its own lead time —
+// so [{300,"5 min"},{60,"1 min"},{10,"10 s"}] broadcasts at T-300, T-60,
+// T-10 and the restart lands at T-0. Pure + exported for tests.
+export function planAnnouncements(steps: readonly AnnounceStep[]): { message: string; waitMs: number }[] {
+  const sorted = [...steps].sort((a, b) => b.secondsBefore - a.secondsBefore)
+  return sorted.map((step, i) => ({
+    message: step.message,
+    waitMs: (step.secondsBefore - (sorted[i + 1]?.secondsBefore ?? 0)) * 1000,
+  }))
+}
+
+export type RestartTarget = {
+  admin: Pick<PlayerAdmin, 'announce' | 'save'>
+  gameControl: Pick<GameControl, 'restart'>
+  worldLock: WorldLock
+}
+
+// Scheduled restart: countdown (unlocked, best-effort — the game may be
+// down or have no admin channel), then save + restart under the world
+// lock. acquire() blocks, so a manual op started at T-5 s delays the
+// restart until it finishes rather than colliding with it.
+export async function runScheduledRestart(
+  inst: RestartTarget,
+  payload: RestartPayload,
+  opts: { label: string; sleep: (ms: number) => Promise<void> },
+): Promise<void> {
+  const parsed = restartPayloadSchema.parse(payload)
+  for (const step of planAnnouncements(parsed.announceSteps)) {
+    try {
+      await inst.admin.announce(step.message)
+    } catch {
+      // game down or no query capability — nothing to announce to.
+    }
+    if (step.waitMs > 0) await opts.sleep(step.waitMs)
+  }
+  const release = await inst.worldLock.acquire(opts.label)
+  try {
+    if (parsed.saveBeforeStop) {
+      try {
+        await inst.admin.save()
+      } catch {
+        // cold restart is fine
+      }
+    }
+    // systemctl restart is deterministic — systemd owns the bounce and a
+    // clean unit exit won't false-trigger Restart=on-failure.
+    await inst.gameControl.restart()
+  } finally {
+    release()
+  }
+}
+
 export function createScheduler(deps: SchedulerDeps): SchedulerService {
   const { db, logger } = deps
+  const sleep = deps.sleep ?? defaultSleep
   const jobs = new Map<string, Cron>()
 
   function rowToSchedule(row: typeof schedules.$inferSelect): Schedule {
@@ -85,34 +146,15 @@ export function createScheduler(deps: SchedulerDeps): SchedulerService {
     }
   }
 
-  async function runRestart(inst: ServerInstance, payload: RestartPayload): Promise<void> {
-    const parsed = restartPayloadSchema.parse(payload)
-    // Announce countdown (best-effort; skip if the game has no admin API
-    // or is down).
-    for (const step of [...parsed.announceSteps].sort((a, b) => b.secondsBefore - a.secondsBefore)) {
-      try {
-        await inst.admin.announce(step.message)
-      } catch {
-        // game down or no query capability — nothing to announce to.
-      }
-      await sleep(1000)
-    }
-    if (parsed.saveBeforeStop) {
-      try {
-        await inst.admin.save()
-      } catch {
-        // cold restart is fine
-      }
-    }
-    // systemctl restart is deterministic — systemd owns the bounce and a
-    // clean unit exit won't false-trigger Restart=on-failure.
-    await inst.gameControl.restart()
-  }
-
-  async function runBackup(inst: ServerInstance, payload: BackupPayload): Promise<void> {
+  async function runBackup(inst: ServerInstance, payload: BackupPayload, label: string): Promise<void> {
     const parsed = backupPayloadSchema.parse(payload)
-    await inst.backup.create('scheduled')
-    pruneBackups(inst, parsed)
+    const release = await inst.worldLock.acquire(label)
+    try {
+      await inst.backup.create('scheduled')
+      pruneBackups(inst, parsed)
+    } finally {
+      release()
+    }
   }
 
   function pruneBackups(inst: ServerInstance, payload: BackupPayload): void {
@@ -143,18 +185,19 @@ export function createScheduler(deps: SchedulerDeps): SchedulerService {
     db.insert(scheduleRuns).values({ id: runId, scheduleId, startedAt: new Date() }).run()
     logger.info('schedule firing', { scheduleId, serverId: row.serverId, kind: row.kind })
 
-    const release = await inst.worldLock.acquire(`schedule:${row.kind}:${scheduleId}`)
+    const label = `schedule:${row.kind}:${scheduleId}`
     let status: 'succeeded' | 'failed' = 'succeeded'
     let detail: string | null = null
     try {
-      if (row.kind === 'restart') await runRestart(inst, row.payload as RestartPayload)
-      else await runBackup(inst, row.payload as BackupPayload)
+      if (row.kind === 'restart') {
+        await runScheduledRestart(inst, row.payload as RestartPayload, { label, sleep })
+      } else {
+        await runBackup(inst, row.payload as BackupPayload, label)
+      }
     } catch (err) {
       status = 'failed'
       detail = err instanceof Error ? err.message : String(err)
       logger.error('schedule run failed', { scheduleId, kind: row.kind, err: detail })
-    } finally {
-      release()
     }
 
     const now = new Date()
@@ -277,6 +320,6 @@ export function createScheduler(deps: SchedulerDeps): SchedulerService {
   }
 }
 
-function sleep(ms: number): Promise<void> {
+function defaultSleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
 }
