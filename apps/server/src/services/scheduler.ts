@@ -2,6 +2,7 @@ import { Cron } from 'croner'
 import { ulid } from 'ulid'
 import { desc, eq } from 'drizzle-orm'
 import type {
+  Backup,
   BackupPayload,
   CreateScheduleRequest,
   RestartPayload,
@@ -37,6 +38,31 @@ export interface SchedulerService {
   update(serverId: string, id: string, req: UpdateScheduleRequest): Schedule
   remove(serverId: string, id: string): void
   runs(serverId: string, scheduleId: string): ScheduleRun[]
+}
+
+// Retention only governs what the schedule itself produced: manual
+// backups ("before the big mod change") and pre-restore snapshots belong
+// to the operator and are never pruned here. Pure + exported for tests.
+export function selectBackupsToPrune(
+  all: readonly Backup[],
+  retention: BackupPayload['retention'],
+  nowMs: number,
+): Backup[] {
+  const scheduled = all
+    .filter((b) => b.kind === 'scheduled')
+    .sort((a, b) => b.createdAtMs - a.createdAtMs)
+  if (scheduled.length === 0) return []
+  const keepIds = new Set<string>()
+  // Always keep the most recent scheduled backup.
+  keepIds.add(scheduled[0]!.id)
+  if (retention.keepLast) {
+    for (const b of scheduled.slice(0, retention.keepLast)) keepIds.add(b.id)
+  }
+  if (retention.keepDays) {
+    const cutoff = nowMs - retention.keepDays * 24 * 60 * 60 * 1000
+    for (const b of scheduled) if (b.createdAtMs >= cutoff) keepIds.add(b.id)
+  }
+  return scheduled.filter((b) => !keepIds.has(b.id))
 }
 
 export function createScheduler(deps: SchedulerDeps): SchedulerService {
@@ -90,29 +116,15 @@ export function createScheduler(deps: SchedulerDeps): SchedulerService {
   }
 
   function pruneBackups(inst: ServerInstance, payload: BackupPayload): void {
-    // backup.list() is already scoped to this instance's rows.
-    const all = inst.backup.list()
-    if (all.length === 0) return
-    const keepIds = new Set<string>()
-    // Always keep the most recent successful backup.
-    keepIds.add(all[0]!.id)
-    if (payload.retention.keepLast) {
-      for (const b of all.slice(0, payload.retention.keepLast)) keepIds.add(b.id)
-    }
-    if (payload.retention.keepDays) {
-      const cutoff = Date.now() - payload.retention.keepDays * 24 * 60 * 60 * 1000
-      for (const b of all) if (b.createdAtMs >= cutoff) keepIds.add(b.id)
-    }
-    for (const b of all) {
-      if (!keepIds.has(b.id)) {
-        try {
-          inst.backup.delete(b.id)
-        } catch (err) {
-          logger.warn('retention prune failed', {
-            id: b.id,
-            err: err instanceof Error ? err.message : String(err),
-          })
-        }
+    // backup.list() is already scoped to this instance's rows (all kinds).
+    for (const b of selectBackupsToPrune(inst.backup.list(), payload.retention, Date.now())) {
+      try {
+        inst.backup.delete(b.id)
+      } catch (err) {
+        logger.warn('retention prune failed', {
+          id: b.id,
+          err: err instanceof Error ? err.message : String(err),
+        })
       }
     }
   }
