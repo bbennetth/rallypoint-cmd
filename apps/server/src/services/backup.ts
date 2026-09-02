@@ -200,6 +200,24 @@ export function copySaveTree(
   return { copiedBytes, skipped }
 }
 
+// Move a directory: atomic rename when src and dest share a filesystem,
+// otherwise copy then remove the source — and only remove it AFTER the
+// copy completed, so a failed move always leaves `src` intact. Restore
+// uses this for every swap because DATA_DIR (staging/rollback) and
+// GAMES_ROOT (the live save) routinely sit on different mounts in an
+// LXC (EXDEV). Exported for direct unit testing.
+export function moveDir(src: string, dest: string): void {
+  try {
+    fs.renameSync(src, dest)
+    return
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code !== 'EXDEV') throw err
+  }
+  fs.cpSync(src, dest, { recursive: true })
+  fs.rmSync(src, { recursive: true, force: true })
+}
+
 export function createBackupService(deps: BackupDeps): BackupService {
   const { env, db, logger, serverId, installDir, backupDir, contract } = deps
   const stagingRoot = path.join(env.DATA_DIR, 'staging')
@@ -568,28 +586,34 @@ export function createBackupService(deps: BackupDeps): BackupService {
       pct(20)
       await flush()
 
-      // 2. Snapshot current saves aside for rollback (atomic rename).
+      // 2. Snapshot current saves aside for rollback (rename, or copy +
+      // remove when DATA_DIR is on another filesystem).
       const rollbackDir = path.join(rollbackRoot, ulid())
       fs.mkdirSync(rollbackDir, { recursive: true })
       const hadLiveWorld = fs.existsSync(liveWorldDir)
       const rollbackWorldDir = path.join(rollbackDir, path.basename(liveWorldDir))
+      // The rollback in the catch below must only touch what this block
+      // actually did: `movedAside` is set once the live world is fully in
+      // the rollback dir, `swapStarted` once liveWorldDir may hold staged
+      // data. A move-aside that throws leaves the live world exactly where
+      // it was — and the rollback must not delete it.
+      let movedAside = false
+      let swapStarted = false
 
       try {
         if (hadLiveWorld) {
           say(`[restore] Moving current world aside → ${path.basename(rollbackDir)}/`)
-          fs.renameSync(liveWorldDir, rollbackWorldDir)
+          moveDir(liveWorldDir, rollbackWorldDir)
+          movedAside = true
         }
         pct(35)
         await flush()
 
-        // 3. Swap staged world in (rename — same fs? staging lives in
-        // DATA_DIR which may be another fs; fall back to copy).
+        // 3. Swap staged world in (staging lives in DATA_DIR, which may
+        // be another fs — moveDir falls back to copy+remove on EXDEV).
         say(`[restore] Installing ${targetWorldId ? `world ${targetWorldId}` : 'archived save data'}...`)
-        try {
-          fs.renameSync(stagedWorldDir, liveWorldDir)
-        } catch {
-          fs.cpSync(stagedWorldDir, liveWorldDir, { recursive: true })
-        }
+        swapStarted = true
+        moveDir(stagedWorldDir, liveWorldDir)
         pct(55)
         await flush()
 
@@ -675,8 +699,13 @@ export function createBackupService(deps: BackupDeps): BackupService {
           err: err instanceof Error ? err.message : String(err),
         })
         try {
-          fs.rmSync(liveWorldDir, { recursive: true, force: true })
-          if (hadLiveWorld) fs.renameSync(rollbackWorldDir, liveWorldDir)
+          // Only clear liveWorldDir if the swap may have written into it;
+          // if the failure happened before (or during) the move-aside the
+          // live world is still there and is the thing we are protecting.
+          if (swapStarted) fs.rmSync(liveWorldDir, { recursive: true, force: true })
+          // moveDir, not renameSync: if the move-aside had to copy across
+          // filesystems, a bare rename back would fail with EXDEV too.
+          if (movedAside) moveDir(rollbackWorldDir, liveWorldDir)
           if (wasActive) {
             await deps.gameControl.start()
           }
