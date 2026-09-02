@@ -3,6 +3,7 @@ import { deleteCookie, setCookie } from 'hono/cookie'
 import { and, eq, ne } from 'drizzle-orm'
 import { changePasswordRequestSchema, loginRequestSchema } from '@rallypoint-cmd/shared'
 import type { HonoApp } from '../context.js'
+import type { Env } from '../env.js'
 import { errors } from '../errors.js'
 import { generateSessionToken, hashToken } from '../auth/tokens.js'
 import { admins, sessions } from '../db/schema/index.js'
@@ -12,6 +13,18 @@ import { clientIp, rateLimit } from '../middleware/rate-limit.js'
 export const authRoutes = new Hono<HonoApp>()
 
 const LOGIN_WINDOW_MS = 10 * 60 * 1000
+
+// Shared by set and delete: a __Host- cookie (COOKIE_SECURE) can only be
+// serialized with Secure + Path=/, and hono throws otherwise — so the
+// delete must carry the same attributes as the set or logout 500s.
+function sessionCookieOptions(env: Env): {
+  path: string
+  httpOnly: boolean
+  sameSite: 'Lax'
+  secure: boolean
+} {
+  return { path: '/', httpOnly: true, sameSite: 'Lax', secure: env.COOKIE_SECURE }
+}
 
 authRoutes.post(
   '/api/auth/login',
@@ -46,10 +59,7 @@ authRoutes.post(
       .run()
 
     setCookie(c, env.SESSION_COOKIE_NAME, token, {
-      path: '/',
-      httpOnly: true,
-      sameSite: 'Lax',
-      secure: env.COOKIE_SECURE,
+      ...sessionCookieOptions(env),
       maxAge: env.SESSION_TTL_DAYS * 24 * 60 * 60,
     })
     c.get('logger').info('admin login', { username: admin.username, ip: clientIp(c) })
@@ -66,8 +76,10 @@ authRoutes.post('/api/auth/logout', requireSession, (c) => {
   const env = c.get('env')
   const db = c.get('db')
   const session = c.get('session')
+  // Clear the cookie first: if serialization throws, the row still exists
+  // and a retry works, instead of a revoked row behind a lingering cookie.
+  deleteCookie(c, env.SESSION_COOKIE_NAME, sessionCookieOptions(env))
   db.delete(sessions).where(eq(sessions.idHash, session.idHash)).run()
-  deleteCookie(c, env.SESSION_COOKIE_NAME, { path: '/' })
   return c.json({ ok: true as const })
 })
 
