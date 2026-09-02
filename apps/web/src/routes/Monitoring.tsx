@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import {
   memoryLimitSchema,
   type MetricsSample,
@@ -337,19 +337,26 @@ function LimitField({
   placeholder: string
   onChange: (v: string) => void
 }) {
+  const id = useId()
   return (
-    <label className="block">
-      <span className="eyebrow mb-1.5 block">{label}</span>
+    <div className="block">
+      <label htmlFor={id} className="eyebrow mb-1.5 block">
+        {label}
+      </label>
       <input
+        id={id}
         className={inputClass}
         value={value}
         placeholder={placeholder}
         aria-invalid={invalid}
+        aria-describedby={`${id}-hint`}
         style={invalid ? { borderColor: 'var(--bad, #e5484d)' } : undefined}
         onChange={(e) => onChange(e.target.value)}
       />
-      <span className="meta mt-1 block">{hint}</span>
-    </label>
+      <span id={`${id}-hint`} className="meta mt-1 block">
+        {hint}
+      </span>
+    </div>
   )
 }
 

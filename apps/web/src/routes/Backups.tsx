@@ -266,19 +266,20 @@ function RestoreDialog({
             backup's world.
           </Banner>
         )}
-        <label className="block">
-          <span className="eyebrow mb-1.5 block">
+        <div className="block">
+          <label htmlFor="restore-confirm" className="eyebrow mb-1.5 block">
             {preview.manifest.worldId
               ? 'Type the backup world ID to confirm: '
               : 'Type to confirm: '}
             <span className="mono">{required}</span>
-          </span>
+          </label>
           <input
+            id="restore-confirm"
             className={inputClass}
             value={confirmText}
             onChange={(e) => setConfirmText(e.target.value)}
           />
-        </label>
+        </div>
         {err && <Banner tone="bad">{err}</Banner>}
       </div>
     </Dialog>

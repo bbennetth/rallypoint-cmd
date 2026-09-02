@@ -715,16 +715,17 @@ function DeleteDialog({
           )}
           <Row k="Size" v={formatBytes(target.entry.sizeBytes)} />
         </dl>
-        <label className="block">
-          <span className="eyebrow mb-1.5 block">
+        <div className="block">
+          <label htmlFor="storage-delete-confirm" className="eyebrow mb-1.5 block">
             Type the directory name to confirm: <span className="mono">{required}</span>
-          </span>
+          </label>
           <input
+            id="storage-delete-confirm"
             className={inputClass}
             value={confirmText}
             onChange={(e) => setConfirmText(e.target.value)}
           />
-        </label>
+        </div>
         {err && <Banner tone="bad">{err}</Banner>}
       </div>
     </Dialog>

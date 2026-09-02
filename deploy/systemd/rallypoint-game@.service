@@ -24,19 +24,38 @@ CPUWeight=200
 SyslogIdentifier=rallypoint-game-%i
 
 # Game servers execute third-party binaries and load user-supplied mods,
-# so they run sandboxed: read-only filesystem except the paths below,
-# no access to /root or /home, a private /tmp, and no way to gain
-# privileges. The per-game drop-in adds that game's install dir to
-# ReadWritePaths.
+# so they run sandboxed: read-only filesystem except that game's own
+# install dir (granted by the per-instance drop-in's ReadWritePaths, so
+# one game cannot write into another's), no access to /root or /home, a
+# private /tmp, and no way to gain privileges.
+#
+# The unit runs as root inside the unprivileged container, and the mount
+# namespace protections below can be undone by a root process that still
+# holds CAP_SYS_ADMIN. So the capability set is emptied and the mount /
+# module / namespace syscalls are filtered, which is what makes
+# ProtectSystem= and friends binding rather than advisory. Game ports are
+# all above 1024, and Wine, Mono/Unity JIT and 32-bit Steam bits work
+# without capabilities; MemoryDenyWriteExecute and
+# SystemCallArchitectures=native are deliberately absent because they do
+# not.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
+ProtectProc=invisible
 ProtectKernelTunables=true
 ProtectKernelModules=true
+ProtectKernelLogs=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
-ReadWritePaths=/opt/games
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallFilter=~@mount @module @reboot @swap @clock @cpu-emulation @obsolete @raw-io
+SystemCallErrorNumber=EPERM
 
 [Install]
 WantedBy=multi-user.target

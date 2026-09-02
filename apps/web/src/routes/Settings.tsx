@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import type { SettingsEntry, SettingValue } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
 import { Badge, Button, Card, inputClass } from '../ui/primitives.js'
@@ -66,10 +66,22 @@ function StructuredEditor() {
 
   async function save() {
     if (Object.keys(dirty).length === 0) return
+    // Numbers were edited as raw text; validate and coerce them here so a
+    // typo never reaches the game's config as 0 or NaN.
+    const patch: Record<string, SettingValue> = {}
+    for (const [key, raw] of Object.entries(dirty)) {
+      const kind = entries?.find((e) => e.key === key)?.kind ?? null
+      const coerced = coerceForKind(kind, raw)
+      if (!coerced.ok) {
+        setMsg({ tone: 'bad', text: `${key} ${coerced.reason}.` })
+        return
+      }
+      patch[key] = coerced.value
+    }
     setSaving(true)
     setMsg(null)
     try {
-      await api.updateSettings(dirty)
+      await api.updateSettings(patch)
       await load()
       setMsg({ tone: 'good', text: 'Saved. Restart the server to apply.' })
     } catch (e) {
@@ -132,6 +144,24 @@ function StructuredEditor() {
   )
 }
 
+// Panel-generated admin secrets (REST/RCON/telnet passwords, Enshrouded
+// role passwords). The admin never needs to read them, so they render
+// masked with a per-field reveal.
+const SECRET_KEY_RE = /password/i
+
+export function coerceForKind(
+  kind: SettingsEntry['kind'],
+  raw: SettingValue,
+): { ok: true; value: SettingValue } | { ok: false; reason: string } {
+  if (kind !== 'int' && kind !== 'float') return { ok: true, value: raw }
+  if (typeof raw === 'number') return { ok: true, value: raw }
+  const text = String(raw).trim()
+  const n = Number(text)
+  if (text === '' || !Number.isFinite(n)) return { ok: false, reason: 'must be a number' }
+  if (kind === 'int' && !Number.isInteger(n)) return { ok: false, reason: 'must be a whole number' }
+  return { ok: true, value: n }
+}
+
 function EntryField({
   entry,
   value,
@@ -141,55 +171,80 @@ function EntryField({
   value: SettingValue
   onChange: (v: SettingValue) => void
 }) {
+  const id = useId()
   const label = entry.label ?? entry.key
+  const isNumber = entry.kind === 'int' || entry.kind === 'float'
+  const secret = entry.kind === 'string' && SECRET_KEY_RE.test(entry.key)
+  const [reveal, setReveal] = useState(false)
+
+  let control: ReactNode
+  if (entry.kind === 'bool') {
+    control = (
+      <select
+        id={id}
+        className={inputClass}
+        disabled={entry.managed}
+        value={String(value)}
+        onChange={(e) => onChange(e.target.value === 'true')}
+      >
+        <option value="true">True</option>
+        <option value="false">False</option>
+      </select>
+    )
+  } else if (entry.kind === 'enum') {
+    control = (
+      <select
+        id={id}
+        className={inputClass}
+        disabled={entry.managed}
+        value={String(value)}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {(entry.enumValues ?? []).map((v) => (
+          <option key={v} value={v}>
+            {v}
+          </option>
+        ))}
+      </select>
+    )
+  } else {
+    // Numbers are edited as text: a type="number" input reports '' while
+    // the user is mid-way through "1." or has cleared it, which used to
+    // snap the field back to 0. The raw string is kept until save, where
+    // coerceForKind() validates it.
+    control = (
+      <input
+        id={id}
+        className={inputClass}
+        disabled={entry.managed}
+        type={secret && !reveal ? 'password' : 'text'}
+        inputMode={isNumber ? 'decimal' : undefined}
+        autoComplete={secret ? 'off' : undefined}
+        value={String(value)}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    )
+  }
+
   return (
-    <label className="block">
-      <span className="eyebrow mb-1.5 flex items-center gap-2">
-        {label}
+    <div className="block">
+      <div className="eyebrow mb-1.5 flex items-center gap-2">
+        <label htmlFor={id}>{label}</label>
         {entry.managed && <Badge tone="warn">managed</Badge>}
-      </span>
-      {entry.kind === 'bool' ? (
-        <select
-          className={inputClass}
-          disabled={entry.managed}
-          value={String(value)}
-          onChange={(e) => onChange(e.target.value === 'true')}
-        >
-          <option value="true">True</option>
-          <option value="false">False</option>
-        </select>
-      ) : entry.kind === 'enum' ? (
-        <select
-          className={inputClass}
-          disabled={entry.managed}
-          value={String(value)}
-          onChange={(e) => onChange(e.target.value)}
-        >
-          {(entry.enumValues ?? []).map((v) => (
-            <option key={v} value={v}>
-              {v}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <input
-          className={inputClass}
-          disabled={entry.managed}
-          type={entry.kind === 'int' || entry.kind === 'float' ? 'number' : 'text'}
-          step={entry.kind === 'float' ? '0.01' : undefined}
-          value={String(value)}
-          onChange={(e) =>
-            onChange(
-              entry.kind === 'int'
-                ? parseInt(e.target.value || '0', 10)
-                : entry.kind === 'float'
-                  ? parseFloat(e.target.value || '0')
-                  : e.target.value,
-            )
-          }
-        />
-      )}
-    </label>
+        {secret && (
+          <button
+            type="button"
+            className="cmd-reveal"
+            aria-pressed={reveal}
+            aria-controls={id}
+            onClick={() => setReveal((r) => !r)}
+          >
+            {reveal ? 'hide' : 'show'}
+          </button>
+        )}
+      </div>
+      {control}
+    </div>
   )
 }
 

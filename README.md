@@ -246,8 +246,10 @@ If you'd rather port-forward: forward the game's UDP port(s) from the table in
   Helper-Script uses. Treat the container as disposable and keep backups off it.
 - **Game servers are sandboxed by systemd.** They execute third-party binaries and load
   user-supplied mods, so `rallypoint-game@<slug>` runs with `NoNewPrivileges`, `ProtectSystem=strict`,
-  `ProtectHome`, `PrivateTmp` and kernel/cgroup protections. The only writable path is that game's
-  own install dir, granted per instance via `ReadWritePaths`.
+  `ProtectHome`, `PrivateTmp` and kernel/cgroup protections, with an empty capability set and the
+  mount/module/namespace syscalls filtered so those protections bind even though the unit runs as
+  root inside the container. The only writable path is that game's own install dir, granted per
+  instance via `ReadWritePaths`.
 - **Unit files are never assembled from request input.** Start scripts and per-instance drop-ins are
   rendered from the game registry (`packages/shared/src/games.ts`), and every slug and unit name is
   checked against that registry's closed set before it reaches an argv.
