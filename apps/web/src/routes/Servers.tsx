@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { GAMES, type GameServerSummary, type ServerLifecycle } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
-import { usePoll } from '../lib/usePoll.js'
+import { useServers, useServersLive } from '../lib/servers.js'
 import { formatBytes } from '../lib/format.js'
 import { Badge, Button, Card, Field, Spinner, inputClass } from '../ui/primitives.js'
 import { Banner } from '../ui/Banner.js'
@@ -26,11 +26,10 @@ export function ServersPage() {
   const [removing, setRemoving] = useState<GameServerSummary | null>(null)
   // Paused while a dialog is up: a poll result re-renders the dialog's
   // controlled <select>, and desktop Chrome closes its open picker.
-  const { data, error, loading, refresh } = usePoll(api.servers, 5000, {
-    enabled: !adding && !removing,
-  })
+  useServersLive(!adding && !removing)
+  const { servers, error, loading, refresh } = useServers()
 
-  if (!data)
+  if (!servers)
     return error ? (
       <div className="space-y-4">
         <div className="pg-head">
@@ -53,7 +52,7 @@ export function ServersPage() {
 
       {err && <Banner tone="bad">{err}</Banner>}
 
-      {data.servers.length === 0 && (
+      {servers.length === 0 && (
         <Card title="No servers yet">
           <div className="flex items-center justify-between gap-4">
             <p className="cmd-empty">
@@ -67,7 +66,7 @@ export function ServersPage() {
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {data.servers.map((s) => {
+        {servers.map((s) => {
           const lc = LIFECYCLE[s.lifecycle]
           const game = GAMES[s.gameSlug]
           return (
@@ -97,7 +96,7 @@ export function ServersPage() {
 
       {adding && (
         <AddServerDialog
-          existing={data.servers.map((s) => s.gameSlug)}
+          existing={servers.map((s) => s.gameSlug)}
           onClose={() => setAdding(false)}
           onCreated={(id) => {
             setAdding(false)

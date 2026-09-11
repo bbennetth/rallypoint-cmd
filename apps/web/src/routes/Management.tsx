@@ -10,6 +10,7 @@ import {
   type WineStatus,
 } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
+import { useServers } from '../lib/servers.js'
 import { useLongOp, useSseLines } from '../lib/useEventSource.js'
 import { formatBytes, formatDateTime } from '../lib/format.js'
 import { Badge, Button, Card, inputClass, Spinner } from '../ui/primitives.js'
@@ -27,15 +28,8 @@ export function ManagementPage() {
   // Wine only matters if something here actually runs under it — join the
   // registered servers' game slugs against the GAMES registry and look for
   // a Windows-platform game.
-  const [hasWindowsServer, setHasWindowsServer] = useState(false)
-  useEffect(() => {
-    api
-      .servers()
-      .then((r) =>
-        setHasWindowsServer(r.servers.some((s) => GAMES[s.gameSlug]?.platform === 'windows')),
-      )
-      .catch(() => {})
-  }, [])
+  const { servers } = useServers()
+  const hasWindowsServer = (servers ?? []).some((s) => GAMES[s.gameSlug]?.platform === 'windows')
 
   return (
     <div className="cmd-wide space-y-6">
