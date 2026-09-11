@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import type { SessionInfo } from '@rallypoint-cmd/shared'
-import { api, ApiError } from './api.js'
+import { api, ApiError, resetCsrf } from './api.js'
 
 interface AuthState {
   session: SessionInfo | null
@@ -34,9 +34,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(await api.login(username, password))
   }, [])
 
+  // The local session goes regardless of what the server says: an
+  // expired cookie (401), a stale CSRF token (403) or a 500 all used to
+  // throw before setSession(null) ran, leaving the user apparently signed
+  // in on a page whose every request fails.
   const logout = useCallback(async () => {
-    await api.logout()
-    setSession(null)
+    try {
+      await api.logout()
+    } finally {
+      setSession(null)
+      resetCsrf()
+    }
   }, [])
 
   return (
