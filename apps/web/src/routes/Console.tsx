@@ -9,7 +9,9 @@ import { Banner } from '../ui/Banner.js'
 import { LogPane } from '../ui/LogPane.js'
 
 export function ConsolePage() {
-  const { lines, connected, clear } = useSseLines(`${apiScope()}/console/stream`, 'log', { max: 2000 })
+  const { lines, status, clear, retry } = useSseLines(`${apiScope()}/console/stream`, 'log', {
+    max: 2000,
+  })
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -38,7 +40,17 @@ export function ConsolePage() {
       <div className="pg-head">
         <div className="flex items-center gap-3">
           <h1>Live console</h1>
-          <Badge tone={connected ? 'good' : 'muted'}>{connected ? 'streaming' : 'connecting…'}</Badge>
+          {/* 'closed' is the stream the browser gave up on — a 401 after
+              the session expired, say. It used to read "connecting…"
+              forever, with nothing to click. */}
+          <Badge tone={status === 'open' ? 'good' : status === 'closed' ? 'bad' : 'muted'}>
+            {status === 'open' ? 'streaming' : status === 'closed' ? 'disconnected' : 'connecting…'}
+          </Badge>
+          {status === 'closed' && (
+            <Button variant="ghost" size="sm" onClick={retry}>
+              Reconnect
+            </Button>
+          )}
         </div>
         <div className="flex items-center gap-4">
           <label className="eyebrow flex cursor-pointer items-center gap-2">

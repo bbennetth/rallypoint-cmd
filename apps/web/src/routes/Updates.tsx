@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { LongOp } from '@rallypoint-cmd/shared'
 import { api, ApiError, apiScope } from '../lib/api.js'
 import { useAsyncData } from '../lib/usePoll.js'
-import { useSseUpdates } from '../lib/useEventSource.js'
+import { useLongOp } from '../lib/useEventSource.js'
 import { Badge, Button, Card, Spinner } from '../ui/primitives.js'
 import { Banner } from '../ui/Banner.js'
 import { LogPane } from '../ui/LogPane.js'
@@ -12,7 +12,10 @@ export function UpdatesPage() {
   const [op, setOp] = useState<LongOp | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const running = op?.status === 'running'
-  const { log, progress, done, reset } = useSseUpdates(`${apiScope()}/updates/stream`, running)
+  // useLongOp, not a log-only stream: it handles the on-connect `op`
+  // replay, which is the only signal left when an op finishes between the
+  // GET /updates and the EventSource connecting.
+  const { lines, progress, doneOp, reset } = useLongOp(running, `${apiScope()}/updates/stream`)
   const { data, error: loadError, refresh } = useAsyncData(api.updateState)
   const installedBuild = data?.installedBuildId ?? null
   // Until the first fetch lands we do not know whether this server is
@@ -27,8 +30,8 @@ export function UpdatesPage() {
 
   // When the stream signals done, refresh the installed build + op state.
   useEffect(() => {
-    if (done) void refresh()
-  }, [done, refresh])
+    if (doneOp) void refresh()
+  }, [doneOp, refresh])
 
   async function run(kind: 'install' | 'update' | 'validate') {
     setErr(null)
@@ -84,14 +87,14 @@ export function UpdatesPage() {
         </p>
       </Card>
 
-      {(running || log.length > 0) && (
+      {(running || lines.length > 0) && (
         <Card title="Progress">
           {progress != null && (
             <div className="mb-3">
               <ProgressBar value={progress} label="Downloading…" right={`${progress.toFixed(1)}%`} />
             </div>
           )}
-          <LogPane lines={log} maxHeight={320} autoscroll empty="Waiting for output…" />
+          <LogPane lines={lines} maxHeight={320} autoscroll empty="Waiting for output…" />
         </Card>
       )}
     </div>
