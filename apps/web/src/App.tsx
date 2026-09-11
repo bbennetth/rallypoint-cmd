@@ -2,7 +2,8 @@ import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-do
 import { useAuth } from './lib/auth.js'
 import { AppChrome } from './ui/AppChrome.js'
 import { ErrorBoundary } from './ui/ErrorBoundary.js'
-import { Spinner } from './ui/primitives.js'
+import { Banner } from './ui/Banner.js'
+import { Button, Spinner } from './ui/primitives.js'
 import { LoginPage } from './routes/Login.js'
 import { ServersPage } from './routes/Servers.js'
 import { DashboardPage } from './routes/Dashboard.js'
@@ -18,12 +19,30 @@ import { ManagementPage } from './routes/Management.js'
 import { AccountPage } from './routes/Account.js'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { session, loading } = useAuth()
+  const { session, status, refresh } = useAuth()
   const location = useLocation()
-  if (loading)
+  if (status === 'loading')
     return (
       <div className="cmd-empty flex h-full items-center justify-center">
         <Spinner />
+      </div>
+    )
+  // Couldn't reach the panel and have nothing to fall back on. The cookie
+  // may well be fine, so say so and keep retrying instead of bouncing to
+  // /login, which reads as "you were signed out".
+  if (status === 'error' && !session)
+    return (
+      <div className="cmd-wide space-y-4 p-4">
+        <Banner
+          tone="bad"
+          actions={
+            <Button variant="ghost" size="sm" onClick={() => void refresh()}>
+              Retry
+            </Button>
+          }
+        >
+          Can&rsquo;t reach the panel — retrying…
+        </Banner>
       </div>
     )
   if (!session) return <Navigate to="/login" replace />
