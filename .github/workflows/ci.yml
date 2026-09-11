@@ -1,0 +1,41 @@
+name: ci
+
+# Gate pull requests on the same checks release.yml runs after a tag.
+# Without this the lint rules, types and tests are only enforced once a
+# release is cut — i.e. after the code has already merged.
+#
+# The Playwright suite is deliberately not here: it builds the SPA and
+# boots the panel on a real TCP port, which is `npm run e2e` locally.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Check (lint + typecheck + tests)
+        run: npm run check
+        env:
+          NODE_ENV: test
+
+      - name: Build
+        run: npm run build

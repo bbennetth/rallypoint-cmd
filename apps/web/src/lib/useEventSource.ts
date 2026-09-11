@@ -31,6 +31,8 @@ function useSseSubscription(
   onEventRef.current = onEvent
   const onResetRef = useRef(onReset)
   onResetRef.current = onReset
+  // Joined so the event list is a stable dependency: callers pass an
+  // array literal, which is a new identity on every render.
   const key = events.join(',')
 
   useEffect(() => {
