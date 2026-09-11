@@ -1,6 +1,7 @@
-import { Navigate, Route, Routes, useParams } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import { useAuth } from './lib/auth.js'
 import { AppChrome } from './ui/AppChrome.js'
+import { ErrorBoundary } from './ui/ErrorBoundary.js'
 import { Spinner } from './ui/primitives.js'
 import { LoginPage } from './routes/Login.js'
 import { ServersPage } from './routes/Servers.js'
@@ -18,6 +19,7 @@ import { AccountPage } from './routes/Account.js'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
+  const location = useLocation()
   if (loading)
     return (
       <div className="cmd-empty flex h-full items-center justify-center">
@@ -25,7 +27,15 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
       </div>
     )
   if (!session) return <Navigate to="/login" replace />
-  return <AppChrome>{children}</AppChrome>
+  // Per-page boundary inside the chrome: a page that throws leaves the nav
+  // usable, and the key clears the error once the user navigates away.
+  return (
+    <AppChrome>
+      <ErrorBoundary key={location.pathname} what="This page">
+        {children}
+      </ErrorBoundary>
+    </AppChrome>
+  )
 }
 
 function ServerPage({ page }: { page: React.ReactNode }) {
@@ -36,22 +46,27 @@ function ServerPage({ page }: { page: React.ReactNode }) {
 }
 
 export function App() {
+  // Outer boundary: catches the chrome and anything above the page-level
+  // boundary, so a throw there still renders something rather than a
+  // blank document.
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/" element={<RequireAuth><ServersPage /></RequireAuth>} />
-      <Route path="/servers/:serverId" element={<RequireAuth><ServerPage page={<DashboardPage />} /></RequireAuth>} />
-      <Route path="/servers/:serverId/console" element={<RequireAuth><ServerPage page={<ConsolePage />} /></RequireAuth>} />
-      <Route path="/servers/:serverId/monitoring" element={<RequireAuth><ServerPage page={<MonitoringPage />} /></RequireAuth>} />
-      <Route path="/servers/:serverId/players" element={<RequireAuth><ServerPage page={<PlayersPage />} /></RequireAuth>} />
-      <Route path="/servers/:serverId/settings" element={<RequireAuth><ServerPage page={<SettingsPage />} /></RequireAuth>} />
-      <Route path="/servers/:serverId/updates" element={<RequireAuth><ServerPage page={<UpdatesPage />} /></RequireAuth>} />
-      <Route path="/servers/:serverId/mods" element={<RequireAuth><ServerPage page={<ModsPage />} /></RequireAuth>} />
-      <Route path="/servers/:serverId/backups" element={<RequireAuth><ServerPage page={<BackupsPage />} /></RequireAuth>} />
-      <Route path="/servers/:serverId/schedules" element={<RequireAuth><ServerPage page={<SchedulesPage />} /></RequireAuth>} />
-      <Route path="/management" element={<RequireAuth><ManagementPage /></RequireAuth>} />
-      <Route path="/account" element={<RequireAuth><AccountPage /></RequireAuth>} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <ErrorBoundary what="The panel">
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/" element={<RequireAuth><ServersPage /></RequireAuth>} />
+        <Route path="/servers/:serverId" element={<RequireAuth><ServerPage page={<DashboardPage />} /></RequireAuth>} />
+        <Route path="/servers/:serverId/console" element={<RequireAuth><ServerPage page={<ConsolePage />} /></RequireAuth>} />
+        <Route path="/servers/:serverId/monitoring" element={<RequireAuth><ServerPage page={<MonitoringPage />} /></RequireAuth>} />
+        <Route path="/servers/:serverId/players" element={<RequireAuth><ServerPage page={<PlayersPage />} /></RequireAuth>} />
+        <Route path="/servers/:serverId/settings" element={<RequireAuth><ServerPage page={<SettingsPage />} /></RequireAuth>} />
+        <Route path="/servers/:serverId/updates" element={<RequireAuth><ServerPage page={<UpdatesPage />} /></RequireAuth>} />
+        <Route path="/servers/:serverId/mods" element={<RequireAuth><ServerPage page={<ModsPage />} /></RequireAuth>} />
+        <Route path="/servers/:serverId/backups" element={<RequireAuth><ServerPage page={<BackupsPage />} /></RequireAuth>} />
+        <Route path="/servers/:serverId/schedules" element={<RequireAuth><ServerPage page={<SchedulesPage />} /></RequireAuth>} />
+        <Route path="/management" element={<RequireAuth><ManagementPage /></RequireAuth>} />
+        <Route path="/account" element={<RequireAuth><AccountPage /></RequireAuth>} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </ErrorBoundary>
   )
 }
