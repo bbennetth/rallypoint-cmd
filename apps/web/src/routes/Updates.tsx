@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { LongOp } from '@rallypoint-cmd/shared'
 import { api, ApiError, apiScope } from '../lib/api.js'
+import { useAsyncData } from '../lib/usePoll.js'
 import { useSseUpdates } from '../lib/useEventSource.js'
 import { Badge, Button, Card, Spinner } from '../ui/primitives.js'
 import { Banner } from '../ui/Banner.js'
@@ -8,30 +9,26 @@ import { LogPane } from '../ui/LogPane.js'
 import { ProgressBar } from '../ui/ProgressBar.js'
 
 export function UpdatesPage() {
-  const [installedBuild, setInstalledBuild] = useState<string | null>(null)
-  // Until the first fetch lands we do not know whether this server is
-  // installed — and the primary button's action depends on it. Acting on
-  // a guess means running the wrong steamcmd op on a real server.
-  const [stateLoaded, setStateLoaded] = useState(false)
   const [op, setOp] = useState<LongOp | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const running = op?.status === 'running'
   const { log, progress, done, reset } = useSseUpdates(`${apiScope()}/updates/stream`, running)
+  const { data, error: loadError, refresh } = useAsyncData(api.updateState)
+  const installedBuild = data?.installedBuildId ?? null
+  // Until the first fetch lands we do not know whether this server is
+  // installed — and the primary button's action depends on it. Acting on
+  // a guess means running the wrong steamcmd op on a real server.
+  const stateLoaded = data != null
+  const banner = err ?? (loadError ? `Could not read the update state: ${loadError.message}` : null)
 
-  async function refresh() {
-    const s = await api.updateState()
-    setInstalledBuild(s.installedBuildId)
-    setOp(s.op)
-    setStateLoaded(true)
-  }
   useEffect(() => {
-    void refresh()
-  }, [])
+    if (data) setOp(data.op)
+  }, [data])
 
   // When the stream signals done, refresh the installed build + op state.
   useEffect(() => {
     if (done) void refresh()
-  }, [done])
+  }, [done, refresh])
 
   async function run(kind: 'install' | 'update' | 'validate') {
     setErr(null)
@@ -53,9 +50,9 @@ export function UpdatesPage() {
         title="SteamCMD"
         actions={<span className="meta">installed build {installedBuild ?? '—'}</span>}
       >
-        {err && (
+        {banner && (
           <div className="mb-3">
-            <Banner tone="bad">{err}</Banner>
+            <Banner tone="bad">{banner}</Banner>
           </div>
         )}
         <div className="flex flex-wrap items-center gap-2">
