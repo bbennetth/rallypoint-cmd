@@ -4,6 +4,7 @@ import { api, ApiError } from '../lib/api.js'
 import { usePoll } from '../lib/usePoll.js'
 import { useCurrentGame } from '../lib/useCurrentGame.js'
 import { Badge, Button, Card, inputClass } from '../ui/primitives.js'
+import { Banner } from '../ui/Banner.js'
 import { DataTable } from '../ui/DataTable.js'
 
 // What a game reports about a player varies by admin protocol: Palworld's
@@ -27,14 +28,19 @@ export function PlayersPage() {
   const { data, error, refresh } = usePoll(api.players, 5000)
   const [busy, setBusy] = useState<string | null>(null)
   const [announce, setAnnounce] = useState('')
+  const [err, setErr] = useState<string | null>(null)
 
-  async function act(fn: () => Promise<unknown>, key: string) {
+  // A kick/ban/announce that fails is invisible otherwise: the poll's own
+  // error clears on the next successful tick, so it never reports the
+  // action, only the listing.
+  async function act(fn: () => Promise<unknown>, key: string, what: string) {
     setBusy(key)
+    setErr(null)
     try {
       await fn()
       await refresh()
-    } catch {
-      /* surfaced via poll error / no-op */
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : `${what} failed`)
     } finally {
       setBusy(null)
     }
@@ -58,6 +64,8 @@ export function PlayersPage() {
         <h1>Players</h1>
       </div>
 
+      {err && <Banner tone="bad">{err}</Banner>}
+
       {can.announce && (
       <Card
         title="Broadcast"
@@ -71,7 +79,7 @@ export function PlayersPage() {
               void act(async () => {
                 await api.announce(announce.trim())
                 setAnnounce('')
-              }, 'announce')
+              }, 'announce', 'Broadcast')
           }}
         >
           <input
@@ -118,7 +126,7 @@ export function PlayersPage() {
                       variant="ghost"
                       size="sm"
                       disabled={busy === p.userId}
-                      onClick={() => act(() => api.kick(p.userId), p.userId)}
+                      onClick={() => act(() => api.kick(p.userId), p.userId, 'Kick')}
                     >
                       Kick
                     </Button>
@@ -128,7 +136,7 @@ export function PlayersPage() {
                       variant="danger"
                       size="sm"
                       disabled={busy === p.userId}
-                      onClick={() => act(() => api.ban(p.userId), p.userId)}
+                      onClick={() => act(() => api.ban(p.userId), p.userId, 'Ban')}
                     >
                       Ban
                     </Button>

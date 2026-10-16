@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { Mod } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
+import { useAsyncData } from '../lib/usePoll.js'
 import { formatBytes, formatDateTime } from '../lib/format.js'
 import { Badge, Button, Card, Spinner } from '../ui/primitives.js'
 import { Banner } from '../ui/Banner.js'
@@ -18,7 +19,6 @@ const MOD_COLUMNS = [
 ]
 
 export function ModsPage() {
-  const [mods, setMods] = useState<Mod[] | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
@@ -26,13 +26,11 @@ export function ModsPage() {
   // banner until the user restarts (or dismisses it).
   const [restartNeeded, setRestartNeeded] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<Mod | null>(null)
-
-  async function load() {
-    setMods((await api.mods()).mods)
-  }
-  useEffect(() => {
-    void load()
-  }, [])
+  const { data, error: loadError, refresh } = useAsyncData(api.mods)
+  const mods = data?.mods ?? null
+  // A game without a mod system 404s here, so deep-linking /mods reports
+  // that instead of spinning on "Loading…" forever.
+  const banner = err ?? (loadError ? `Could not load mods: ${loadError.message}` : null)
 
   async function onUpload(file: File) {
     setBusy('upload')
@@ -40,7 +38,7 @@ export function ModsPage() {
     setOk(null)
     try {
       const result = await api.uploadMod(file)
-      setMods(result.mods)
+      await refresh()
       setOk(
         result.installed.length === 1
           ? `Installed ${result.installed[0]}.`
@@ -60,7 +58,8 @@ export function ModsPage() {
     setErr(null)
     setOk(null)
     try {
-      setMods((await api.toggleMod(mod.id, !mod.enabled)).mods)
+      await api.toggleMod(mod.id, !mod.enabled)
+      await refresh()
       setRestartNeeded(true)
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : 'Toggle failed')
@@ -75,7 +74,7 @@ export function ModsPage() {
     setOk(null)
     try {
       await api.deleteMod(mod.id)
-      await load()
+      await refresh()
       setRestartNeeded(true)
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : 'Delete failed')
@@ -116,9 +115,9 @@ export function ModsPage() {
           </>
         }
       >
-        {err && (
+        {banner && (
           <div className="mb-3">
-            <Banner tone="bad">{err}</Banner>
+            <Banner tone="bad">{banner}</Banner>
           </div>
         )}
         {ok && (
@@ -151,7 +150,7 @@ export function ModsPage() {
           </div>
         )}
         {!mods ? (
-          <p className="cmd-empty">Loading…</p>
+          loadError ? null : <p className="cmd-empty">Loading…</p>
         ) : (
           <DataTable
             columns={MOD_COLUMNS}

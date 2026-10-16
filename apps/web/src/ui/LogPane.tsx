@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import type { ReactNode } from 'react'
 
 // Monospace log viewer — the console stream, the SteamCMD output, the
@@ -30,7 +30,12 @@ export function LogPane({
   errorPattern?: RegExp
 }) {
   const paneRef = useRef<HTMLDivElement>(null)
-  const arr = typeof lines === 'string' ? (lines ? lines.split('\n') : []) : lines
+  // Memoised so the string form doesn't produce a fresh array every
+  // render, which re-ran the autoscroll effect on every render.
+  const arr = useMemo(
+    () => (typeof lines === 'string' ? (lines ? lines.split('\n') : []) : lines),
+    [lines],
+  )
 
   useEffect(() => {
     if (!autoscroll) return

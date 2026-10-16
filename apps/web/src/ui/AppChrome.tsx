@@ -6,6 +6,7 @@ import { AppBrandLockup } from './ink/icons.js'
 import { UserMenu } from './UserMenu.js'
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/auth.js'
+import { useServers } from '../lib/servers.js'
 
 // The panel's app chrome: the vendored Ink shell wired to this app's nav,
 // session and update check. Desktop gets a 220px sidebar, mobile a top bar
@@ -91,17 +92,13 @@ export function AppChrome({ children }: { children: ReactNode }) {
       .catch(() => {})
   }, [])
 
-  // Current server (from the URL) + its game slug (fetched once) drive
-  // the capability-gated nav.
+  // Current server (from the URL) + its game slug drive the
+  // capability-gated nav. The list comes from the shared context, so
+  // navigating between servers no longer refetches it.
   const serverId = location.pathname.match(/^\/servers\/([a-z0-9-]+)/)?.[1] ?? null
-  const [slugById, setSlugById] = useState<Record<string, string>>({})
-  useEffect(() => {
-    api
-      .servers()
-      .then((r) => setSlugById(Object.fromEntries(r.servers.map((s) => [s.id, s.gameSlug]))))
-      .catch(() => {})
-  }, [serverId])
-  const game = serverId ? GAMES[slugById[serverId] ?? ''] : undefined
+  const { servers } = useServers()
+  const slug = serverId ? servers?.find((s) => s.id === serverId)?.gameSlug : undefined
+  const game = slug ? GAMES[slug] : undefined
 
   return (
     <InkAppChrome

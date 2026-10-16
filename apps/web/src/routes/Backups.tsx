@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Backup, LongOp, RestorePreview } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
+import { useAsyncData } from '../lib/usePoll.js'
 import { useLongOp } from '../lib/useEventSource.js'
 import { formatBytes, formatDateTime } from '../lib/format.js'
 import { Badge, Button, Card, inputClass, Spinner } from '../ui/primitives.js'
@@ -21,7 +22,6 @@ const BACKUP_COLUMNS = [
 ]
 
 export function BackupsPage() {
-  const [backups, setBackups] = useState<Backup[] | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
@@ -31,13 +31,9 @@ export function BackupsPage() {
   const [activeOp, setActiveOp] = useState<LongOp | null>(null)
   const { progress, lastLine, doneOp, reset } = useLongOp(activeOp !== null)
   const [pendingDelete, setPendingDelete] = useState<Backup | null>(null)
-
-  async function load() {
-    setBackups((await api.backups()).backups)
-  }
-  useEffect(() => {
-    void load()
-  }, [])
+  const { data, error: loadError, refresh } = useAsyncData(api.backups)
+  const backups = data?.backups ?? null
+  const banner = err ?? (loadError ? `Could not load backups: ${loadError.message}` : null)
 
   // Op finished: surface the result (esp. the error) and refresh the list.
   useEffect(() => {
@@ -58,8 +54,8 @@ export function BackupsPage() {
     setActiveOp(null)
     setBusy(null)
     reset()
-    void load()
-  }, [doneOp, activeOp, reset])
+    void refresh()
+  }, [doneOp, activeOp, reset, refresh])
 
   async function create() {
     setBusy('create')
@@ -75,9 +71,12 @@ export function BackupsPage() {
 
   async function del(id: string) {
     setBusy(id)
+    setErr(null)
     try {
       await api.deleteBackup(id)
-      await load()
+      await refresh()
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Delete failed')
     } finally {
       setBusy(null)
       setPendingDelete(null)
@@ -118,9 +117,9 @@ export function BackupsPage() {
           </div>
         }
       >
-        {err && (
+        {banner && (
           <div className="mb-3">
-            <Banner tone="bad">{err}</Banner>
+            <Banner tone="bad">{banner}</Banner>
           </div>
         )}
         {ok && (
@@ -139,7 +138,7 @@ export function BackupsPage() {
           </div>
         )}
         {!backups ? (
-          <p className="cmd-empty">Loading…</p>
+          loadError ? null : <p className="cmd-empty">Loading…</p>
         ) : (
           <DataTable
             columns={BACKUP_COLUMNS}

@@ -94,9 +94,20 @@ let csrfToken: string | null = null
 async function ensureCsrf(): Promise<string> {
   if (csrfToken) return csrfToken
   const res = await fetch('/api/csrf', { credentials: 'same-origin' })
+  // Without this a non-2xx HTML body makes res.json() throw a SyntaxError
+  // out of whatever mutation triggered it, and every call site tests for
+  // ApiError.
+  if (!res.ok) throw new ApiError('csrf_unavailable', 'Could not start a session', res.status)
   const json = (await res.json()) as { token: string }
   csrfToken = json.token
   return csrfToken
+}
+
+// The token is cached for the life of the page, so it has to be dropped
+// when the session it belongs to ends — otherwise the next sign-in
+// re-sends a token the server has moved on from.
+export function resetCsrf(): void {
+  csrfToken = null
 }
 
 // Infer the return type from the schema's OUTPUT (post-parse) — not its

@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import type { SettingsEntry, SettingValue } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
+import { useAsyncData } from '../lib/usePoll.js'
 import { Badge, Button, Card, inputClass } from '../ui/primitives.js'
 import { Banner } from '../ui/Banner.js'
 import { LogPane } from '../ui/LogPane.js'
@@ -27,23 +28,13 @@ export function SettingsPage() {
 }
 
 function StructuredEditor() {
-  const [entries, setEntries] = useState<SettingsEntry[] | null>(null)
-  const [categories, setCategories] = useState<string[]>([])
-  const [pendingRestart, setPendingRestart] = useState(false)
   const [dirty, setDirty] = useState<Record<string, SettingValue>>({})
   const [msg, setMsg] = useState<{ tone: 'good' | 'bad'; text: string } | null>(null)
   const [saving, setSaving] = useState(false)
-
-  async function load() {
-    const res = await api.settings()
-    setEntries(res.entries)
-    setCategories(res.categories)
-    setPendingRestart(res.pendingRestart)
-    setDirty({})
-  }
-  useEffect(() => {
-    void load()
-  }, [])
+  const { data, error: loadError, refresh } = useAsyncData(api.settings)
+  const entries = data?.entries ?? null
+  const pendingRestart = data?.pendingRestart ?? false
+  const categories = useMemo(() => data?.categories ?? [], [data])
 
   const known = useMemo(() => (entries ?? []).filter((e) => e.kind !== null), [entries])
   const unknown = useMemo(() => (entries ?? []).filter((e) => e.kind === null), [entries])
@@ -82,7 +73,8 @@ function StructuredEditor() {
     setMsg(null)
     try {
       await api.updateSettings(patch)
-      await load()
+      await refresh()
+      setDirty({})
       setMsg({ tone: 'good', text: 'Saved. Restart the server to apply.' })
     } catch (e) {
       setMsg({ tone: 'bad', text: e instanceof ApiError ? e.message : 'Save failed' })
@@ -91,7 +83,12 @@ function StructuredEditor() {
     }
   }
 
-  if (!entries) return <p className="cmd-empty">Loading settings…</p>
+  if (!entries)
+    return loadError ? (
+      <Banner tone="bad">Could not load settings: {loadError.message}</Banner>
+    ) : (
+      <p className="cmd-empty">Loading settings…</p>
+    )
 
   return (
     <div className="space-y-4">
@@ -252,10 +249,13 @@ function RawEditor() {
   const [content, setContent] = useState<string | null>(null)
   const [msg, setMsg] = useState<{ tone: 'good' | 'bad'; text: string } | null>(null)
   const [saving, setSaving] = useState(false)
+  const { data, error: loadError } = useAsyncData(api.rawSettings)
 
+  // `content` is the edit buffer; useAsyncData fetches exactly once, so
+  // seeding it here cannot clobber what the user has typed.
   useEffect(() => {
-    void api.rawSettings().then((r) => setContent(r.content))
-  }, [])
+    if (data) setContent(data.content)
+  }, [data])
 
   async function save() {
     if (content == null) return
@@ -271,7 +271,12 @@ function RawEditor() {
     }
   }
 
-  if (content == null) return <p className="cmd-empty">Loading…</p>
+  if (content == null)
+    return loadError ? (
+      <Banner tone="bad">Could not load the config file: {loadError.message}</Banner>
+    ) : (
+      <p className="cmd-empty">Loading…</p>
+    )
   return (
     <Card
       title="Raw editor"

@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+export interface PollResult<T> {
+  data: T | null
+  error: Error | null
+  loading: boolean
+  refresh: () => Promise<void>
+}
+
 // Poll an async fetcher on an interval, with manual refresh. Keeps the
 // last good value while refetching so the UI doesn't flicker.
 //
@@ -12,11 +19,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 // Pages use it while a dialog is open: re-rendering a controlled <select>
 // re-applies its selection, and desktop Chrome closes an open picker
 // when that happens under it.
+//
+// `intervalMs: null` fetches once and never polls — see `useAsyncData`.
 export function usePoll<T>(
   fetcher: () => Promise<T>,
-  intervalMs: number,
+  intervalMs: number | null,
   opts: { enabled?: boolean } = {},
-): { data: T | null; error: Error | null; loading: boolean; refresh: () => Promise<void> } {
+): PollResult<T> {
   const enabled = opts.enabled ?? true
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<Error | null>(null)
@@ -43,10 +52,18 @@ export function usePoll<T>(
     }
   }, [])
 
+  // The initial fetch and the interval are separate effects on purpose:
+  // a caller that only changes `intervalMs` (the servers context turning
+  // polling on and off) must not fire an extra fetch, which would
+  // re-render a dialog's controlled <select> out from under the user.
   useEffect(() => {
     if (!enabled) return
-    let active = true
     void refresh()
+  }, [refresh, enabled])
+
+  useEffect(() => {
+    if (!enabled || intervalMs == null) return
+    let active = true
     const t = setInterval(() => {
       if (active && inFlight.current === 0) void refresh()
     }, intervalMs)
@@ -57,4 +74,15 @@ export function usePoll<T>(
   }, [refresh, intervalMs, enabled])
 
   return { data, error, loading, refresh }
+}
+
+// One-shot load with the same {data, error, loading, refresh} shape —
+// `usePoll` minus the interval. Pages use it for the data they fetch on
+// mount so a rejected request surfaces as an error banner instead of a
+// permanent "Loading…".
+export function useAsyncData<T>(
+  fetcher: () => Promise<T>,
+  opts: { enabled?: boolean } = {},
+): PollResult<T> {
+  return usePoll(fetcher, null, opts)
 }

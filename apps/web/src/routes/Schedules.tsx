@@ -1,38 +1,40 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { Schedule, ScheduleKind } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
+import { useAsyncData } from '../lib/usePoll.js'
 import { formatDateTime } from '../lib/format.js'
 import { Badge, Button, Card, Field, inputClass } from '../ui/primitives.js'
 import { Banner } from '../ui/Banner.js'
 import { ConfirmDialog } from '../ui/ConfirmDialog.js'
 
 export function SchedulesPage() {
-  const [schedules, setSchedules] = useState<Schedule[] | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Schedule | null>(null)
-
-  async function load() {
-    setSchedules((await api.schedules()).schedules)
-  }
-  useEffect(() => {
-    void load()
-  }, [])
+  const { data, error: loadError, refresh } = useAsyncData(api.schedules)
+  const schedules = data?.schedules ?? null
+  const banner = err ?? (loadError ? `Could not load schedules: ${loadError.message}` : null)
 
   async function toggle(s: Schedule) {
     setBusy(s.id)
+    setErr(null)
     try {
       await api.updateSchedule(s.id, { enabled: !s.enabled })
-      await load()
+      await refresh()
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Failed to update schedule')
     } finally {
       setBusy(null)
     }
   }
   async function remove(id: string) {
     setBusy(id)
+    setErr(null)
     try {
       await api.deleteSchedule(id)
-      await load()
+      await refresh()
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Failed to delete schedule')
     } finally {
       setBusy(null)
       setPendingDelete(null)
@@ -46,13 +48,13 @@ export function SchedulesPage() {
       </div>
 
       <Card title="Schedules">
-        {err && (
+        {banner && (
           <div className="mb-3">
-            <Banner tone="bad">{err}</Banner>
+            <Banner tone="bad">{banner}</Banner>
           </div>
         )}
         {!schedules ? (
-          <p className="cmd-empty">Loading…</p>
+          loadError ? null : <p className="cmd-empty">Loading…</p>
         ) : schedules.length === 0 ? (
           <p className="cmd-empty">No schedules. Add one below.</p>
         ) : (
@@ -105,7 +107,7 @@ export function SchedulesPage() {
       <NewSchedule
         onCreated={async () => {
           setErr(null)
-          await load()
+          await refresh()
         }}
         onError={setErr}
       />

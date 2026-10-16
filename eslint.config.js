@@ -4,6 +4,7 @@
 
 import tsParser from '@typescript-eslint/parser'
 import tsPlugin from '@typescript-eslint/eslint-plugin'
+import reactHooks from 'eslint-plugin-react-hooks'
 import prettierConfig from 'eslint-config-prettier'
 
 /** @type {import('eslint').Linter.Config[]} */
@@ -44,6 +45,18 @@ export default [
       'no-console': ['warn', { allow: ['warn', 'error'] }],
       eqeqeq: ['error', 'always', { null: 'ignore' }],
       'no-implicit-coercion': 'error',
+    },
+  },
+  {
+    // The SPA only. Rules are listed explicitly rather than spread from
+    // the plugin's `recommended`, which carries the whole React Compiler
+    // rule set — a much larger change than the dependency bugs these two
+    // catch (an effect whose deps lie re-runs every render, or never).
+    files: ['apps/web/**/*.{ts,tsx}'],
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'error',
     },
   },
   prettierConfig,
