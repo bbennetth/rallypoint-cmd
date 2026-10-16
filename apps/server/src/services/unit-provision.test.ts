@@ -29,6 +29,12 @@ describe('renderStartScript', () => {
     expect(script).not.toContain('XDG_RUNTIME_DIR')
   })
 
+  it('opts a Windows server in to esync/fsync unless its registry entry says not to', () => {
+    const script = renderStartScript({ ...enshrouded, wineSync: undefined }, '/opt/games/enshrouded')
+    expect(script).toContain('export WINEESYNC=1')
+    expect(script).toContain('export WINEFSYNC=1')
+  })
+
   it('wraps a Windows-only server in Wine with a run-time loader lookup', () => {
     const script = renderStartScript(enshrouded, '/opt/games/enshrouded')
     expect(script).toContain('export WINEPREFIX="/opt/games/enshrouded/.wine"')
@@ -37,10 +43,10 @@ describe('renderStartScript', () => {
     expect(script).toContain('for c in wine64 wine; do')
     expect(script).not.toContain('/usr/bin/wine64')
     expect(script).toContain('exec "$WINE_BIN" ./enshrouded_server.exe')
-    // esync/fsync: without them every Wine sync primitive round-trips
-    // through the single-threaded wineserver.
-    expect(script).toContain('export WINEESYNC=1')
-    expect(script).toContain('export WINEFSYNC=1')
+    // Enshrouded 1.0 never completes its Steam logon under esync/fsync,
+    // so its registry entry turns them off explicitly.
+    expect(script).toContain('export WINEESYNC=0')
+    expect(script).toContain('export WINEFSYNC=0')
     // Wine's wayland driver logs an "error:" line without a valid
     // XDG_RUNTIME_DIR; systemd supplies $RUNTIME_DIRECTORY via the
     // drop-in, with a /tmp fallback for hand-run scripts.

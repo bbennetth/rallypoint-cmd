@@ -148,20 +148,70 @@ export const panelUpdateInfoSchema = z.object({
 })
 export type PanelUpdateInfo = z.infer<typeof panelUpdateInfoSchema>
 
-// --- wine updater (Debian wine -> WineHQ staging) ---------------------------
+// --- wine manager (WineHQ branch + version select) ---------------------------
 
-// Windows-platform games (Enshrouded) run under Wine. Debian's wine lacks
-// esync/fsync, so the panel can upgrade the CT to WineHQ staging — the same
-// work install/rallypoint-cmd-install.sh does at CT creation time.
+// Windows-platform games (Enshrouded) run under Wine. The panel installs
+// WineHQ's builds (stable / devel / staging) at a chosen version, or the
+// newest one, from the same apt repository install/rallypoint-cmd-install.sh
+// adds at CT creation time.
+export const WINE_BRANCHES = ['stable', 'devel', 'staging'] as const
+export const wineBranchSchema = z.enum(WINE_BRANCHES)
+export type WineBranch = z.infer<typeof wineBranchSchema>
+
+// An apt version string as WineHQ publishes it, e.g. "10.0.0.0~bookworm-1"
+// or "11.16~trixie-1". Restricted to apt's version charset so a value can
+// only ever name a package version, never smuggle an apt option.
+export const wineAptVersionSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[0-9][0-9A-Za-z.+~-]*$/, 'not an apt version string')
+
 export const wineStatusSchema = z.object({
   installed: z.boolean(),
   // e.g. "wine-10.0 (Staging)"; null when wine is absent or unreadable.
   version: z.string().nullable(),
   staging: z.boolean(),
+  // The installed WineHQ branch (winehq-<branch> package); null when the
+  // loader comes from Debian's own wine packages or is absent.
+  branch: wineBranchSchema.nullable(),
+  // apt version of the installed winehq-<branch> package; null as above.
+  aptVersion: z.string().nullable(),
+  // True when the WineHQ packages are apt-mark held (a specific version
+  // was picked), so a plain `apt upgrade` leaves them alone.
+  held: z.boolean(),
   // False when the CT's Debian codename has no WineHQ repo we support.
   upgradeSupported: z.boolean(),
 })
 export type WineStatus = z.infer<typeof wineStatusSchema>
+
+export const wineVersionOptionSchema = z.object({
+  // Full apt version, what an install request sends back.
+  aptVersion: wineAptVersionSchema,
+  // Human label, e.g. "11.16".
+  label: z.string(),
+})
+export type WineVersionOption = z.infer<typeof wineVersionOptionSchema>
+
+// Versions the WineHQ repo offers per branch, newest first. Empty lists
+// until the repository has been added to this CT.
+export const wineVersionsSchema = z.object({
+  repoConfigured: z.boolean(),
+  branches: z.object({
+    stable: z.array(wineVersionOptionSchema),
+    devel: z.array(wineVersionOptionSchema),
+    staging: z.array(wineVersionOptionSchema),
+  }),
+})
+export type WineVersions = z.infer<typeof wineVersionsSchema>
+
+// version null = newest available in the branch (and un-hold); a version
+// = exactly that build, held so routine apt upgrades don't move it.
+export const wineInstallRequestSchema = z.object({
+  branch: wineBranchSchema,
+  version: wineAptVersionSchema.nullable(),
+})
+export type WineInstallRequest = z.infer<typeof wineInstallRequestSchema>
 
 // --- host info (read-only) --------------------------------------------------
 

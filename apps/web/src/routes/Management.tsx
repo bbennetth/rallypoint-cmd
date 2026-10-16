@@ -7,12 +7,15 @@ import {
   type PanelHost,
   type PanelStorage,
   type PanelUpdateInfo,
+  type WineBranch,
   type WineStatus,
+  type WineVersions,
+  WINE_BRANCHES,
 } from '@rallypoint-cmd/shared'
 import { api, ApiError } from '../lib/api.js'
 import { useLongOp, useSseLines } from '../lib/useEventSource.js'
 import { formatBytes, formatDateTime } from '../lib/format.js'
-import { Badge, Button, Card, inputClass, Spinner } from '../ui/primitives.js'
+import { Badge, Button, Card, Field, inputClass, Spinner } from '../ui/primitives.js'
 import { Banner } from '../ui/Banner.js'
 import { DataTable } from '../ui/DataTable.js'
 import { Dialog } from '../ui/Dialog.js'
@@ -268,15 +271,23 @@ function PanelUpdateCard() {
 }
 
 // ---------------------------------------------------------------------------
-// Wine: only relevant when a Windows-platform game (Enshrouded and
-// friends) is registered — those servers run under Wine, and the WineHQ
-// *staging* branch is the one that ships esync/fsync. Plain Wine falls
-// back to poll-based synchronisation, which starves the game's tick.
-// Unlike the panel update, upgrading Wine does NOT restart the panel.
+// Wine: Windows-platform games (Enshrouded) run under it. The operator
+// picks a WineHQ branch and version — newest, or a specific build that is
+// then pinned — because a new game build can need a newer Wine or break on
+// one. Unlike the panel update, changing Wine does NOT restart the panel.
+
+const BRANCH_LABEL: Record<WineBranch, string> = {
+  stable: 'Stable',
+  devel: 'Development',
+  staging: 'Staging',
+}
+
+// Sentinel <option> value for "newest in the branch" (sent as null).
+const LATEST = '__latest__'
 
 function wineErrorMessage(e: unknown): string {
-  if (!(e instanceof ApiError)) return 'Upgrade failed to start'
-  if (e.code === 'unit_active') return 'Stop the Windows game server(s) before upgrading Wine.'
+  if (!(e instanceof ApiError)) return 'Wine install failed to start'
+  if (e.code === 'unit_active') return 'Stop the Windows game server(s) before changing Wine.'
   if (e.code === 'world_busy' || e.code === 'op_running')
     return 'Another operation is already running — try again once it finishes.'
   return e.message
@@ -284,6 +295,10 @@ function wineErrorMessage(e: unknown): string {
 
 function WineCard() {
   const [status, setStatus] = useState<WineStatus | null>(null)
+  const [versions, setVersions] = useState<WineVersions | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const [branch, setBranch] = useState<WineBranch>('staging')
+  const [version, setVersion] = useState<string>(LATEST)
   const [err, setErr] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
   const [activeOp, setActiveOp] = useState<LongOp | null>(null)
@@ -294,14 +309,31 @@ function WineCard() {
 
   async function load() {
     try {
-      setStatus(await api.wineStatus())
+      const s = await api.wineStatus()
+      setStatus(s)
+      return s
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : 'Failed to load Wine status')
+      return null
+    }
+  }
+  async function loadVersions(refresh: boolean) {
+    setRefreshing(true)
+    try {
+      setVersions(await api.wineVersions(refresh))
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Failed to load Wine versions')
+    } finally {
+      setRefreshing(false)
     }
   }
   useEffect(() => {
-    void load()
-    // Re-attach to an upgrade already in flight (navigation, reload).
+    void load().then((s) => {
+      // Default the picker to what is installed now.
+      if (s?.branch) setBranch(s.branch)
+    })
+    void loadVersions(false)
+    // Re-attach to an install already in flight (navigation, reload).
     api
       .panelOp()
       .then((s) => {
@@ -315,36 +347,44 @@ function WineCard() {
   useEffect(() => {
     if (!doneOp || !activeOp || doneOp.id !== activeOp.id) return
     if (doneOp.status === 'failed') {
-      setErr(`Wine upgrade failed: ${doneOp.error ?? 'unknown error'} — safe to retry.`)
+      setErr(`Wine install failed: ${doneOp.error ?? 'unknown error'} — safe to retry.`)
       setOk(null)
     } else {
       setErr(null)
-      setOk('Wine upgraded — restart the Windows game server(s) to pick up esync/fsync.')
+      setOk('Wine changed — restart the Windows game server(s) to run on it.')
     }
     setActiveOp(null)
     reset()
     void load()
+    void loadVersions(false)
   }, [doneOp, activeOp, reset])
 
-  async function upgrade() {
+  async function install(b: WineBranch, v: string | null) {
     setErr(null)
     setOk(null)
     clear()
     try {
-      setActiveOp(await api.runWineUpgrade())
+      setActiveOp(await api.installWine({ branch: b, version: v }))
     } catch (e) {
       setErr(wineErrorMessage(e))
     }
   }
 
   const running = activeOp !== null
+  const offered = versions?.branches[branch] ?? []
+  // Newest build of the installed branch, when it differs from what is
+  // installed and the install isn't deliberately pinned.
+  const newest = status?.branch ? versions?.branches[status.branch][0] : undefined
+  const updateAvailable =
+    status?.branch && !status.held && newest && newest.aptVersion !== status.aptVersion ? newest : null
 
   return (
     <Card
       title={
         <span className="flex items-center gap-3">
           Wine
-          {status?.staging && <Badge tone="good">Staging</Badge>}
+          {status?.branch && <Badge tone="good">{BRANCH_LABEL[status.branch]}</Badge>}
+          {status?.held && <Badge tone="warn">Pinned</Badge>}
         </span>
       }
       actions={
@@ -374,38 +414,120 @@ function WineCard() {
             </div>
             <div className="flex justify-between gap-4">
               <dt className="eyebrow">Branch</dt>
-              <dd>{status.staging ? 'WineHQ staging' : 'stable / distro'}</dd>
+              <dd>{status.branch ? `WineHQ ${status.branch}` : 'Debian (distro)'}</dd>
             </div>
+            {status.aptVersion && (
+              <div className="flex justify-between gap-4">
+                <dt className="eyebrow">Package</dt>
+                <dd className="mono">
+                  {status.aptVersion}
+                  {status.held ? ' (pinned)' : ''}
+                </dd>
+              </div>
+            )}
           </dl>
 
           {running && (
             <div className="cmd-op">
               <ProgressBar
                 value={progress}
-                label="Upgrading Wine…"
+                label="Installing Wine…"
                 right={progress != null ? `${progress.toFixed(0)}%` : '…'}
               />
             </div>
           )}
           {running && lines.length > 0 && <LogPane lines={lines} maxHeight={200} />}
 
-          {!status.staging && status.upgradeSupported && (
-            <div className="flex gap-2">
-              <Button variant="primary" disabled={running} onClick={upgrade}>
-                {running ? <Spinner /> : null} Upgrade to WineHQ staging
-              </Button>
-            </div>
-          )}
-          {!status.staging && !status.upgradeSupported && (
+          {!status.upgradeSupported ? (
             <p className="cmd-note">
               This OS release isn&apos;t supported by the WineHQ repository, so the panel can&apos;t
-              install the staging build here.
+              install WineHQ builds here.
             </p>
+          ) : (
+            <>
+              {updateAvailable && status.branch && (
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-sm">
+                    Update available: {status.branch} {updateAvailable.label}
+                  </span>
+                  <Button
+                    variant="primary"
+                    disabled={running}
+                    onClick={() => install(status.branch!, null)}
+                  >
+                    {running ? <Spinner /> : null} Update Wine
+                  </Button>
+                </div>
+              )}
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Branch">
+                  <select
+                    className={inputClass}
+                    value={branch}
+                    disabled={running}
+                    onChange={(e) => {
+                      setBranch(e.target.value as WineBranch)
+                      setVersion(LATEST)
+                    }}
+                  >
+                    {WINE_BRANCHES.map((b) => (
+                      <option key={b} value={b}>
+                        {BRANCH_LABEL[b]}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Version">
+                  <select
+                    className={inputClass}
+                    value={version}
+                    disabled={running}
+                    onChange={(e) => setVersion(e.target.value)}
+                  >
+                    <option value={LATEST}>
+                      Latest{offered[0] ? ` (${offered[0].label})` : ''}
+                    </option>
+                    {offered.map((o) => (
+                      <option key={o.aptVersion} value={o.aptVersion}>
+                        {o.label}
+                        {o.aptVersion === status.aptVersion && branch === status.branch
+                          ? ' — installed'
+                          : ''}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="primary"
+                  disabled={running}
+                  onClick={() => install(branch, version === LATEST ? null : version)}
+                >
+                  {running ? <Spinner /> : null} Install
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={running || refreshing || versions?.repoConfigured === false}
+                  onClick={() => loadVersions(true)}
+                >
+                  {refreshing ? <Spinner /> : 'Refresh list'}
+                </Button>
+              </div>
+              {versions?.repoConfigured === false && (
+                <p className="cmd-note">
+                  The WineHQ repository isn&apos;t set up on this CT yet — installing Latest adds it,
+                  after which every version is listed here.
+                </p>
+              )}
+            </>
           )}
 
           <p className="cmd-note">
-            WineHQ staging enables esync/fsync, which cuts tick starvation for Windows-only servers
-            like Enshrouded. The panel keeps running through the upgrade — no restart needed.
+            Picking a specific version pins it, so routine apt upgrades leave it alone; Latest
+            un-pins. Stop Windows game servers before installing, and restart them afterwards. The
+            panel keeps running throughout.
           </p>
         </div>
       )}
