@@ -24,6 +24,7 @@ import {
   settingsResponseSchema,
   updateStateSchema,
   wineStatusSchema,
+  wineVersionsSchema,
   type Backup,
   type CreateScheduleRequest,
   type LongOp,
@@ -51,6 +52,8 @@ import {
   type UpdateScheduleRequest,
   type UpdateState,
   type WineStatus,
+  type WineVersions,
+  type WineInstallRequest,
 } from '@rallypoint-cmd/shared'
 import { z } from 'zod'
 
@@ -217,11 +220,13 @@ export const api = {
     request('GET', '/api/panel/storage', panelStorageSchema),
   panelOp: (): Promise<PanelOpState> => request('GET', '/api/panel/op', panelOpStateSchema),
 
-  // wine (Windows-platform game servers run under it; staging enables
-  // esync/fsync)
+  // wine (Windows-platform game servers run under it): WineHQ branch +
+  // version select
   wineStatus: (): Promise<WineStatus> => request('GET', '/api/panel/wine', wineStatusSchema),
-  runWineUpgrade: (): Promise<LongOp> =>
-    request('POST', '/api/panel/wine/upgrade', longOpSchema),
+  wineVersions: (refresh = false): Promise<WineVersions> =>
+    request('GET', `/api/panel/wine/versions${refresh ? '?refresh=1' : ''}`, wineVersionsSchema),
+  installWine: (req: WineInstallRequest): Promise<LongOp> =>
+    request('POST', '/api/panel/wine/install', longOpSchema, req),
 
   deleteGameDir: (slug: string, confirm: string): Promise<LongOp> =>
     request('POST', `/api/panel/storage/games/${encodeURIComponent(slug)}/delete`, longOpSchema, {

@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { codenameSupported, createFakeWineUpdate, parseWineVersion, readCodename } from './wine-update.js'
+import {
+  branchPackages,
+  codenameSupported,
+  createFakeWineUpdate,
+  parseInstalledBranch,
+  parseMadison,
+  parseWineVersion,
+  readCodename,
+  wineVersionLabel,
+} from './wine-update.js'
 
 describe('parseWineVersion', () => {
   it('detects a WineHQ staging build', () => {
@@ -49,26 +58,92 @@ describe('codenameSupported', () => {
   })
 })
 
-describe('fake wine updater lifecycle', () => {
-  it('starts on vanilla wine and reports staging after the op runs', async () => {
-    const lines: string[] = []
-    const sink = { line: (t: string) => lines.push(t), progress: () => {} }
-    const svc = createFakeWineUpdate()
+describe('parseMadison', () => {
+  const out = [
+    'winehq-stable | 10.0.0.0~bookworm-1 | https://dl.winehq.org/wine-builds/debian bookworm/main amd64 Packages',
+    'winehq-stable | 9.0.0.0~bookworm-1 | https://dl.winehq.org/wine-builds/debian bookworm/main amd64 Packages',
+    'winehq-staging | 11.16~bookworm-1 | https://dl.winehq.org/wine-builds/debian bookworm/main amd64 Packages',
+    'winehq-staging | 11.16~bookworm-1 | https://dl.winehq.org/wine-builds/debian bookworm/main i386 Packages',
+    'winehq-staging | 11.15~bookworm-1 | https://dl.winehq.org/wine-builds/debian bookworm/main amd64 Packages',
+    'N: Unable to locate package winehq-devel',
+    'wine | 8.0~repack-4 | http://deb.debian.org/debian bookworm/main amd64 Packages',
+  ].join('\n')
 
-    let s = await svc.status()
-    expect(s).toEqual({
-      installed: true,
-      version: 'wine-8.0',
-      staging: false,
-      upgradeSupported: true,
+  it('groups versions per branch, newest first, without duplicates', () => {
+    const b = parseMadison(out)
+    expect(b.stable.map((o) => o.label)).toEqual(['10.0.0.0', '9.0.0.0'])
+    expect(b.staging).toEqual([
+      { aptVersion: '11.16~bookworm-1', label: '11.16' },
+      { aptVersion: '11.15~bookworm-1', label: '11.15' },
+    ])
+    expect(b.devel).toEqual([])
+  })
+
+  it('ignores non-WineHQ packages and malformed versions', () => {
+    expect(parseMadison('winehq-staging | --force-yes | x\nfoo | 1.0 | y')).toEqual({
+      stable: [],
+      devel: [],
+      staging: [],
     })
+  })
+})
 
-    await svc.run(sink)
-    expect(lines.join('\n')).toContain('winehq-staging')
+describe('parseInstalledBranch', () => {
+  it('returns the fully installed winehq branch', () => {
+    const out = 'winehq-stable\t\tun \nwinehq-staging\t11.16~bookworm-1\tii \n'
+    expect(parseInstalledBranch(out)).toEqual({ branch: 'staging', aptVersion: '11.16~bookworm-1' })
+  })
 
+  it('skips removed-but-configured packages and returns null for Debian wine', () => {
+    expect(parseInstalledBranch('winehq-staging\t11.15~bookworm-1\trc \n')).toBeNull()
+    expect(parseInstalledBranch('')).toBeNull()
+  })
+})
+
+describe('branchPackages / wineVersionLabel', () => {
+  it('pins every half of a branch, the i386 one only with multiarch', () => {
+    expect(branchPackages('stable', true)).toEqual([
+      'winehq-stable',
+      'wine-stable',
+      'wine-stable-amd64',
+      'wine-stable-i386',
+    ])
+    expect(branchPackages('devel', false)).toEqual(['winehq-devel', 'wine-devel', 'wine-devel-amd64'])
+  })
+
+  it('drops the distro suffix for display', () => {
+    expect(wineVersionLabel('11.16~trixie-1')).toBe('11.16')
+    expect(wineVersionLabel('10.0.0.0~bookworm-1')).toBe('10.0.0.0')
+  })
+})
+
+describe('fake wine manager lifecycle', () => {
+  const sink = () => {
+    const lines: string[] = []
+    return { lines, line: (t: string) => lines.push(t), progress: () => {} }
+  }
+
+  it('starts on Debian wine, installs the newest build unpinned', async () => {
+    const svc = createFakeWineUpdate()
+    let s = await svc.status()
+    expect(s).toMatchObject({ installed: true, version: 'wine-8.0', branch: null, held: false })
+
+    await svc.run(sink(), { branch: 'staging', version: null })
     s = await svc.status()
-    expect(s.staging).toBe(true)
-    expect(s.installed).toBe(true)
-    expect(s.version).toMatch(/^wine-10\./)
+    expect(s).toMatchObject({ branch: 'staging', aptVersion: '11.16~bookworm-1', held: false, staging: true })
+  })
+
+  it('installs and pins a specific version, and refuses one the repo lacks', async () => {
+    const svc = createFakeWineUpdate()
+    await svc.run(sink(), { branch: 'stable', version: '9.0.0.0~bookworm-1' })
+    expect(await svc.status()).toMatchObject({ branch: 'stable', aptVersion: '9.0.0.0~bookworm-1', held: true })
+
+    await expect(svc.run(sink(), { branch: 'stable', version: '1.0~bookworm-1' })).rejects.toThrow(/not offered/)
+  })
+
+  it('lists versions per branch', async () => {
+    const v = await createFakeWineUpdate().versions({ refresh: true })
+    expect(v.repoConfigured).toBe(true)
+    expect(v.branches.staging[0]!.label).toBe('11.16')
   })
 })

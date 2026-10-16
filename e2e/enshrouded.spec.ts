@@ -96,3 +96,37 @@ test('backups: create shows a world-less row', async ({ page }) => {
   // World column shows the em-dash placeholder (no world id).
   await expect(page.getByRole('cell', { name: '—' }).first()).toBeVisible()
 })
+
+test('wine: refuses while a Windows server runs, then installs and pins a picked version', async ({
+  page,
+}) => {
+  await ensureEnshroudedOpen(page)
+  await ensureInstalled(page)
+
+  // Make sure it is running so the guard has something to refuse.
+  await page.getByRole('link', { name: 'Dashboard' }).click()
+  const start = page.getByRole('button', { name: /Start/ })
+  if (await start.isEnabled()) await start.click()
+  await expect(page.getByText('Running', { exact: true })).toBeVisible({ timeout: 30_000 })
+
+  await page.getByRole('link', { name: 'Management' }).click()
+  const wine = page.locator('section.pl-card').filter({ hasText: 'Wine' }).first()
+  await wine.getByLabel('Branch').selectOption('stable')
+  await wine.getByLabel('Version').selectOption({ label: '9.0.0.0' })
+  await wine.getByRole('button', { name: 'Install', exact: true }).click()
+  await expect(wine.getByText('Stop the Windows game server(s) before changing Wine.')).toBeVisible()
+
+  // Stop it, then the same pick goes through and is pinned.
+  await page.getByRole('link', { name: 'Servers' }).click()
+  await page.getByRole('button', { name: 'Open Enshrouded' }).first().click()
+  await page.getByRole('button', { name: /Stop/ }).click()
+  await expect(page.getByText('Stopped', { exact: true })).toBeVisible({ timeout: 30_000 })
+
+  await page.getByRole('link', { name: 'Management' }).click()
+  await wine.getByLabel('Branch').selectOption('stable')
+  await wine.getByLabel('Version').selectOption({ label: '9.0.0.0' })
+  await wine.getByRole('button', { name: 'Install', exact: true }).click()
+  await expect(wine.getByText(/Wine changed/)).toBeVisible({ timeout: 30_000 })
+  await expect(wine.getByText('9.0.0.0~bookworm-1 (pinned)')).toBeVisible()
+  await expect(wine.getByText('Pinned', { exact: true })).toBeVisible()
+})

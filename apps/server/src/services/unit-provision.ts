@@ -49,6 +49,23 @@ function startCommandLine(game: GameDef, installDir: string): string {
 // `wine` on others, and Wine >= 9 dropped the wine64 name entirely.
 // Baking an absolute path turns a missing binary into an opaque
 // "exec: not found" from the unit.
+// esync/fsync, where the installed Wine supports them (staging and
+// Proton-derived builds; plain Debian Wine ignores both): without them
+// every Windows sync primitive (mutex/event/semaphore) is a round trip to
+// the single-threaded wineserver process. On by default; a game whose
+// registry entry sets wineSync: false gets them explicitly off.
+function wineSyncBlock(game: GameDef): string {
+  const v = game.wineSync === false ? 0 : 1
+  const why =
+    game.wineSync === false
+      ? '# esync/fsync off: this server misbehaves under them (see games.ts).'
+      : '# Opt in to esync/fsync (cuts wineserver round trips).'
+  return `${why}
+export WINEESYNC=${v}
+export WINEFSYNC=${v}
+`
+}
+
 export function renderStartScript(game: GameDef, installDir: string): string {
   const cmd = startCommandLine(game, installDir)
   if (game.platform === 'windows') {
@@ -58,15 +75,7 @@ cd "${installDir}"
 export HOME="${installDir}"
 export WINEPREFIX="${installDir}/.wine"
 export WINEDEBUG=-all
-# Opt in to esync/fsync where the installed Wine supports them (staging
-# and Proton-derived builds; plain Debian Wine ignores both, so they are
-# safe to export unconditionally). Without them every Windows sync
-# primitive (mutex/event/semaphore) is a round trip to the single-threaded
-# wineserver process — the dominant Wine overhead for heavily threaded
-# servers like Enshrouded, and a direct cause of tick starvation.
-export WINEESYNC=1
-export WINEFSYNC=1
-# Wine's wayland driver probes XDG_RUNTIME_DIR on launch and logs
+${wineSyncBlock(game)}# Wine's wayland driver probes XDG_RUNTIME_DIR on launch and logs
 # "error: XDG_RUNTIME_DIR is invalid or not set" when the unit has no
 # login session. systemd sets $RUNTIME_DIRECTORY via RuntimeDirectory=
 # in the instance drop-in; the fallback covers running this by hand.

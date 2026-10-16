@@ -43,6 +43,10 @@ export interface GameDef {
   // windows) and the generated start.sh runs it under Wine. Absent =
   // native Linux.
   platform?: 'windows'
+  // Windows servers only: whether start.sh opts in to Wine's esync/fsync
+  // (WINEESYNC/WINEFSYNC). Absent = on. Set false for a server that
+  // misbehaves under them.
+  wineSync?: boolean
   // Command line run from the install dir by the generated start.sh.
   startCommand: { bin: string; args: string[] }
   stopSignal: 'SIGINT' | 'SIGTERM'
@@ -349,6 +353,11 @@ export const GAMES: Record<string, GameDef> = {
     // The dedicated server is Windows-only; installed via the Windows
     // depot and run under Wine (see unit-provision.ts).
     platform: 'windows',
+    // The 1.0 build never completes its Steam game-server logon with
+    // esync/fsync on (the session sits in Lobby -> Host_Online and logs
+    // "Server failed to connected to Steam 3" every ~6 min, so the query
+    // port never answers and players can't find it). Off, it comes up.
+    wineSync: false,
     startCommand: { bin: './enshrouded_server.exe', args: [] },
     stopSignal: 'SIGINT',
     timeoutStopSec: 120,
